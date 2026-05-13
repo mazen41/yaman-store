@@ -148,7 +148,7 @@ foreach ($all_transactions as $txn) {
     $type = strtolower($txn['type']);
     
     $isIn = in_array($type, ['transfer_in', 'deposit', 'in']);
-    $isOut = in_array($type, ['transfer_out', 'withdraw', 'out']);
+    $isOut = in_array($type, ['transfer_out', 'withdraw', 'withdrawal', 'out']);
 
     if ($txn['source'] === 'cash') {
         if ($isIn) $total_cash_in += $amt;
@@ -172,8 +172,8 @@ function getTransactionLabel($type) {
     if (in_array($t, ['transfer_in', 'deposit', 'in'])) {
         $text = ($t == 'in') ? 'وارد خزينة' : (($t == 'deposit') ? 'إيداع نقدي' : 'تحويل وارد');
         return '<span class="bg-green-100 text-green-800 text-xs px-3 py-1 rounded-full border border-green-200"><i class="fas fa-arrow-down ml-1"></i> '.$text.'</span>';
-    } elseif (in_array($t, ['transfer_out', 'withdraw', 'out'])) {
-        $text = ($t == 'out') ? 'منصرف خزينة' : (($t == 'withdraw') ? 'سحب نقدي' : 'تحويل صادر');
+    } elseif (in_array($t, ['transfer_out', 'withdraw', 'withdrawal', 'out'])) {
+        $text = ($t == 'out') ? 'منصرف خزينة' : ((in_array($t, ['withdraw', 'withdrawal'])) ? 'سحب نقدي' : 'تحويل صادر');
         return '<span class="bg-red-100 text-red-800 text-xs px-3 py-1 rounded-full border border-red-200"><i class="fas fa-arrow-up ml-1"></i> '.$text.'</span>';
     } else {
         return '<span class="bg-gray-100 text-gray-800 text-xs px-3 py-1 rounded-full border border-gray-200"><i class="fas fa-exchange-alt ml-1"></i> '.htmlspecialchars($type).'</span>';
@@ -287,7 +287,7 @@ include '../../includes/header.php';
                         <?php foreach ($filtered_transactions as $txn): ?>
                             <?php 
                                 $isIn = in_array(strtolower($txn['type']), ['transfer_in', 'deposit', 'in']);
-                                $isOut = in_array(strtolower($txn['type']), ['transfer_out', 'withdraw', 'out']);
+                                $isOut = in_array(strtolower($txn['type']), ['transfer_out', 'withdraw', 'withdrawal', 'out']);
                                 
                                 $amountClass = $isIn ? 'text-green-600' : ($isOut ? 'text-red-600' : 'text-gray-600');
                                 $amountPrefix = $isIn ? '+' : ($isOut ? '-' : '');

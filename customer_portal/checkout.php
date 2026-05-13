@@ -99,11 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_order'])) {
             $final_order_total = ($original_products_subtotal - $total_combined_discount + $shipping_cost);
             if ($final_order_total < 0) $final_order_total = 0; // Ensure total doesn't go negative
 
-            // Generate Order Number
-            $order_number = 'ORD-' . date('Ymd') . '-' . rand(1000, 9999);
-
             // Insert into Database (Transaction)
             $db->beginTransaction();
+
+            // Generate sequential order number: 1, 2, 3...
+            $seq_stmt = $db->query("SELECT order_number FROM shop_orders WHERE order_number REGEXP '^[0-9]+$' ORDER BY CAST(order_number AS UNSIGNED) DESC LIMIT 1 FOR UPDATE");
+            $last_order_number = $seq_stmt->fetchColumn();
+            $order_number = (string)(((int)$last_order_number) + 1);
 
             $insert_order = $db->prepare("INSERT INTO shop_orders (order_number, customer_id, subtotal, shipping_fee, discount_amount, total_amount, coupon_code, payment_evidence_url, order_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'طلب جديد')");
             $insert_order->execute([

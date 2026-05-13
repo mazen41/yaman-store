@@ -309,8 +309,9 @@ include '../../includes/header.php';
                             <!-- NEW: Payment Method Selection -->
                             <div class="mt-4">
                                 <label for="payment_method" class="block text-sm font-bold text-gray-700 mb-2">طريقة الدفع <span class="text-red-500">*</span></label>
-                                <select id="payment_method" name="payment_method" class="modern-input">
-                                    <option value="cash" selected>نقدي (الصندوق)</option>
+                                <select id="payment_method" name="payment_method" class="modern-input" required>
+                                    <option value="" selected disabled>-- اختر طريقة الدفع --</option>
+                                    <option value="cash">نقدي (الصندوق)</option>
                                     <option value="transfer">تحويل بنكي / إيداع</option>
                                     <option value="customer_card">بطاقة العميل</option>
                                 </select>
@@ -492,12 +493,13 @@ include '../../includes/header.php';
 
         let totalDiscount = autoDiscountAmt + couponDiscountAmt + (subtotal * (autoDiscountPercent / 100));
         let finalAmount = Math.max(0, subtotal - totalDiscount + shippingCost);
+        let finalAmountAfterPaid = finalAmount - paidAmount;
 
         document.getElementById('subtotalDisplay').textContent = subtotal.toFixed(2);
         document.getElementById('totalDiscountDisplay').textContent = totalDiscount.toFixed(2);
         document.getElementById('shippingDisplay').textContent = shippingCost.toFixed(2);
         document.getElementById('paidAmountDisplay').textContent = paidAmount.toFixed(2); // Display the paid amount
-        document.getElementById('finalTotalDisplay').textContent = finalAmount.toFixed(2);
+        document.getElementById('finalTotalDisplay').textContent = finalAmountAfterPaid.toFixed(2);
     }
 
     function previewNewImages(input) {
@@ -605,6 +607,12 @@ include '../../includes/header.php';
     function validateAndConfirmApproval() {
         const paidAmount = parseFloat(document.getElementById('paid_amount_admin').value);
         const paymentMethod = paymentMethodSelect.value;
+
+        if (!paymentMethod) {
+            alert('يرجى اختيار طريقة الدفع قبل الموافقة.');
+            paymentMethodSelect.focus();
+            return false;
+        }
 
         if (paidAmount > 0) {
             if (paymentMethod === 'transfer' && bankAccountSelect.value === '') {

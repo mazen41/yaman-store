@@ -743,8 +743,10 @@ include '../../includes/header.php';
                                 <div class="total-row"><span><i class="fas fa-box-open"></i>إجمالي عدد
                                         المنتجات</span><input type="number" name="total_products"
                                         id="totalProductsInput" class="form-control totals-input" value="0"></div>
+                                <div class="total-row"><span><i class="fas fa-riyal-sign"></i>المبلغ بالريال السعودي</span><input type="number" name="sar_amount" id="sarInput"
+                                        step="0.01" min="0" value="0" class="form-control totals-input" placeholder="SAR"></div>
                                 <div class="total-row"><span><i class="fas fa-file-invoice-dollar"></i>المجموع قبل
-                                        الخصم</span><input type="number" name="subtotal_amount" id="subtotalInput"
+                                        الخصم (ر.ي)</span><input type="number" name="subtotal_amount" id="subtotalInput"
                                         step="0.01" min="0" value="0" class="form-control totals-input"></div>
                                 <div class="total-row"><span><i class="fas fa-shipping-fast"></i>تكلفة
                                         الشحن</span><input type="number" name="shipping_cost" id="shippingCost"

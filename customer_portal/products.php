@@ -344,7 +344,7 @@ foreach ($products as $key => $product) {
     <!-- ── Modal ── -->
     <div id="product-modal" class="fixed inset-0 bg-black/60 z-[60] hidden items-center justify-center p-3 sm:p-5 opacity-0" style="display:none">
         <div id="modal-content" class="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col md:flex-row overflow-hidden relative scale-95" onclick="event.stopPropagation()">
-            <button onclick="closeProductModal()" class="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-white/90 shadow flex items-center justify-center text-gray-700 hover:bg-gray-100 transition text-sm">
+            <button type="button" onclick="closeProductModal(event)" class="absolute top-3 left-3 z-20 w-8 h-8 rounded-full bg-white/90 shadow flex items-center justify-center text-gray-700 hover:bg-gray-100 transition text-sm">
                 <i class="fas fa-times"></i>
             </button>
             <div class="w-full md:w-5/12 bg-gray-50 relative" style="min-height:260px">
@@ -450,7 +450,7 @@ foreach ($products as $key => $product) {
         function init() {
             renderCart();
             renderProducts(ALL_PRODUCTS);
-            document.getElementById('product-modal').addEventListener('click', closeProductModal);
+            document.getElementById('product-modal').addEventListener('click', function(event) { if (event.target === this) closeProductModal(event); });
             document.getElementById('search-input').addEventListener('input', debounce(applyFilters, 300));
             document.getElementById('min-price').addEventListener('input', debounce(applyFilters, 300));
             document.getElementById('max-price').addEventListener('input', debounce(applyFilters, 300));
@@ -665,7 +665,8 @@ foreach ($products as $key => $product) {
             content.classList.remove('scale-95'); content.classList.add('scale-100');
         }
 
-        function closeProductModal() {
+        function closeProductModal(event) {
+            if (event) { event.preventDefault(); event.stopPropagation(); }
             const modal   = document.getElementById('product-modal');
             const content = document.getElementById('modal-content');
             modal.classList.remove('opacity-100'); modal.classList.add('opacity-0');

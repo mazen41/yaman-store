@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- FINANCIAL CALCULATION SETUP ---
     const financialInputs = [
-        'subtotalInput', 'shippingCost', 'taxRate', 'manualDiscountInput',
+        'sarInput', 'subtotalInput', 'shippingCost', 'taxRate', 'manualDiscountInput',
         'points_discount', 'club_discount'
     ];
     financialInputs.forEach(id => {
@@ -180,7 +180,12 @@ if (attachmentInput && previewContainer) {
 // ============================================
 
 function updateTotals() {
-    const subtotal = parseFloat(document.getElementById('subtotalInput').value) || 0;
+    const sarInput = document.getElementById('sarInput');
+    const subtotalInput = document.getElementById('subtotalInput');
+    if (sarInput && document.activeElement === sarInput) {
+        subtotalInput.value = ((parseFloat(sarInput.value) || 0) * 140).toFixed(2);
+    }
+    const subtotal = parseFloat(subtotalInput.value) || 0;
     const shippingCost = parseFloat(document.getElementById('shippingCost').value) || 0;
     const taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
     const taxIncluded = document.getElementById('taxIncluded').checked;

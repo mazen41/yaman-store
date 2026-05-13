@@ -55,12 +55,13 @@ $sql = "
         s.status,
         s.created_at,
         sender.name as sender_name,
-        GROUP_CONCAT(DISTINCT co.order_number ORDER BY co.created_at SEPARATOR ', ') as order_numbers,
+        GROUP_CONCAT(DISTINCT COALESCE(co.order_number, sho.order_number) ORDER BY COALESCE(co.created_at, sho.created_at) SEPARATOR ', ') as order_numbers,
         GROUP_CONCAT(DISTINCT c.name ORDER BY c.name SEPARATOR ', ') as customer_names
     FROM shipments s
     LEFT JOIN shipment_orders so ON s.id = so.shipment_id
-    LEFT JOIN customer_orders co ON so.order_id = co.id
-    LEFT JOIN customers c ON co.customer_id = c.id
+    LEFT JOIN customer_orders co ON so.order_id = co.id AND so.order_source = 'customer'
+    LEFT JOIN shop_orders sho ON so.order_id = sho.id AND so.order_source = 'shop'
+    LEFT JOIN customers c ON COALESCE(co.customer_id, sho.customer_id) = c.id
     LEFT JOIN senders sender ON s.sender_id = sender.id
     WHERE 1=1
 ";
@@ -68,9 +69,9 @@ $params = [];
 $where_clauses = ""; // We'll build a common where clause
 
 if ($search) {
-    $where_clauses .= " AND (s.shipment_number LIKE ? OR s.tracking_number LIKE ? OR co.order_number LIKE ? OR c.name LIKE ? OR sender.name LIKE ?)";
+    $where_clauses .= " AND (s.shipment_number LIKE ? OR s.tracking_number LIKE ? OR co.order_number LIKE ? OR sho.order_number LIKE ? OR c.name LIKE ? OR sender.name LIKE ?)";
     $search_param = "%$search%";
-    array_push($params, $search_param, $search_param, $search_param, $search_param, $search_param);
+    array_push($params, $search_param, $search_param, $search_param, $search_param, $search_param, $search_param);
 }
 
 if ($status_filter) {
@@ -106,8 +107,9 @@ $count_sql = "
     SELECT COUNT(DISTINCT s.id) 
     FROM shipments s
     LEFT JOIN shipment_orders so ON s.id = so.shipment_id
-    LEFT JOIN customer_orders co ON so.order_id = co.id
-    LEFT JOIN customers c ON co.customer_id = c.id
+    LEFT JOIN customer_orders co ON so.order_id = co.id AND so.order_source = 'customer'
+    LEFT JOIN shop_orders sho ON so.order_id = sho.id AND so.order_source = 'shop'
+    LEFT JOIN customers c ON COALESCE(co.customer_id, sho.customer_id) = c.id
     LEFT JOIN senders sender ON s.sender_id = sender.id
     WHERE 1=1
 ";
@@ -137,8 +139,9 @@ $stats_sql = "
         SUM(s.shipping_cost) as total_cost
     FROM shipments s
     LEFT JOIN shipment_orders so ON s.id = so.shipment_id
-    LEFT JOIN customer_orders co ON so.order_id = co.id
-    LEFT JOIN customers c ON co.customer_id = c.id
+    LEFT JOIN customer_orders co ON so.order_id = co.id AND so.order_source = 'customer'
+    LEFT JOIN shop_orders sho ON so.order_id = sho.id AND so.order_source = 'shop'
+    LEFT JOIN customers c ON COALESCE(co.customer_id, sho.customer_id) = c.id
     LEFT JOIN senders sender ON s.sender_id = sender.id
     WHERE 1=1
 ";

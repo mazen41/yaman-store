@@ -2,7 +2,7 @@
 // Application Configuration
 
 // Application Information
-define('APP_NAME', 'نظام إدارة يمان');
+define('APP_NAME', 'Yaman Accounting Calculator');
 define('APP_VERSION', '1.0.0');
 define('APP_DESCRIPTION', 'نظام إدارة شامل للأعمال التجارية');
 
@@ -37,7 +37,7 @@ define('LOCKOUT_DURATION', 900); // 15 minutes in seconds
 
 // Application Settings (can be overridden by database settings)
 $default_settings = [
-    'company_name' => 'شركة يمان للإدارة',
+    'company_name' => 'Yaman Accounting Calculator',
     'company_address' => 'اليمن',
     'company_phone' => '967xxxxxxxxx',
     'company_email' => 'info@yassin-admin.com',
@@ -90,21 +90,20 @@ function format_currency($amount, $currency = null) {
         $currency = get_setting('currency', 'ريال يمني');
     }
 
-    // Normalize amount
     $amount = (float) $amount;
-
-    // For Yemeni Rial we don't want decimal fractions at all
     $normalizedCurrency = strtoupper(trim($currency));
-    $isYer = (
-        $normalizedCurrency === 'YER' ||
-        strpos($currency, 'يمني') !== false ||
-        strpos($currency, 'ريال') !== false
-    );
+    $isSar = ($normalizedCurrency === 'SAR' || strpos($currency, 'سعود') !== false || strpos($currency, 'ر.س') !== false);
+    $isYer = ($normalizedCurrency === 'YER' || strpos($currency, 'يمني') !== false || strpos($currency, 'ر.ي') !== false || (!$isSar && strpos($currency, 'ريال') !== false));
 
-    $decimals = $isYer ? 0 : 2;
+    if ($isSar) {
+        return number_format($amount, 2, '.', '') . ' ' . $currency;
+    }
 
-    // No thousands separator, dot as decimal (even though YER uses 0 decimals)
-    return number_format($amount, $decimals, '.', '') . ' ' . $currency;
+    if ($isYer) {
+        return number_format($amount, 0, '.', ',') . ' ' . $currency;
+    }
+
+    return number_format($amount, 2, '.', ',') . ' ' . $currency;
 }
 
 function format_date($date, $format = null) {

@@ -294,6 +294,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             }
 
             if (isset($_FILES['order_approval_images']) && is_array($_FILES['order_approval_images']['name'])) {
+                $uploaded_image_count = count(array_filter($_FILES['order_approval_images']['name']));
+                if ($uploaded_image_count > 50) {
+                    throw new Exception('يمكن رفع 50 صورة كحد أقصى.');
+                }
                 $upload_dir_approval_images = '../uploads/order_approval_images/';
                 if (!is_dir($upload_dir_approval_images)) {
                     mkdir($upload_dir_approval_images, 0755, true);
@@ -359,7 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             $total_discount_amount = $subtotal_amount - $final_amount;
             $total_discount_percentage = ($subtotal_amount > 0) ? round(($total_discount_amount / $subtotal_amount) * 100, 2) : 0;
-            $remaining_amount_for_template = max(0, $final_amount - $paid_amount);
+            $remaining_amount_for_template = $final_amount - $paid_amount;
 
             $whatsapp_template_stmt = $db->prepare("SELECT message_content FROM whatsapp_template WHERE target_event = 'order_created_admin' AND is_active = 1 LIMIT 1");
             $whatsapp_template_stmt->execute();
@@ -507,7 +511,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <div class="mt-6 pt-6 border-t border-gray-200">
                         <label for="order_approval_images" class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-images mr-2 text-indigo-500"></i>صور توضيحية للطلب (اختياري)</label>
                         <p class="text-xs text-gray-500 mb-2">يمكنك رفع عدة صور للمنتجات أو الطلب.</p>
-                        <input type="file" id="order_approval_images" name="order_approval_images[]" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" onchange="previewImages(this)">
+                        <input type="file" id="order_approval_images" name="order_approval_images[]" multiple data-max-files="50" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" onchange="previewImages(this)">
                         <div id="imagePreviewContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4 hidden"></div>
                     </div>
                 </div>
@@ -610,7 +614,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <a href="portal.php?token=<?php echo htmlspecialchars($token); ?>" class="px-6 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold transition">
                         إلغاء
                     </a>
-                    <button type="submit" class="px-8 py-2 text-white rounded-lg hover:opacity-90 font-semibold transition bg-[linear-gradient(to_left,#C7A46D,#B8956A)]">
+                    <button type="submit" id="submitOrderBtn" class="px-8 py-2 text-white rounded-lg hover:opacity-90 font-semibold transition bg-[linear-gradient(to_left,#C7A46D,#B8956A)]">
                         <i class="fas fa-paper-plane mr-2"></i> إرسال للموافقة
                     </button>
                 </div>
@@ -772,7 +776,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         document.getElementById('discountPercentDisplay').textContent = automaticDiscountPercentage.toFixed(0);
         document.getElementById('finalTotal').textContent = finalAmount.toFixed(0);
         document.getElementById('paidDisplay').textContent = paidVal.toFixed(0);
-        document.getElementById('remainingDisplay').textContent = (remainingVal < 0 ? 0 : remainingVal).toFixed(0);
+        document.getElementById('remainingDisplay').textContent = remainingVal.toFixed(0);
         
         const couponRow = document.getElementById('couponDiscountRow');
         if (currentCouponDiscountAmount > 0) {
@@ -806,6 +810,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         updateTotals(); 
 
+        const orderForm = document.querySelector('form[method="POST"]');
+        if (orderForm) {
+            orderForm.addEventListener('submit', function() {
+                const submitBtn = document.getElementById('submitOrderBtn');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin ml-2"></i> جاري رفع الصور وإرسال الطلب...';
+                }
+            });
+        }
+
         if (orderSuccessData && orderSuccessData.success) {
             const modal = document.getElementById('whatsappSuccessModal');
             const whatsappLink = document.getElementById('whatsappLink');
@@ -828,6 +844,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     function previewImages(input) {
         const container = document.getElementById('imagePreviewContainer');
         container.innerHTML = ''; 
+        if (input.files && input.files.length > 50) {
+            alert('يمكن رفع 50 صورة كحد أقصى.');
+            input.value = '';
+            container.classList.add('hidden');
+            return;
+        }
         if (input.files && input.files.length > 0) {
             container.classList.remove('hidden');
             for (const file of input.files) {

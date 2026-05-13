@@ -544,15 +544,11 @@ $generated_id = 'CALC-' . time();
 
         let amount_paid_yr_str = document.getElementById('amount_paid_yr').value;
         let amount_paid_yr = parseFloat(amount_paid_yr_str);
+        const hasPaidInput = amount_paid_yr_str.trim() !== '' && !isNaN(amount_paid_yr);
 
-        // إذا كان حقل المبلغ المدفوع فارغاً، نعتبره 0 لتتم الحسبة الصحيحة للمتبقي
-        if (isNaN(amount_paid_yr) || amount_paid_yr_str.trim() === "") {
-            amount_paid_yr = 0;
-        }
-
-        let remaining_yr = total_yr - amount_paid_yr;
-        let paid_yr_display = amount_paid_yr.toFixed(2).replace('.', ','); // Yemeni formatting (,)
-        let remaining_yr_display = remaining_yr.toFixed(2).replace('.', ','); 
+        let remaining_yr = hasPaidInput ? (total_yr - amount_paid_yr) : null;
+        let paid_yr_display = hasPaidInput ? amount_paid_yr.toFixed(2).replace('.', ',') : ''; // Yemeni formatting (,)
+        let remaining_yr_display = hasPaidInput ? remaining_yr.toFixed(2).replace('.', ',') : '';
 
         // Apply distinct formatting (Saudi = . and Yemeni = ,)
         const price_sr_format = price_sr.toFixed(2);
