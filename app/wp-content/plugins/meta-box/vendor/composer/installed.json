@@ -1,0 +1,42 @@
+{
+    "packages": [
+        {
+            "name": "wpmetabox/support",
+            "version": "dev-master",
+            "version_normalized": "dev-master",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/wpmetabox/support.git",
+                "reference": "874318ec497ce7fb918eb0629dec825210155d97"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/wpmetabox/support/zipball/874318ec497ce7fb918eb0629dec825210155d97",
+                "reference": "874318ec497ce7fb918eb0629dec825210155d97",
+                "shasum": ""
+            },
+            "time": "2025-03-17T08:34:51+00:00",
+            "default-branch": true,
+            "type": "library",
+            "installation-source": "dist",
+            "autoload": {
+                "psr-4": {
+                    "MetaBox\\Support\\": ""
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "description": "Helpers for Meta Box plugins",
+            "homepage": "https://metabox.io",
+            "support": {
+                "issues": "https://github.com/wpmetabox/support/issues",
+                "source": "https://github.com/wpmetabox/support/tree/master"
+            },
+            "install-path": "../wpmetabox/support"
+        }
+    ],
+    "dev": false,
+    "dev-package-names": []
+}

@@ -1,0 +1,370 @@
+<?php
+/**
+ * Purchase Baskets - Index Page (REDESIGNED)
+ * Version 2.0
+ * - Complete visual redesign using a modern card-based layout.
+ * - SQL query updated to fetch and display all customer names within each basket.
+ * - Improved data presentation with icons, better typography, and clear visual hierarchy.
+ */
+
+// --- 1. INITIALIZATION & SECURITY ---
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit();
+}
+
+// --- 2. DATABASE & CONFIGURATION ---
+require_once '../../config/database.php';
+
+$page_title = 'عرض قائمة طلبات الشراء';
+$error_message = '';
+$baskets = [];
+
+// --- 3. HELPER FUNCTION for Status Badges ---
+function getStatusInfo($status) {
+    switch ($status) {
+        case 'active':
+            return ['class' => 'status-active', 'text' => 'مفعلة'];
+        case 'ordered':
+            return ['class' => 'status-ordered', 'text' => 'تم الطلب'];
+        case 'cancelled':
+            return ['class' => 'status-cancelled', 'text' => 'ملغاة'];
+        default:
+            return ['class' => 'status-default', 'text' => htmlspecialchars($status)];
+    }
+}
+
+
+// --- 4. FETCH DATA FROM DATABASE ---
+try {
+    // **REDESIGNED SQL QUERY**:
+    // - Fetches the basket name for better display.
+    // - Uses GROUP_CONCAT to get a comma-separated list of all unique customer names
+    //   from the orders inside each basket.
+    $sql = "
+        SELECT
+            pb.id,
+            pb.basket_name,
+            pb.basket_code,
+            pb.created_at,
+            pb.total_items,
+            pb.final_amount,
+            pb.status,
+            pg.group_name,
+            u.username AS created_by_name,
+            (
+                SELECT GROUP_CONCAT(DISTINCT c.name SEPARATOR ', ')
+                FROM basket_items bi
+                JOIN customer_orders co ON bi.order_id = co.id
+                JOIN customers c ON co.customer_id = c.id
+                WHERE bi.basket_id = pb.id
+            ) AS customer_names
+        FROM
+            purchase_baskets pb
+        LEFT JOIN
+            purchase_groups pg ON pb.purchase_group_id = pg.id
+        LEFT JOIN
+            users u ON pb.created_by = u.id
+    ";
+
+    // Enhanced Search: Searches by basket name, code, or group name.
+    $search_term = isset($_GET['search']) ? trim((string)$_GET['search']) : '';
+    if (!empty($search_term)) {
+        $sql .= " WHERE (pb.basket_name LIKE :search OR pb.basket_code LIKE :search OR pg.group_name LIKE :search)";
+    }
+
+    $sql .= " ORDER BY pb.created_at DESC";
+
+    $stmt = $db->prepare($sql);
+
+    if (!empty($search_term)) {
+        $stmt->bindValue(':search', '%' . $search_term . '%');
+    }
+
+    $stmt->execute();
+    $baskets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (Exception $e) {
+    $error_message = "حدث خطأ أثناء جلب البيانات: " . $e->getMessage();
+}
+
+// --- 5. RENDER THE PAGE ---
+include '../../includes/header.php';
+?>
+
+<!-- =================================================================
+     === START: NEW DESIGN STYLESHEET ===
+     ================================================================= -->
+<style>
+    :root {
+        --primary-color: #4f46e5;
+        --primary-hover: #4338ca;
+        --secondary-color: #64748b;
+        --secondary-hover: #475569;
+        --danger-color: #ef4444;
+        --danger-hover: #dc2626;
+        --success-color: #10b981;
+        --cyan-color: #06b6d4;
+        --background-color: #f8fafc;
+        --card-bg-color: #ffffff;
+        --border-color: #e5e7eb;
+        --text-dark: #111827;
+        --text-light: #6b7280;
+        --font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
+    }
+
+    body { font-family: var(--font-family); }
+
+    /* Main Page Card */
+    .main-card {
+        background: var(--card-bg-color);
+        border-radius: 16px;
+        box-shadow: 0 4px 12px -1px rgba(0, 0, 0, 0.05);
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+    .main-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .main-card-title { font-size: 22px; font-weight: 700; color: var(--text-dark); }
+    
+    /* Buttons */
+    .btn { padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 8px; text-decoration: none !important; }
+    .btn-primary { background: var(--primary-color); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-secondary { background: var(--secondary-color); color: white; }
+    .btn-secondary:hover { background: var(--secondary-hover); }
+    .btn-danger { background: var(--danger-color); color: white; }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    /* Search Bar */
+    .search-bar { display: flex; gap: 10px; }
+    .form-control { width: 100%; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 14px; transition: all 0.2s; }
+    .form-control:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+    
+    /* Baskets Grid Layout */
+    .baskets-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 24px;
+    }
+
+    /* Individual Basket Card */
+    .basket-card {
+        background: var(--card-bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 2px 8px -2px rgba(0,0,0,0.05);
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .basket-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1);
+    }
+    .basket-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 16px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .basket-card-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--text-dark);
+        margin: 0;
+    }
+    .basket-card-code {
+        font-size: 13px;
+        color: var(--text-light);
+        font-family: monospace;
+    }
+    .basket-card-body {
+        padding: 16px;
+        flex-grow: 1;
+    }
+    .basket-card-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    .metric-item { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+    .metric-item i { color: var(--primary-color); width: 20px; text-align: center; }
+    .metric-item span { color: var(--text-dark); font-weight: 600; }
+
+    .basket-card-info { margin-bottom: 16px; }
+    .info-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 14px;
+        color: var(--text-light);
+    }
+    .info-item + .info-item { margin-top: 8px; }
+    .info-item span { color: var(--text-dark); font-weight: 500; }
+
+    .basket-card-customers {
+        background: #f9fafb;
+        padding: 12px;
+        border-radius: 8px;
+    }
+    .basket-card-customers .info-item { color: var(--secondary-color); }
+    .basket-card-customers span { color: var(--secondary-color); font-weight: 600; }
+
+    .basket-card-actions {
+        padding: 16px;
+        background: #f9fafb;
+        border-top: 1px solid var(--border-color);
+        border-radius: 0 0 12px 12px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    /* Status Badges */
+    .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+    .status-active { background-color: #cffafe; color: #0891b2; /* Cyan */ }
+    .status-ordered { background-color: #d1fae5; color: #065f46; /* Green */ }
+    .status-cancelled { background-color: #fee2e2; color: #991b1b; /* Red */ }
+    .status-default { background-color: #e5e7eb; color: #374151; /* Gray */ }
+
+    /* Empty State */
+    .empty-state { text-align: center; padding: 80px 20px; color: var(--text-light); }
+    .empty-state i { font-size: 4rem; color: #d1d5db; margin-bottom: 1rem; }
+    .empty-state h3 { font-size: 1.5rem; font-weight: bold; color: var(--text-dark); }
+    .alert-danger { padding: 16px; border-radius: 8px; margin-bottom: 20px; background: #fee2e2; color: #991b1b; border: 1px solid var(--danger-color); }
+</style>
+<!-- =================================================================
+     === END: NEW DESIGN STYLESHEET ===
+     ================================================================= -->
+
+<!-- Page Header -->
+<div class="page-header">
+    <h1><i class="fas fa-archive"></i> <?php echo $page_title; ?></h1>
+    <div class="breadcrumb">
+        <a href="../../index.php"><i class="fas fa-home"></i> الرئيسية</a>
+        <span>/</span>
+        <a href="index.php">المشتريات</a>
+        <span>/</span>
+        <span>عرض الطلبات</span>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            
+            <?php if ($error_message): ?>
+                <div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo $error_message; ?></div>
+            <?php endif; ?>
+
+            <div class="main-card">
+                <div class="main-card-header">
+                    <h3 class="main-card-title">قائمة طلبات الشراء</h3>
+                    <div class="d-flex align-items-center gap-3">
+                        <form method="GET" action="" class="search-bar">
+                            <input type="text" name="search" class="form-control" placeholder="ابحث بالاسم, الكود, او المجموعة..." value="<?php echo htmlspecialchars($search_term); ?>">
+                            <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i></button>
+                        </form>
+                        <a href="add.php" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> إنشاء طلب جديد
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Baskets Grid or Empty State -->
+                <?php if (empty($baskets) && !$error_message): ?>
+                    <div class="empty-state">
+                        <i class="fas fa-shopping-basket"></i>
+                        <h3>لم يتم إنشاء أي طلبات شراء بعد</h3>
+                        <p>ابدأ بإنشاء طلب جديد لتجميع المنتجات.</p>
+                        <a href="add.php" class="btn btn-primary mt-3"><i class="fas fa-plus"></i> إنشاء طلب جديد</a>
+                    </div>
+                <?php else: ?>
+                    <div class="baskets-grid">
+                        <?php foreach ($baskets as $basket):
+                            $status_info = getStatusInfo($basket['status']);
+                        ?>
+                            <div class="basket-card">
+                                <div class="basket-card-header">
+                                    <div>
+                                        <h4 class="basket-card-title"><?php echo htmlspecialchars($basket['basket_name'] ?: 'سلة بدون اسم'); ?></h4>
+                                        <p class="basket-card-code"><?php echo htmlspecialchars($basket['basket_code']); ?></p>
+                                    </div>
+                                    <span class="status-badge <?php echo $status_info['class']; ?>">
+                                        <?php echo $status_info['text']; ?>
+                                    </span>
+                                </div>
+                                <div class="basket-card-body">
+                                    <div class="basket-card-metrics">
+                                        <div class="metric-item">
+                                            <i class="fas fa-dollar-sign"></i>
+                                            <div>
+                                                <span><?php echo number_format($basket['final_amount'] ?? 0, 2); ?> ر.س</span>
+                                                <div class="text-xs text-light">المبلغ النهائي</div>
+                                            </div>
+                                        </div>
+                                        <div class="metric-item">
+                                            <i class="fas fa-box-open"></i>
+                                            <div>
+                                                <span><?php echo htmlspecialchars($basket['total_items'] ?? 0); ?> طلب</span>
+                                                <div class="text-xs text-light">عدد الطلبات</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="basket-card-info">
+                                        <div class="info-item">
+                                            <i class="fas fa-layer-group text-light"></i>
+                                            <span><?php echo htmlspecialchars($basket['group_name'] ?? '<i>بدون مجموعة</i>'); ?></span>
+                                        </div>
+                                        <div class="info-item">
+                                            <i class="fas fa-calendar-alt text-light"></i>
+                                            <span><?php echo date('d M, Y', strtotime($basket['created_at'])); ?></span>
+                                        </div>
+                                         <div class="info-item">
+                                            <i class="fas fa-user-edit text-light"></i>
+                                            <span><?php echo htmlspecialchars($basket['created_by_name'] ?? 'N/A'); ?></span>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="basket-card-customers">
+                                        <div class="info-item">
+                                            <i class="fas fa-users"></i>
+                                            <span><?php echo htmlspecialchars($basket['customer_names'] ?: 'لا يوجد عملاء مرتبطين'); ?></span>
+                                        </div>
+                                    </div>
+
+                                </div>
+                                <div class="basket-card-actions">
+                                    <a href="view_basket.php?id=<?php echo $basket['id']; ?>" class="btn btn-sm btn-primary"><i class="fas fa-eye"></i> عرض</a>
+                                    <a href="edit_basket.php?id=<?php echo $basket['id']; ?>" class="btn btn-sm btn-secondary"><i class="fas fa-edit"></i> تعديل</a>
+                                    <!-- Add your delete button if needed, with confirmation -->
+                                    <!-- <a href="delete_basket.php?id=<?php echo $basket['id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('هل أنت متأكد؟');"><i class="fas fa-trash"></i></a> -->
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php include '../../includes/footer.php'; ?>

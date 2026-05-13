@@ -1,0 +1,234 @@
+<?php
+/**
+ * Unified Purchase Groups - Manual & Auto
+ * Now displays both manually added groups and auto-generated groups from baskets.
+ */
+
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../../login.php');
+    exit();
+}
+
+require_once '../../../config/database.php';
+
+$page_title = 'مجموعات الشراء';
+$error_message = '';
+$groups = [];
+
+try {
+    // --- QUERY 1: Fetch MANUALLY created groups from the `purchase_groups` table ---
+    $manual_groups_query = "
+        SELECT 
+            pg.id,
+            pg.group_number as group_code,
+            pg.group_name,
+            pg.description,
+            pg.start_date as purchase_date,
+            pg.status,
+            pg.created_at,
+            pg.notes,
+            -- These fields don't directly apply to manual groups but are needed for UNION
+            NULL as basket_id,
+            'manual' as group_type, -- Add a type identifier
+            -- Calculate totals if linked, otherwise show 0
+            (SELECT COUNT(DISTINCT po.id) FROM purchase_orders po WHERE po.purchase_group_id = pg.id) as orders_count,
+            (SELECT SUM(poi.quantity * poi.unit_price) FROM purchase_order_items poi JOIN purchase_orders po ON poi.purchase_order_id = po.id WHERE po.purchase_group_id = pg.id) as total_amount,
+            u.username as created_by_user
+        FROM 
+            purchase_groups pg
+        LEFT JOIN
+            users u ON pg.created_by = u.id
+    ";
+
+    // --- QUERY 2: Fetch AUTO-GENERATED groups from the `purchase_baskets` table ---
+    $auto_groups_query = "
+        SELECT 
+            NULL as id, -- No direct ID in the groups table
+            CONCAT('PG-AUTO-', pb.id) as group_code,
+            CONCAT('مجموعة تلقائية - سلة #', pb.id) as group_name,
+            'تم إنشاؤها تلقائياً من سلة المشتريات' as description,
+            pb.purchase_date,
+            pb.status,
+            pb.created_at,
+            NULL as notes,
+            pb.id as basket_id,
+            'auto' as group_type, -- Add a type identifier
+            COUNT(DISTINCT bi.order_id) as orders_count,
+            SUM(COALESCE(bi.total_price, 0)) as total_amount,
+            u_pb.username as created_by_user
+        FROM 
+            purchase_baskets pb
+        LEFT JOIN 
+            basket_items bi ON pb.id = bi.basket_id
+        LEFT JOIN
+            users u_pb ON pb.created_by = u_pb.id
+        GROUP BY 
+            pb.id
+    ";
+
+    // --- COMBINE both queries using UNION ALL ---
+    $final_query = "
+        ($manual_groups_query)
+        UNION ALL
+        ($auto_groups_query)
+        ORDER BY created_at DESC
+    ";
+    
+    $stmt = $db->prepare($final_query);
+    $stmt->execute();
+    $groups = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    $error_message = 'حدث خطأ أثناء جلب البيانات: ' . $e->getMessage();
+}
+
+include '../../../includes/header.php';
+?>
+
+<!-- Your existing styles are excellent, no changes needed -->
+<style>
+    :root {
+        --primary-color: #4f46e5;
+        --primary-hover: #4338ca;
+        --secondary-color: #10b981;
+        --text-color-dark: #1f2937;
+        --text-color-light: #6b7280;
+        --background-color: #f9fafb;
+        --card-background: #ffffff;
+        --border-color: #e5e7eb;
+        --font-family: 'Cairo', sans-serif;
+    }
+    body { font-family: var(--font-family); background-color: var(--background-color); }
+    .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+    .btn-add-new { background-color: var(--primary-color); color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; transition: background-color 0.3s ease, transform 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .btn-add-new:hover { background-color: var(--primary-hover); transform: translateY(-2px); }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+    .stat-card { background: var(--card-background); border-radius: 0.75rem; padding: 1.5rem; display: flex; align-items: center; gap: 1rem; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.3s ease; }
+    .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    .stat-icon { font-size: 1.5rem; padding: 1rem; border-radius: 50%; color: white; }
+    .stat-value { font-size: 2rem; font-weight: 700; color: var(--text-color-dark); }
+    .stat-label { font-size: 0.9rem; color: var(--text-color-light); }
+    .group-card { background: var(--card-background); border-radius: 1rem; margin-bottom: 1.5rem; border: 1px solid var(--border-color); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; opacity: 0; transform: translateY(20px); animation: fadeIn 0.5s ease-out forwards; transition: all 0.3s ease; }
+    .group-card:hover { transform: translateY(-5px) scale(1.01); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border-color: var(--primary-color); }
+    @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+    .group-header { padding: 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); }
+    .group-title { font-size: 1.25rem; font-weight: 700; color: var(--text-color-dark); margin-bottom: 0.25rem; }
+    .group-code { font-size: 0.875rem; color: var(--text-color-light); font-family: monospace; }
+    .group-badge { padding: 0.5rem 1rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.5rem; }
+    .auto-badge { background-color: #e0e7ff; color: var(--primary-color); }
+    .manual-badge { background-color: #d1fae5; color: #065f46; }
+    .group-body { padding: 1.5rem; background-color: #fdfdff; }
+    .group-description { color: var(--text-color-light); margin-bottom: 1.5rem; font-style: italic; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+    .info-item { background: #f9fafb; padding: 1rem; border-radius: 0.5rem; border: 1px solid var(--border-color); }
+    .info-label { font-size: 0.8rem; color: var(--text-color-light); margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem; }
+    .info-value { font-size: 1rem; font-weight: 600; color: var(--text-color-dark); }
+    .info-value.total { font-size: 1.25rem; color: var(--primary-color); }
+    .group-footer { padding: 1rem 1.5rem; background-color: #f9fafb; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 1rem; }
+    .btn-view { background: var(--secondary-color); color: white; padding: 0.6rem 1.2rem; border-radius: 0.5rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.2s; font-weight: 600; }
+    .btn-view:hover { background: #059669; transform: translateY(-2px); box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3); }
+    .empty-state { text-align: center; padding: 4rem 1.5rem; background-color: var(--card-background); border: 2px dashed var(--border-color); border-radius: 1rem; color: var(--text-color-light); }
+    .empty-state i { font-size: 4rem; margin-bottom: 1.5rem; color: #d1d5db; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1><i class="fas fa-layer-group text-blue-500"></i> <?php echo $page_title; ?></h1>
+        <p class="text-gray-600">عرض المجموعات اليدوية والتلقائية</p>
+    </div>
+    <a href="add.php" class="btn-add-new"><i class="fas fa-plus"></i> إضافة مجموعة يدوية</a>
+</div>
+
+<div class="container-fluid">
+    <?php if (!empty($error_message)): ?>
+    <div class="alert alert-danger" style="margin-bottom: 24px;"><i class="fas fa-exclamation-circle"></i> <strong>خطأ:</strong> <?php echo htmlspecialchars($error_message); ?></div>
+    <?php endif; ?>
+
+    <!-- Statistics -->
+    <?php
+    $total_groups = count($groups);
+    $total_orders = array_sum(array_column($groups, 'orders_count'));
+    $total_value = array_sum(array_column($groups, 'total_amount'));
+    ?>
+    <div class="stats-grid">
+        <div class="stat-card"><div class="stat-icon" style="background-color: #a5b4fc;"><i class="fas fa-layer-group"></i></div><div><div class="stat-label">إجمالي المجموعات</div><div class="stat-value" data-target="<?php echo $total_groups; ?>">0</div></div></div>
+        <div class="stat-card"><div class="stat-icon" style="background-color: #6ee7b7;"><i class="fas fa-file-invoice"></i></div><div><div class="stat-label">إجمالي الطلبات</div><div class="stat-value" data-target="<?php echo $total_orders; ?>">0</div></div></div>
+        <div class="stat-card"><div class="stat-icon" style="background-color: #fca5a5;"><i class="fas fa-dollar-sign"></i></div><div><div class="stat-label">القيمة الإجمالية</div><div class="stat-value" data-target="<?php echo $total_value; ?>">0</div></div></div>
+    </div>
+
+    <!-- Groups List -->
+    <?php if (empty($groups)): ?>
+    <div class="empty-state">
+        <i class="fas fa-folder-open"></i>
+        <h3>لا توجد مجموعات شراء حالياً</h3>
+        <p style="margin-bottom: 20px;">يمكنك إضافة مجموعة يدوياً أو سيتم إنشاؤها تلقائياً عند إنشاء سلال المشتريات.</p>
+        <a href="add.php" class="btn-view" style="background-color: var(--primary-color)"><i class="fas fa-plus"></i> إنشاء مجموعة يدوية</a>
+    </div>
+    <?php else: ?>
+        <?php foreach ($groups as $index => $group): ?>
+        <div class="group-card" style="animation-delay: <?php echo $index * 100; ?>ms;">
+            <div class="group-header">
+                <div>
+                    <div class="group-title"><?php echo htmlspecialchars($group['group_name']); ?></div>
+                    <div class="group-code"><?php echo htmlspecialchars($group['group_code']); ?></div>
+                </div>
+                <!-- Badge to show if group is manual or auto -->
+                <?php if ($group['group_type'] === 'manual'): ?>
+                    <span class="group-badge manual-badge"><i class="fas fa-user-edit"></i> يدوي</span>
+                <?php else: ?>
+                    <span class="group-badge auto-badge"><i class="fas fa-magic"></i> تلقائي</span>
+                <?php endif; ?>
+            </div>
+            
+            <div class="group-body">
+                 <?php if (!empty($group['description'])): ?>
+                    <p class="group-description">"<?php echo htmlspecialchars($group['description']); ?>"</p>
+                <?php endif; ?>
+                
+                <div class="info-grid">
+                    <div class="info-item"><div class="info-label"><i class="fas fa-boxes"></i> عدد الطلبات</div><div class="info-value"><?php echo $group['orders_count'] ?? 0; ?> طلب</div></div>
+                    <div class="info-item"><div class="info-label"><i class="fas fa-calendar"></i> تاريخ البدء</div><div class="info-value"><?php echo $group['purchase_date'] ? date('Y-m-d', strtotime($group['purchase_date'])) : 'N/A'; ?></div></div>
+                    <div class="info-item"><div class="info-label"><i class="fas fa-info-circle"></i> الحالة</div><div class="info-value"><?php echo htmlspecialchars($group['status'] ?? 'N/A'); ?></div></div>
+                    <div class="info-item"><div class="info-label"><i class="fas fa-user"></i> أنشئت بواسطة</div><div class="info-value"><?php echo htmlspecialchars($group['created_by_user'] ?? 'نظام'); ?></div></div>
+                    <div class="info-item" style="grid-column: span 2;"><div class="info-label"><i class="fas fa-money-bill-wave"></i> القيمة الإجمالية</div><div class="info-value total"><?php echo number_format($group['total_amount'] ?? 0, 2); ?> ر.س</div></div>
+                </div>
+            </div>
+
+             <div class="group-footer">
+                <?php if ($group['group_type'] === 'manual'): ?>
+                    <a href="edit.php?id=<?php echo $group['id']; ?>" class="btn-view" style="background-color: #f97316;"><i class="fas fa-edit"></i> تعديل المجموعة</a>
+                    <a href="view.php?id=<?php echo $group['id']; ?>" class="btn-view"><i class="fas fa-eye"></i> عرض التفاصيل</a>
+                <?php else: ?>
+                    <a href="../baskets/view.php?id=<?php echo $group['basket_id']; ?>" class="btn-view"><i class="fas fa-shopping-basket"></i> عرض تفاصيل السلة</a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<!-- JavaScript for Animations -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const counters = document.querySelectorAll('.stat-value');
+    counters.forEach(counter => {
+        const animate = () => {
+            const value = +counter.getAttribute('data-target');
+            const data = +counter.innerText.replace(/,/g, '');
+            const increment = value / 200; // Animation speed
+
+            if (data < value) {
+                counter.innerText = Math.ceil(data + increment).toLocaleString('en-US');
+                setTimeout(animate, 1);
+            } else {
+                counter.innerText = value.toLocaleString('en-US');
+            }
+        }
+        animate();
+    });
+});
+</script>
+
+<?php include '../../../includes/footer.php'; ?>```

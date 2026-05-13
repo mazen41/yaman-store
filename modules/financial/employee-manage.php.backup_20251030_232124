@@ -1,0 +1,658 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit();
+}
+
+require_once '../../config/database.php';
+$page_title = 'إنشاء وحذف الموظفين';
+
+// Handle delete
+if (isset($_GET['delete'])) {
+    try {
+        $id = intval($_GET['delete']);
+        // Delete user (cascade will delete permissions)
+        $db->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);
+        $success_message = 'تم حذف الموظف بنجاح';
+    } catch (PDOException $e) {
+        $error_message = 'حدث خطأ: ' . $e->getMessage();
+    }
+}
+
+// Handle add/edit
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    try {
+        $username = trim($_POST['username']);
+        $full_name = trim($_POST['full_name']);
+        $email = trim($_POST['email']);
+        $role = $_POST['role'];
+        $password = $_POST['password'];
+        
+        if (isset($_POST['id']) && !empty($_POST['id'])) {
+            // Update
+            if (!empty($password)) {
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $db->prepare("
+                    UPDATE users 
+                    SET username = ?, full_name = ?, email = ?, role = ?, password = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([$username, $full_name, $email, $role, $hashed_password, $_POST['id']]);
+            } else {
+                $stmt = $db->prepare("
+                    UPDATE users 
+                    SET username = ?, full_name = ?, email = ?, role = ?
+                    WHERE id = ?
+                ");
+                $stmt->execute([$username, $full_name, $email, $role, $_POST['id']]);
+            }
+            $success_message = 'تم تحديث الموظف بنجاح';
+        } else {
+            // Insert
+            if (empty($password)) {
+                $error_message = 'كلمة المرور مطلوبة للموظف الجديد';
+            } else {
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $db->prepare("
+                    INSERT INTO users (username, full_name, email, password, role)
+                    VALUES (?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$username, $full_name, $email, $hashed_password, $role]);
+                $success_message = 'تم إضافة الموظف بنجاح';
+            }
+        }
+    } catch (PDOException $e) {
+        if ($e->getCode() == 23000) {
+            $error_message = 'اسم المستخدم أو البريد الإلكتروني موجود مسبقاً';
+        } else {
+            $error_message = 'حدث خطأ: ' . $e->getMessage();
+        }
+    }
+}
+
+// Fetch all users
+$users = $db->query("
+    SELECT u.*, 
+    (SELECT COUNT(*) FROM user_permissions WHERE user_id = u.id) as permissions_count
+    FROM users u
+    WHERE u.id != {$_SESSION['user_id']}
+    ORDER BY u.created_at DESC
+")->fetchAll();
+
+// Get edit data
+$edit_user = null;
+if (isset($_GET['edit'])) {
+    $edit_id = intval($_GET['edit']);
+    $edit_user = $db->query("SELECT * FROM users WHERE id = $edit_id")->fetch();
+}
+
+// Statistics
+$total_users = count($users);
+$active_users = $db->query("SELECT COUNT(*) FROM users WHERE id != {$_SESSION['user_id']}")->fetchColumn();
+
+include '../../includes/header.php';
+?>
+
+<div class="min-h-screen bg-gray-50 py-6" dir="rtl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <!-- Header -->
+        <div class="bg-white shadow rounded-lg mb-6">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">
+                            <i class="fas fa-users-cog ml-2 text-green-600"></i>
+                            إنشاء وحذف الموظفين وإعطائهم صلاحيات معينة
+                        </h1>
+                        <p class="text-gray-600 mt-1">إدارة الموظفين وصلاحياتهم</p>
+                    </div>
+                    <div class="mt-4 sm:mt-0 flex gap-2">
+                        <a href="employee-permissions.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition duration-200">
+                            <i class="fas fa-user-shield ml-2"></i>
+                            إدارة الصلاحيات
+                        </a>
+                        <a href="index.php" class="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition duration-200">
+                            <i class="fas fa-arrow-right ml-2"></i>
+                            العودة
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <?php if (isset($success_message)): ?>
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
+            <i class="fas fa-check-circle ml-2"></i><?php echo $success_message; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if (isset($error_message)): ?>
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+            <i class="fas fa-exclamation-circle ml-2"></i><?php echo $error_message; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Statistics -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white shadow rounded-lg p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-users text-3xl text-blue-600"></i>
+                    </div>
+                    <div class="mr-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">إجمالي الموظفين</dt>
+                            <dd class="text-2xl font-bold text-gray-900"><?php echo $total_users; ?></dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white shadow rounded-lg p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-user-check text-3xl text-green-600"></i>
+                    </div>
+                    <div class="mr-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">الموظفين النشطين</dt>
+                            <dd class="text-2xl font-bold text-gray-900"><?php echo $active_users; ?></dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white shadow rounded-lg p-6">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-shield-alt text-3xl text-purple-600"></i>
+                    </div>
+                    <div class="mr-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 truncate">الصلاحيات الممنوحة</dt>
+                            <dd class="text-2xl font-bold text-gray-900">
+                                <?php echo $db->query("SELECT COUNT(*) FROM user_permissions")->fetchColumn(); ?>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Add/Edit Form -->
+            <div class="lg:col-span-1">
+                <div class="bg-white shadow rounded-lg p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-user-plus ml-2 text-green-600"></i>
+                        <?php echo $edit_user ? 'تعديل الموظف' : 'إضافة موظف جديد'; ?>
+                    </h2>
+                    
+                    <form method="POST" class="space-y-4">
+                        <?php if ($edit_user): ?>
+                        <input type="hidden" name="id" value="<?php echo $edit_user['id']; ?>">
+                        <?php endif; ?>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">اسم المستخدم</label>
+                            <input type="text" name="username" required
+                                   value="<?php echo $edit_user['username'] ?? ''; ?>"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">الاسم الكامل</label>
+                            <input type="text" name="full_name" required
+                                   value="<?php echo $edit_user['full_name'] ?? ''; ?>"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">البريد الإلكتروني</label>
+                            <input type="email" name="email" required
+                                   value="<?php echo $edit_user['email'] ?? ''; ?>"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">الدور الوظيفي</label>
+                            <select name="role" required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                                <option value="employee" <?php echo ($edit_user['role'] ?? '') == 'employee' ? 'selected' : ''; ?>>موظف</option>
+                                <option value="accountant" <?php echo ($edit_user['role'] ?? '') == 'accountant' ? 'selected' : ''; ?>>محاسب</option>
+                                <option value="manager" <?php echo ($edit_user['role'] ?? '') == 'manager' ? 'selected' : ''; ?>>مدير</option>
+                                <option value="admin" <?php echo ($edit_user['role'] ?? '') == 'admin' ? 'selected' : ''; ?>>مسؤول</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                كلمة المرور <?php echo $edit_user ? '(اتركها فارغة إذا لم ترد التغيير)' : ''; ?>
+                            </label>
+                            <input type="password" name="password" 
+                                   <?php echo !$edit_user ? 'required' : ''; ?>
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button type="submit" class="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200">
+                                <i class="fas fa-save ml-2"></i>
+                                <?php echo $edit_user ? 'تحديث' : 'حفظ'; ?>
+                            </button>
+                            <?php if ($edit_user): ?>
+                            <a href="employee-manage.php" class="flex-1 text-center bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition duration-200">
+                                إلغاء
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Users List -->
+            <div class="lg:col-span-2">
+                <div class="bg-white shadow rounded-lg overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-200">
+                        <h2 class="text-lg font-semibold text-gray-900">قائمة الموظفين</h2>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الموظف</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">البريد</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الدور</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الصلاحيات</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                <?php if (empty($users)): ?>
+                                <tr>
+                                    <td colspan="5" class="px-6 py-12 text-center text-gray-500">
+                                        <i class="fas fa-users text-4xl mb-4 text-gray-300"></i>
+                                        <p>لا يوجد موظفين</p>
+                                    </td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($users as $user): ?>
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center">
+                                            <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center ml-3">
+                                                <i class="fas fa-user text-green-600"></i>
+                                            </div>
+                                            <div>
+                                                <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($user['full_name']); ?></div>
+                                                <div class="text-sm text-gray-500"><?php echo htmlspecialchars($user['username']); ?></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-gray-500">
+                                        <?php echo htmlspecialchars($user['email']); ?>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <?php
+                                        $role_colors = [
+                                            'admin' => 'bg-red-100 text-red-800',
+                                            'manager' => 'bg-purple-100 text-purple-800',
+                                            'accountant' => 'bg-blue-100 text-blue-800',
+                                            'employee' => 'bg-green-100 text-green-800',
+                                        ];
+                                        $role_names = [
+                                            'admin' => 'مسؤول',
+                                            'manager' => 'مدير',
+                                            'accountant' => 'محاسب',
+                                            'employee' => 'موظف',
+                                        ];
+                                        ?>
+                                        <span class="px-2 py-1 text-xs font-semibold rounded-full <?php echo $role_colors[$user['role']]; ?>">
+                                            <?php echo $role_names[$user['role']]; ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-center">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
+                                            <i class="fas fa-shield-alt ml-1"></i>
+                                            <?php echo $user['permissions_count']; ?>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                        <a href="employee-permissions.php?user_id=<?php echo $user['id']; ?>" 
+                                           class="text-indigo-600 hover:text-indigo-900 ml-3"
+                                           title="إدارة الصلاحيات">
+                                            <i class="fas fa-user-shield"></i>
+                                        </a>
+                                        <a href="?edit=<?php echo $user['id']; ?>" 
+                                           class="text-blue-600 hover:text-blue-900 ml-3"
+                                           title="تعديل">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <a href="?delete=<?php echo $user['id']; ?>" 
+                                           onclick="return confirm('هل أنت متأكد من حذف هذا الموظف؟ سيتم حذف جميع صلاحياته أيضاً.')"
+                                           class="text-red-600 hover:text-red-900"
+                                           title="حذف">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+<?php include '../../includes/footer.php'; ?>
+
+<!-- ============================================ -->
+<!-- COURIER MANAGEMENT SECTION -->
+<!-- ============================================ -->
+<div class="card" style="margin-top: 2rem; background: white; border-radius: 12px; padding: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 2px solid #e5e7eb;">
+        <h2 style="font-size: 1.75rem; font-weight: 700; color: #059669; margin: 0;">
+            <i class="fas fa-truck"></i> إدارة الموصلين
+        </h2>
+        <button onclick="showAddCourierModal()" style="background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 0.75rem 1.5rem; border-radius: 8px; font-weight: 600; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(5, 150, 105, 0.3); transition: transform 0.2s;">
+            <i class="fas fa-plus"></i> إضافة موصل جديد
+        </button>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div style="background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; padding: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: 700;" id="totalCouriers">0</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">إجمالي الموصلين</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 2rem; font-weight: 700;" id="activeCouriers">0</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">الموصلين النشطين</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 1.5rem; font-weight: 700;" id="totalDeliveries">0</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">إجمالي التوصيلات</div>
+        </div>
+        <div style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 1.25rem; font-weight: 700;" id="totalCOD">0 ر.س</div>
+            <div style="opacity: 0.9; margin-top: 0.5rem;">إجمالي COD المحصّل</div>
+        </div>
+    </div>
+
+    <!-- Couriers Table -->
+    <div id="couriersList" style="overflow-x: auto;"></div>
+</div>
+
+<!-- Add Courier Modal -->
+<div id="addCourierModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: white; border-radius: 16px; padding: 2rem; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h3 style="font-size: 1.5rem; font-weight: 700; color: #059669; margin: 0;">
+                <i class="fas fa-user-plus"></i> إضافة موصل جديد
+            </h3>
+            <button onclick="closeAddCourierModal()" style="background: none; border: none; font-size: 1.5rem; color: #6b7280; cursor: pointer;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        
+        <form id="addCourierForm">
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        اسم المستخدم <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input type="text" name="username" required style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;" placeholder="courier1">
+                    <small style="color: #6b7280; font-size: 0.875rem;">سيستخدمه الموصل لتسجيل الدخول</small>
+                </div>
+
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        الاسم الكامل <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input type="text" name="name" required style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;" placeholder="محمد أحمد">
+                </div>
+
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        البريد الإلكتروني
+                    </label>
+                    <input type="email" name="email" style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;" placeholder="courier@example.com">
+                </div>
+
+                <div>
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        رقم الجوال
+                    </label>
+                    <input type="tel" name="phone" style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;" placeholder="05xxxxxxxx">
+                </div>
+
+                <div style="grid-column: 1 / -1;">
+                    <label style="display: block; font-weight: 600; margin-bottom: 0.5rem; color: #374151;">
+                        كلمة المرور <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input type="password" name="password" required style="width: 100%; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem;" placeholder="********">
+                    <small style="color: #6b7280; font-size: 0.875rem;">يمكن للموصل تغييرها لاحقاً</small>
+                </div>
+            </div>
+
+            <div style="background: linear-gradient(135deg, #dbeafe, #bfdbfe); padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0; border-right: 4px solid #3b82f6;">
+                <div style="display: flex; align-items: start; gap: 1rem;">
+                    <i class="fas fa-info-circle" style="color: #1e40af; font-size: 1.5rem; margin-top: 0.25rem;"></i>
+                    <div>
+                        <strong style="color: #1e40af; display: block; margin-bottom: 0.5rem;">رابط تسجيل الدخول للموصل:</strong>
+                        <code style="background: white; padding: 0.75rem; border-radius: 6px; display: block; font-size: 0.875rem; color: #059669; font-weight: 600; word-break: break-all;">https://taksoride.com/courier-login.php</code>
+                        <button type="button" onclick="copyLoginUrl()" style="background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; margin-top: 0.75rem; font-size: 0.875rem;">
+                            <i class="fas fa-copy"></i> نسخ الرابط
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                <button type="submit" style="flex: 1; background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 1rem; border-radius: 8px; font-weight: 700; border: none; cursor: pointer; font-size: 1rem;">
+                    <i class="fas fa-check"></i> إضافة الموصل
+                </button>
+                <button type="button" onclick="closeAddCourierModal()" style="background: #6b7280; color: white; padding: 1rem 1.5rem; border-radius: 8px; font-weight: 600; border: none; cursor: pointer;">
+                    <i class="fas fa-times"></i> إلغاء
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// ============================================
+// COURIER MANAGEMENT JAVASCRIPT
+// ============================================
+
+function showAddCourierModal() {
+    document.getElementById('addCourierModal').style.display = 'flex';
+}
+
+function closeAddCourierModal() {
+    document.getElementById('addCourierModal').style.display = 'none';
+    document.getElementById('addCourierForm').reset();
+}
+
+function copyLoginUrl() {
+    const url = 'https://taksoride.com/courier-login.php';
+    navigator.clipboard.writeText(url).then(() => {
+        alert('✅ تم نسخ الرابط!');
+    });
+}
+
+document.getElementById('addCourierForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري الإضافة...';
+    
+    const formData = new FormData(this);
+    formData.append('action', 'add_courier');
+    
+    try {
+        const response = await fetch('api/manage_courier.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Success message with portal URL
+            const message = `✅ ${data.message}\n\n` +
+                          `📱 رابط تسجيل الدخول:\n${data.portal_url}\n\n` +
+                          `👤 اسم المستخدم: ${formData.get('username')}\n` +
+                          `🔑 كلمة المرور: ${formData.get('password')}\n\n` +
+                          `⚠️ احفظ هذه المعلومات وأرسلها للموصل`;
+            
+            alert(message);
+            closeAddCourierModal();
+            loadCouriers();
+        } else {
+            alert('❌ خطأ: ' + data.error);
+        }
+    } catch (error) {
+        alert('❌ حدث خطأ في الاتصال');
+        console.error(error);
+    }
+    
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = originalText;
+});
+
+async function loadCouriers() {
+    try {
+        const formData = new FormData();
+        formData.append('action', 'list_couriers');
+        
+        const response = await fetch('api/manage_courier.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            const container = document.getElementById('couriersList');
+            const couriers = data.couriers;
+            
+            // Update statistics
+            document.getElementById('totalCouriers').textContent = couriers.length;
+            document.getElementById('activeCouriers').textContent = couriers.length; // TODO: filter active
+            
+            let totalDeliveries = 0;
+            let totalCOD = 0;
+            
+            couriers.forEach(c => {
+                totalDeliveries += parseInt(c.completed_deliveries);
+                totalCOD += parseFloat(c.total_cod_collected);
+            });
+            
+            document.getElementById('totalDeliveries').textContent = totalDeliveries;
+            document.getElementById('totalCOD').textContent = totalCOD.toFixed(2) + ' ر.س';
+            
+            if (couriers.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 4rem; color: #6b7280;">
+                        <i class="fas fa-truck" style="font-size: 4rem; opacity: 0.3; margin-bottom: 1rem;"></i>
+                        <p style="font-size: 1.125rem; font-weight: 600;">لا يوجد موصلين حالياً</p>
+                        <p style="margin-top: 0.5rem;">اضغط "إضافة موصل جديد" للبدء</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = `
+                <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #f9fafb, #f3f4f6); border-bottom: 2px solid #e5e7eb;">
+                            <th style="padding: 1rem; text-align: right; font-weight: 700; color: #374151;">الاسم</th>
+                            <th style="padding: 1rem; text-align: right; font-weight: 700; color: #374151;">اسم المستخدم</th>
+                            <th style="padding: 1rem; text-align: right; font-weight: 700; color: #374151;">الجوال</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 700; color: #374151;">الطلبات</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 700; color: #374151;">المكتملة</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 700; color: #374151;">COD المحصّل</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 700; color: #374151;">تاريخ الإضافة</th>
+                            <th style="padding: 1rem; text-align: center; font-weight: 700; color: #374151;">الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${couriers.map((c, index) => `
+                            <tr style="border-bottom: 1px solid #e5e7eb; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+                                <td style="padding: 1rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700;">
+                                            ${(c.username || 'C').charAt(0).toUpperCase()}
+                                        </div>
+                                        <strong>${c.username || 'موصل'}</strong>
+                                    </div>
+                                </td>
+                                <td style="padding: 1rem; color: #6b7280;">${c.username}</td>
+                                <td style="padding: 1rem;">
+                                    ${c.phone ? `<a href="tel:${c.phone}" style="color: #10b981; text-decoration: none;"><i class="fas fa-phone"></i> ${c.phone}</a>` : '-'}
+                                </td>
+                                <td style="padding: 1rem; text-align: center;">
+                                    <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.75rem; border-radius: 12px; font-weight: 600;">
+                                        ${c.total_assignments}
+                                    </span>
+                                </td>
+                                <td style="padding: 1rem; text-align: center;">
+                                    <span style="background: #d1fae5; color: #065f46; padding: 0.25rem 0.75rem; border-radius: 12px; font-weight: 600;">
+                                        ${c.completed_deliveries}
+                                    </span>
+                                </td>
+                                <td style="padding: 1rem; text-align: center; font-weight: 700; color: #059669;">
+                                    ${parseFloat(c.total_cod_collected).toFixed(2)} ر.س
+                                </td>
+                                <td style="padding: 1rem; text-align: center; font-size: 0.875rem; color: #6b7280;">
+                                    ${new Date(c.created_at).toLocaleDateString('ar-SA')}
+                                </td>
+                                <td style="padding: 1rem; text-align: center;">
+                                    <button onclick="viewCourierDetails(${c.id})" style="background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 6px; border: none; cursor: pointer; font-size: 0.875rem; margin: 0 0.25rem;">
+                                        <i class="fas fa-eye"></i> عرض
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading couriers:', error);
+    }
+}
+
+function viewCourierDetails(courierId) {
+    alert('عرض تفاصيل الموصل #' + courierId + '\n(سيتم تطويرها لاحقاً)');
+}
+
+// Load couriers on page load
+loadCouriers();
+
+// Refresh every 30 seconds
+setInterval(loadCouriers, 30000);
+</script>
+
+<style>
+#addCourierModal input:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+#addCourierModal button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+}
+</style>

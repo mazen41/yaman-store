@@ -1,0 +1,728 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit();
+}
+
+require_once '../../config/database.php';
+$page_title = 'تعديل الطلب';
+
+$order_id = intval($_GET['id'] ?? 0);
+if (!$order_id) {
+    header('Location: index.php');
+    exit();
+}
+
+include '../../includes/header.php';
+?>
+
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+* { box-sizing: border-box; }
+
+.page-container {
+    background: #f3f4f6;
+    min-height: 100vh;
+    padding: 2rem;
+    direction: rtl;
+}
+
+.header-card {
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 25px rgba(5, 150, 105, 0.3);
+    color: white;
+}
+
+.content-grid {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 2rem;
+}
+
+.card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+}
+
+.card-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #059669;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.5rem;
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.table-container {
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table thead {
+    background: #f9fafb;
+}
+
+.data-table th {
+    padding: 0.75rem;
+    text-align: right;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 2px solid #e5e7eb;
+    font-size: 0.875rem;
+}
+
+.data-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.data-table input,
+.data-table select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.875rem;
+}
+
+.btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(5, 150, 105, 0.3);
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+    padding: 0.5rem 1rem;
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+    padding: 0.5rem 1rem;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.summary-row.total {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #059669;
+    border-bottom: none;
+    padding-top: 1rem;
+}
+
+.summary-row.damage {
+    color: #ef4444;
+}
+
+.alert {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.alert-warning {
+    background: #fef3c7;
+    border-right: 4px solid #f59e0b;
+    color: #92400e;
+}
+
+.alert-danger {
+    background: #fee2e2;
+    border-right: 4px solid #ef4444;
+    color: #991b1b;
+}
+
+.loading {
+    text-align: center;
+    padding: 4rem;
+    color: #6b7280;
+}
+
+.spinner {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e5e7eb;
+    border-top-color: #10b981;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.toast {
+    position: fixed;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    z-index: 9999;
+    display: none;
+}
+
+.toast.success {
+    border-right: 5px solid #10b981;
+}
+
+.toast.error {
+    border-right: 5px solid #ef4444;
+}
+
+.toast.show {
+    display: block;
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+</style>
+
+<div class="page-container">
+    <div class="header-card">
+        <h1 style="font-size: 2rem; font-weight: 700; margin: 0;">
+            <i class="fas fa-edit"></i>
+            تعديل الطلب
+        </h1>
+        <p style="margin-top: 0.5rem; opacity: 0.9;">
+            تحديث بيانات الطلب والمنتجات التالفة/المنتهية
+        </p>
+    </div>
+
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p style="margin-top: 1rem;">جاري تحميل بيانات الطلب...</p>
+    </div>
+
+    <div id="content" style="display: none;">
+        <div class="content-grid">
+            <!-- Main Content -->
+            <div>
+                <!-- Order Items -->
+                <div class="card">
+                    <h2 class="card-title">
+                        <i class="fas fa-box"></i>
+                        منتجات الطلب
+                    </h2>
+                    
+                    <div class="table-container">
+                        <table class="data-table" id="itemsTable">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th style="width: 100px;">الكمية</th>
+                                    <th style="width: 120px;">سعر الوحدة</th>
+                                    <th style="width: 120px;">الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsBody">
+                                <!-- Will be populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Damaged Items -->
+                <div class="card" style="margin-top: 2rem;">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>خصم المنتجات التالفة/المنتهية</strong>
+                    </div>
+
+                    <h2 class="card-title">
+                        <i class="fas fa-box-open"></i>
+                        المنتجات التالفة/المنتهية
+                    </h2>
+
+                    <div class="table-container">
+                        <table class="data-table" id="damagesTable">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th style="width: 100px;">الكمية التالفة</th>
+                                    <th style="width: 120px;">نوع الخصم</th>
+                                    <th style="width: 100px;">القيمة</th>
+                                    <th style="width: 120px;">السبب</th>
+                                    <th style="width: 120px;">الخصم المحسوب</th>
+                                    <th style="width: 80px;">حذف</th>
+                                </tr>
+                            </thead>
+                            <tbody id="damagesBody">
+                                <!-- Will be populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <button type="button" class="btn btn-success" onclick="addDamageRow()">
+                        <i class="fas fa-plus"></i>
+                        إضافة منتج تالف
+                    </button>
+                </div>
+
+                <!-- Additional Info -->
+                <div class="card" style="margin-top: 2rem;">
+                    <h2 class="card-title">
+                        <i class="fas fa-info-circle"></i>
+                        معلومات إضافية
+                    </h2>
+
+                    <div class="form-group">
+                        <label class="form-label">ملاحظات الطلب</label>
+                        <textarea id="orderNotes" class="form-input" rows="4" placeholder="أضف ملاحظات..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Sidebar -->
+            <div>
+                <div class="card" style="position: sticky; top: 2rem;">
+                    <h2 class="card-title">
+                        <i class="fas fa-calculator"></i>
+                        الملخص المالي
+                    </h2>
+
+                    <div class="summary-row">
+                        <span>المجموع الفرعي:</span>
+                        <strong id="summarySubtotal">0.00 ريال</strong>
+                    </div>
+
+                    <div class="summary-row damage">
+                        <span>خصم التالف:</span>
+                        <strong id="summaryDamage">-0.00 ريال</strong>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 1rem;">
+                        <label class="form-label">خصم ثابت (اختياري)</label>
+                        <input type="number" id="discountFixed" class="form-input" 
+                               value="0" step="0.01" min="0" onchange="recalculateSummary()">
+                    </div>
+
+                    <div class="summary-row">
+                        <span>الخصم الثابت:</span>
+                        <strong id="summaryDiscount">-0.00 ريال</strong>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">تكلفة الشحن</label>
+                        <input type="number" id="shippingCost" class="form-input" 
+                               value="0" step="0.01" min="0" onchange="recalculateSummary()">
+                    </div>
+
+                    <div class="summary-row">
+                        <span>الشحن:</span>
+                        <strong id="summaryShipping">+0.00 ريال</strong>
+                    </div>
+
+                    <div class="summary-row total">
+                        <span>الإجمالي النهائي:</span>
+                        <strong id="summaryTotal">0.00 ريال</strong>
+                    </div>
+
+                    <button type="button" class="btn btn-primary" onclick="saveOrder()" 
+                            style="width: 100%; margin-top: 1.5rem;" id="saveBtn">
+                        <i class="fas fa-save"></i>
+                        حفظ التغييرات
+                    </button>
+
+                    <a href="index.php" class="btn btn-secondary" style="width: 100%; margin-top: 1rem; text-align: center; text-decoration: none;">
+                        <i class="fas fa-times"></i>
+                        إلغاء
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let orderData = null;
+let damageCounter = 0;
+
+// Load order data
+async function loadOrder() {
+    try {
+        const response = await fetch(`get_order.php?id=<?php echo $order_id; ?>`);
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'فشل تحميل البيانات');
+        }
+        
+        orderData = data;
+        populateForm();
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = 'block';
+        
+    } catch (error) {
+        showToast('خطأ: ' + error.message, 'error');
+        setTimeout(() => window.location.href = 'index.php', 2000);
+    }
+}
+
+// Populate form with data
+function populateForm() {
+    // Populate items
+    const itemsBody = document.getElementById('itemsBody');
+    itemsBody.innerHTML = '';
+    
+    orderData.items.forEach(item => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <strong>${item.name}</strong>
+                <input type="hidden" class="item-id" value="${item.id}">
+                <input type="hidden" class="item-product-id" value="${item.product_id}">
+            </td>
+            <td>
+                <input type="number" class="form-input item-qty" value="${item.qty}" 
+                       min="1" onchange="recalculateItem(this)">
+            </td>
+            <td>
+                <input type="number" class="form-input item-price" value="${item.unit_price}" 
+                       step="0.01" min="0" onchange="recalculateItem(this)">
+            </td>
+            <td>
+                <strong class="item-total">${(item.qty * item.unit_price).toFixed(2)} ريال</strong>
+            </td>
+        `;
+        itemsBody.appendChild(row);
+    });
+    
+    // Populate damages
+    const damagesBody = document.getElementById('damagesBody');
+    damagesBody.innerHTML = '';
+    
+    orderData.damaged_items.forEach(damage => {
+        addDamageRow(damage);
+    });
+    
+    // Populate other fields
+    document.getElementById('discountFixed').value = orderData.order.discount_fixed || 0;
+    document.getElementById('shippingCost').value = orderData.order.shipping_cost || 0;
+    document.getElementById('orderNotes').value = orderData.order.notes || '';
+    
+    recalculateSummary();
+}
+
+// Recalculate item total
+function recalculateItem(input) {
+    const row = input.closest('tr');
+    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.item-price').value) || 0;
+    const total = qty * price;
+    
+    row.querySelector('.item-total').textContent = total.toFixed(2) + ' ريال';
+    recalculateSummary();
+}
+
+// Add damage row
+function addDamageRow(damage = null) {
+    const damagesBody = document.getElementById('damagesBody');
+    const row = document.createElement('tr');
+    damageCounter++;
+    
+    const itemOptions = orderData.items.map(item => 
+        `<option value="${item.id}" data-product-id="${item.product_id}" data-price="${item.unit_price}" 
+                ${damage && damage.order_item_id == item.id ? 'selected' : ''}>
+            ${item.name}
+        </option>`
+    ).join('');
+    
+    row.innerHTML = `
+        <td>
+            <select class="form-input damage-item" onchange="updateDamageCalc(this)" required>
+                <option value="">اختر المنتج</option>
+                ${itemOptions}
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-input damage-qty" value="${damage ? damage.qty_damaged : 1}" 
+                   min="1" onchange="updateDamageCalc(this)" required>
+        </td>
+        <td>
+            <select class="form-input damage-type" onchange="updateDamageCalc(this)">
+                <option value="auto_unit_price" ${!damage || damage.deduction_type == 'auto_unit_price' ? 'selected' : ''}>
+                    سعر الوحدة
+                </option>
+                <option value="amount" ${damage && damage.deduction_type == 'amount' ? 'selected' : ''}>
+                    مبلغ محدد
+                </option>
+                <option value="percent" ${damage && damage.deduction_type == 'percent' ? 'selected' : ''}>
+                    نسبة مئوية
+                </option>
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-input damage-value" value="${damage ? damage.deduction_value : 0}" 
+                   step="0.01" min="0" onchange="updateDamageCalc(this)">
+        </td>
+        <td>
+            <select class="form-input damage-reason">
+                <option value="expired" ${damage && damage.reason == 'expired' ? 'selected' : ''}>منتهي الصلاحية</option>
+                <option value="damaged" ${damage && damage.reason == 'damaged' ? 'selected' : ''}>تالف</option>
+                <option value="returned_opened" ${damage && damage.reason == 'returned_opened' ? 'selected' : ''}>مرتجع مفتوح</option>
+                <option value="other" ${damage && damage.reason == 'other' ? 'selected' : ''}>أخرى</option>
+            </select>
+        </td>
+        <td>
+            <strong class="damage-calc">0.00 ريال</strong>
+        </td>
+        <td>
+            <button type="button" class="btn btn-danger" onclick="removeDamageRow(this)">
+                <i class="fas fa-trash"></i>
+            </button>
+        </td>
+    `;
+    
+    damagesBody.appendChild(row);
+    updateDamageCalc(row.querySelector('.damage-item'));
+}
+
+// Remove damage row
+function removeDamageRow(btn) {
+    btn.closest('tr').remove();
+    recalculateSummary();
+}
+
+// Update damage calculation
+function updateDamageCalc(input) {
+    const row = input.closest('tr');
+    const itemSelect = row.querySelector('.damage-item');
+    const qtyInput = row.querySelector('.damage-qty');
+    const typeSelect = row.querySelector('.damage-type');
+    const valueInput = row.querySelector('.damage-value');
+    const calcSpan = row.querySelector('.damage-calc');
+    
+    const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+    if (!selectedOption || !selectedOption.value) {
+        calcSpan.textContent = '0.00 ريال';
+        recalculateSummary();
+        return;
+    }
+    
+    const unitPrice = parseFloat(selectedOption.dataset.price) || 0;
+    const qty = parseFloat(qtyInput.value) || 0;
+    const type = typeSelect.value;
+    const value = parseFloat(valueInput.value) || 0;
+    
+    let deduction = 0;
+    
+    switch (type) {
+        case 'auto_unit_price':
+            deduction = qty * unitPrice;
+            valueInput.disabled = true;
+            valueInput.value = 0;
+            break;
+        case 'amount':
+            deduction = value;
+            valueInput.disabled = false;
+            break;
+        case 'percent':
+            deduction = (qty * unitPrice) * (value / 100);
+            valueInput.disabled = false;
+            break;
+    }
+    
+    calcSpan.textContent = deduction.toFixed(2) + ' ريال';
+    recalculateSummary();
+}
+
+// Recalculate summary
+function recalculateSummary() {
+    // Calculate subtotal
+    let subtotal = 0;
+    document.querySelectorAll('#itemsBody tr').forEach(row => {
+        const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        subtotal += qty * price;
+    });
+    
+    // Calculate damage deductions
+    let damageDeductions = 0;
+    document.querySelectorAll('#damagesBody tr').forEach(row => {
+        const calcText = row.querySelector('.damage-calc').textContent;
+        const amount = parseFloat(calcText.replace(/[^\d.]/g, '')) || 0;
+        damageDeductions += amount;
+    });
+    
+    const discountFixed = parseFloat(document.getElementById('discountFixed').value) || 0;
+    const shippingCost = parseFloat(document.getElementById('shippingCost').value) || 0;
+    const grandTotal = Math.max(0, subtotal - discountFixed - damageDeductions + shippingCost);
+    
+    // Update display
+    document.getElementById('summarySubtotal').textContent = subtotal.toFixed(2) + ' ريال';
+    document.getElementById('summaryDamage').textContent = '-' + damageDeductions.toFixed(2) + ' ريال';
+    document.getElementById('summaryDiscount').textContent = '-' + discountFixed.toFixed(2) + ' ريال';
+    document.getElementById('summaryShipping').textContent = '+' + shippingCost.toFixed(2) + ' ريال';
+    document.getElementById('summaryTotal').textContent = grandTotal.toFixed(2) + ' ريال';
+}
+
+// Save order
+async function saveOrder() {
+    const saveBtn = document.getElementById('saveBtn');
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري الحفظ...';
+    
+    try {
+        // Collect items
+        const items = [];
+        document.querySelectorAll('#itemsBody tr').forEach(row => {
+            items.push({
+                id: parseInt(row.querySelector('.item-id').value),
+                product_id: parseInt(row.querySelector('.item-product-id').value),
+                qty: parseInt(row.querySelector('.item-qty').value),
+                unit_price: parseFloat(row.querySelector('.item-price').value)
+            });
+        });
+        
+        // Collect damages
+        const damagedItems = [];
+        document.querySelectorAll('#damagesBody tr').forEach(row => {
+            const itemSelect = row.querySelector('.damage-item');
+            const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+            
+            if (selectedOption && selectedOption.value) {
+                damagedItems.push({
+                    order_item_id: parseInt(selectedOption.value),
+                    product_id: parseInt(selectedOption.dataset.productId),
+                    qty_damaged: parseInt(row.querySelector('.damage-qty').value),
+                    deduction_type: row.querySelector('.damage-type').value,
+                    deduction_value: parseFloat(row.querySelector('.damage-value').value),
+                    reason: row.querySelector('.damage-reason').value,
+                    note: ''
+                });
+            }
+        });
+        
+        const payload = {
+            order_id: <?php echo $order_id; ?>,
+            items: items,
+            damaged_items: damagedItems,
+            discount_fixed: parseFloat(document.getElementById('discountFixed').value) || 0,
+            shipping_cost: parseFloat(document.getElementById('shippingCost').value) || 0,
+            notes: document.getElementById('orderNotes').value
+        };
+        
+        const response = await fetch('update_order.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'فشل حفظ البيانات');
+        }
+        
+        showToast('✅ تم حفظ التغييرات بنجاح', 'success');
+        setTimeout(() => window.location.href = 'view.php?id=<?php echo $order_id; ?>', 1500);
+        
+    } catch (error) {
+        showToast('❌ خطأ: ' + error.message, 'error');
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> حفظ التغييرات';
+    }
+}
+
+// Show toast
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast ' + type + ' show';
+    
+    setTimeout(() => {
+        toast.className = 'toast ' + type;
+    }, 3000);
+}
+
+// Load on page load
+document.addEventListener('DOMContentLoaded', loadOrder);
+</script>
+
+<?php include '../../includes/footer.php'; ?>

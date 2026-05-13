@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>نظام إدارة يمان</title>
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'arabic': ['Cairo', 'Arial', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts for Arabic -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Custom CSS for RTL -->
+    <style>
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                opacity: 0.8;
+            }
+
+            70% {
+                transform: scale(1.1);
+                opacity: 0.4;
+            }
+
+            100% {
+                transform: scale(1.2);
+                opacity: 0;
+            }
+        }
+
+        @keyframes spin-once {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .animate-spin-once {
+            animation: spin-once 0.3s ease-in-out;
+        }
+
+        .sidebar-animation-in {
+            animation: slide-in-right 0.5s ease-out forwards;
+        }
+
+        .sidebar-animation-out {
+            animation: slide-out-right 0.3s ease-in forwards;
+        }
+
+        @keyframes slide-in-right {
+            0% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slide-out-right {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        .pulse-animation::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.3);
+            animation: pulse-ring 2s infinite;
+            z-index: -1;
+        }
+
+        body {
+            font-family: 'Cairo', Arial, sans-serif;
+        }
+
+        .rtl {
+            direction: rtl;
+            text-align: right;
+        }
+
+        .ltr {
+            direction: ltr;
+            text-align: left;
+        }
+
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.7s;
+        }
+
+        .btn-primary:hover::before {
+            left: 100%;
+        }
+
+        .btn-secondary {
+            @apply bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(75, 85, 99, 0.3);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(75, 85, 99, 0.4);
+        }
+
+        .btn-secondary:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(75, 85, 99, 0.3);
+        }
+
+        .btn-success {
+            @apply text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            background-color: #C7A46D;
+
+            &:hover {
+                background-color: #B8956A;
+            }
+
+            box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(22, 163, 74, 0.4);
+        }
+
+        .btn-danger {
+            @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(220, 38, 38, 0.4);
+        }
+
+        .form-input {
+            @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+        }
+
+        .table-responsive {
+            @apply overflow-x-auto shadow-lg rounded-lg;
+        }
+
+        .sidebar-link {
+            @apply flex items-center px-4 py-2 text-gray-700 transition duration-200 mb-3;
+
+            &:hover {
+                color: #C7A46D;
+            }
+
+            position: relative;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+
+        .sidebar-link::before {
+            content: '';
+            position: absolute;
+            right: -3px;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background-color: #C7A46D;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar-link:hover {
+            color: #C7A46D;
+            background-color: #f0fdf4;
+        }
+
+        .sidebar-link:hover::before {
+            opacity: 0.7;
+        }
+
+        .sidebar-link.active {
+            color: #C7A46D;
+            font-weight: 600;
+            background-color: #f0fdf4;
+        }
+
+        .sidebar-link.active::before {
+            opacity: 1;
+        }
+
+        .sidebar-icon {
+            @apply text-lg mr-3;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4b5563;
+            transition: all 0.2s ease;
+            background-color: #f3f4f6;
+            border-radius: 6px;
+            padding: 6px;
+        }
+
+        .sidebar-link:hover .sidebar-icon {
+            color: #C7A46D;
+            background-color: #d1fae5;
+            transform: scale(1.05);
+        }
+
+        .sidebar-link.active .sidebar-icon {
+            color: #C7A46D;
+            background-color: #d1fae5;
+        }
+
+        .main-content {
+            transition: margin-right 0.3s;
+        }
+
+        @media (min-width: 768px) {
+            .sidebar-open {
+                margin-right: 16rem;
+            }
+        }
+
+        .gradient-bg {
+            background: #ffffff;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .sidebar-link.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-right: 4px solid white;
+        }
+    </style>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Phone RTL Support -->
+    <link rel="stylesheet"
+        href="<?php echo dirname($_SERVER['PHP_SELF']) === '/' ? '' : '../..'; ?>/assets/css/phone-rtl.css">
+</head>
+
+<body class="bg-gray-100 font-arabic">
+
+    <!-- Left Sidebar -->
+    <aside id="sidebar"
+        class="fixed top-0 right-0 z-40 w-64 h-screen transition-transform translate-x-full sm:translate-x-0">
+        <div class="h-full gradient-bg shadow-lg flex flex-col">
+            <!-- Logo and System Name -->
+            <div class="px-5 py-6 border-b border-gray-200"
+                style="background: linear-gradient(to left, #C7A46D, #B8956A);">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <img src="/assets/images/yamman_logo.png" alt="نظام إدارة يمان" class="h-10 w-auto mr-2">
+                        <h1 class="text-xl font-bold text-gray-800">نظام إدارة يمان</h1>
+                    </div>
+                    <button id="closeSidebarButton"
+                        class="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 hover:bg-gray-200 rounded-full transition-all duration-300 transform hover:scale-110 focus:outline-none md:hidden">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+
+            <!-- User Info -->
+            <?php if (isset($_SESSION['user_id'])): ?>
+                <div class="px-5 py-4 border-b border-gray-200 bg-gray-50">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm"
+                            style="background-color: #C7A46D;">
+                            <?php echo substr($_SESSION['full_name'] ?? 'U', 0, 1); ?>
+                        </div>
+                        <div class="mr-3">
+                            <p class="text-sm font-semibold text-gray-800">
+                                <?php echo $_SESSION['full_name'] ?? 'المستخدم'; ?></p>
+                            <p class="text-xs font-medium" style="color: #C7A46D;">
+                                <?php echo $_SESSION['role'] === 'admin' ? 'مدير النظام' : ($_SESSION['role'] === 'manager' ? 'مدير' : 'موظف'); ?>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <!-- Navigation Links -->
+            <nav class="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+                <!-- Main Menu Section -->
+                <div class="mb-4">
+                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                        القائمة الرئيسية</h3>
+
+                    <div class="space-y-3">
+                        <a href="/index.php"
+                            class="sidebar-link block w-full <?php echo basename($_SERVER['PHP_SELF']) == 'index.php' ? 'active' : ''; ?>">
+                            <i class="fas fa-home sidebar-icon"></i>
+                            <span>الرئيسية</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Modules Section -->
+                <div class="mb-4">
+                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                        الوحدات</h3>
+
+                    <?php include __DIR__ . "/dynamic_sidebar.php"; ?>
+
+                    <?php
+                    // Super Admin only: Portal Slider settings shortcut
+                    try {
+                        if (isset($_SESSION['user_id'])) {
+                            // Prefer isSuperAdmin helper if available
+                            if (function_exists('isSuperAdmin')) {
+                                $isSuper = isSuperAdmin($_SESSION['user_id']);
+                            } else {
+                                // Fallback: direct check on users table
+                                require_once __DIR__ . '/../config/database.php';
+                                $stmtSuper = $db->prepare("SELECT is_admin FROM users WHERE id = ?");
+                                $stmtSuper->execute([$_SESSION['user_id']]);
+                                $rowSuper = $stmtSuper->fetch(PDO::FETCH_ASSOC);
+                                $isSuper = $rowSuper && (int) $rowSuper['is_admin'] === 1;
+                            }
+
+                            if (!empty($isSuper)): ?>
+                                <div class="mt-4 pt-4 border-t border-gray-100">
+                                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">إدارة البوابة</h3>
+                                    <div class="space-y-3">
+                                        <a href="/modules/settings/portal_slides.php"
+                                            class="sidebar-link block w-full <?php echo basename($_SERVER['PHP_SELF']) == 'portal_slides.php' ? 'active' : ''; ?>">
+                                            <span class="sidebar-icon">
+                                                <i class="fas fa-images"></i>
+                                            </span>
+                                            <span>سلايدر بوابة العملاء</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            <?php endif;
+                        }
+                    } catch (Throwable $e) {
+                        // Fail silently if any issue; sidebar should still render
+                    }
+                    ?>
+
+                    <!-- User Section -->
+                    <div class="pt-4 mt-4 border-t border-gray-100">
+                        <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                            الحساب</h3>
+
+                        <div class="space-y-3">
+                            <?php if (isset($_SESSION['user_id'])): ?>
+                                <a href="/profile.php" class="sidebar-link block w-full">
+                                    <i class="fas fa-user-edit sidebar-icon"></i>
+                                    <span>الملف الشخصي</span>
+                                </a>
+                                <a href="/logout.php" class="sidebar-link block w-full">
+                                    <i class="fas fa-sign-out-alt sidebar-icon"></i>
+                                    <span>تسجيل الخروج</span>
+                                </a>
+                            <?php else: ?>
+                                <a href="/login.php" class="sidebar-link block w-full">
+                                    <i class="fas fa-sign-in-alt sidebar-icon"></i>
+                                    <span>تسجيل الدخول</span>
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+            </nav>
+
+            <!-- Footer -->
+            <div class="px-5 py-3 text-center text-xs border-t border-gray-200 bg-gray-50">
+                <p class="font-medium" style="color: #C7A46D;">© <?php echo date('Y'); ?> نظام إدارة يمان</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Top Navigation Bar -->
+    <nav class="shadow-md fixed w-full z-30" style="background: linear-gradient(to left, #C7A46D, #B8956A);">
+        <div class="px-4 py-3 flex items-center justify-between">
+            <!-- Mobile Menu Button with Tooltip -->
+            <div class="group relative">
+                <button id="openSidebarButton"
+                    class="w-10 h-10 flex items-center justify-center bg-white bg-opacity-20 text-white hover:bg-opacity-30 rounded-full transition-all duration-200 focus:outline-none relative overflow-hidden shadow-md">
+                    <div class="relative z-10 flex items-center justify-center">
+                        <i class="fas fa-bars text-lg"></i>
+                    </div>
+                </button>
+                <div
+                    class="absolute left-0 top-full mt-2 w-auto bg-black bg-opacity-80 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+                    فتح القائمة الجانبية
+                </div>
+            </div>
+
+            <!-- Page Title -->
+            <h1 class="text-lg font-bold text-white shadow-sm"><?php echo $page_title ?? 'نظام إدارة يمان'; ?></h1>
+
+            <!-- Right Side Actions -->
+            <div class="flex items-center space-x-4 space-x-reverse">
+                <!-- Notifications -->
+                <div class="relative" id="notifContainer">
+                    <button id="notifButton"
+                        class="w-9 h-9 flex items-center justify-center bg-white bg-opacity-20 text-white hover:bg-opacity-30 rounded-full transition-all duration-200 shadow-sm">
+                        <i class="fas fa-bell"></i>
+                    </button>
+                    <span id="notifBadge"
+                        class="hidden absolute -top-1 -left-1 min-w-[18px] h-4 px-1 bg-red-500 border-2 border-white rounded-full text-[10px] leading-3 flex items-center justify-center"></span>
+                    <!-- Dropdown -->
+                    <div id="notifDropdown"
+                        class="hidden absolute left-0 mt-2 w-80 bg-white rounded-md shadow-lg py-2 z-50 border border-gray-200">
+                        <div class="px-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+                            <span class="text-sm font-semibold text-gray-700">الإشعارات</span>
+                            <button id="notifRefresh" class="text-xs text-blue-600 hover:text-blue-700">
+                                <i class="fas fa-rotate-right ml-1"></i>تحديث
+                            </button>
+                        </div>
+                        <div id="notifList" class="max-h-96 overflow-auto">
+                            <div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>
+                        </div>
+                        <div class="px-3 pt-2 border-t border-gray-100 text-xs text-gray-500">يتم التحديث تلقائياً</div>
+                    </div>
+                </div>
+
+                <!-- User Menu -->
+                <?php if (isset($_SESSION['user_id'])): ?>
+                    <div class="relative">
+                        <button onclick="toggleUserMenu()"
+                            class="flex items-center bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full px-3 py-1.5 transition-all duration-200 shadow-sm">
+                            <span
+                                class="w-7 h-7 rounded-full bg-white flex items-center justify-center font-bold mr-2 shadow-sm"
+                                style="color: #C7A46D;">
+                                <?php echo substr($_SESSION['full_name'] ?? 'U', 0, 1); ?>
+                            </span>
+                            <span class="text-white text-sm font-medium ml-1">
+                                <?php echo $_SESSION['full_name'] ?? 'المستخدم'; ?>
+                            </span>
+                            <i class="fas fa-chevron-down text-xs text-white ml-2"></i>
+                        </button>
+                        <div id="userMenu"
+                            class="hidden absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
+                            <a href="/profile.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-amber-50"
+                                style="&:hover { color: #C7A46D; }">
+                                <i class="fas fa-user-edit ml-2" style="color: #C7A46D;"></i>الملف الشخصي
+                            </a>
+                            <a href="/logout.php"
+                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700">
+                                <i class="fas fa-sign-out-alt ml-2 text-red-600"></i>تسجيل الخروج
+                            </a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="mainContent" class="pt-16 main-content sm:mr-64 transition-all duration-300">
+
+        <script>
+            // Toggle user menu dropdown
+            function toggleUserMenu() {
+                document.getElementById('userMenu').classList.toggle('hidden');
+            }
+
+            // Initialize sidebar
+            document.addEventListener('DOMContentLoaded', function () {
+                // Ensure sidebar is visible on desktop
+                if (window.innerWidth >= 640) { // sm breakpoint
+                    document.getElementById('sidebar').classList.remove('translate-x-full');
+                }
+            });
+
+            // Mobile sidebar toggle with animation
+            document.getElementById('openSidebarButton').addEventListener('click', function () {
+                const button = this;
+                const sidebar = document.getElementById('sidebar');
+
+                // Animate button
+                button.classList.add('animate-spin-once');
+                setTimeout(() => {
+                    button.classList.remove('animate-spin-once');
+                }, 300);
+
+                // Show sidebar with animation
+                sidebar.classList.remove('translate-x-full');
+                sidebar.classList.add('sidebar-animation-in');
+                setTimeout(() => {
+                    sidebar.classList.remove('sidebar-animation-in');
+                }, 500);
+            });
+
+            document.getElementById('closeSidebarButton').addEventListener('click', function () {
+                const sidebar = document.getElementById('sidebar');
+
+                // Hide sidebar with animation
+                sidebar.classList.add('sidebar-animation-out');
+                setTimeout(() => {
+                    sidebar.classList.add('translate-x-full');
+                    sidebar.classList.remove('sidebar-animation-out');
+                }, 300);
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function (event) {
+                const userMenu = document.getElementById('userMenu');
+                const userButton = event.target.closest('button');
+
+                if (userMenu && !userMenu.classList.contains('hidden') &&
+                    (!userButton || !userButton.onclick || userButton.onclick.toString().indexOf('toggleUserMenu') === -1)) {
+                    userMenu.classList.add('hidden');
+                }
+            });
+
+            // Handle window resize
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 640) { // sm breakpoint
+                    document.getElementById('sidebar').classList.remove('translate-x-full');
+                } else {
+                    document.getElementById('sidebar').classList.add('translate-x-full');
+                }
+            });
+
+            // ================= Notifications =================
+            const NOTIF_URL = '/modules/notifications/fetch.php';
+            const notifButton = document.getElementById('notifButton');
+            const notifDropdown = document.getElementById('notifDropdown');
+            const notifBadge = document.getElementById('notifBadge');
+            const notifList = document.getElementById('notifList');
+            const notifRefresh = document.getElementById('notifRefresh');
+
+            function renderNotifItems(items) {
+                if (!items || items.length === 0) {
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>';
+                    return;
+                }
+                const html = items.map(function (item) {
+                    const statusColor = item.status === 'sent' ? 'text-amber-600 bg-amber-50' : (item.status === 'failed' ? 'text-red-600 bg-red-50' : 'text-yellow-700 bg-yellow-50');
+                    const typeIcon = item.type === 'email' ? 'fa-envelope text-blue-600' : (item.type === 'whatsapp' ? 'fa-whatsapp text-amber-600' : 'fa-bell text-gray-500');
+                    const orderNumber = item.order_number ? ('#' + item.order_number) : ('طلب #' + item.order_id);
+                    return (
+                        '<div class="px-3 py-2 hover:bg-gray-50 border-b border-gray-50">' +
+                        '<div class="flex items-start justify-between">' +
+                        '<div class="flex items-start space-x-2 space-x-reverse">' +
+                        '<i class="fas ' + typeIcon + ' mt-1 ml-2"></i>' +
+                        '<div>' +
+                        '<div class="text-sm font-semibold text-gray-800">' + item.title + ' - ' + orderNumber + '</div>' +
+                        '<div class="text-xs text-gray-500">' + (item.customer_name || '') + ' • ' + (item.sent_to || '') + '</div>' +
+                        '</div>' +
+                        '</div>' +
+                        '<span class="text-xs px-2 py-0.5 rounded ' + statusColor + '">' + item.status_text + '</span>' +
+                        '</div>' +
+                        '<div class="mt-2 flex justify-end space-x-2 space-x-reverse text-xs">' +
+                        '<a href="' + item.view_url + '" class="text-gray-600 hover:text-gray-800"><i class="fas fa-eye ml-1"></i>تفاصيل</a>' +
+                        '<a href="' + item.send_url + '" class="text-blue-600 hover:text-blue-800"><i class="fas fa-paper-plane ml-1"></i>إعادة الإرسال</a>' +
+                        '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+                notifList.innerHTML = html;
+            }
+
+            function updateNotifUI(payload) {
+                const count = (payload && typeof payload.count === 'number') ? payload.count : 0;
+                if (count > 0) {
+                    notifBadge.textContent = count > 99 ? '99+' : String(count);
+                    notifBadge.classList.remove('hidden');
+                } else {
+                    notifBadge.classList.add('hidden');
+                    notifBadge.textContent = '';
+                }
+                renderNotifItems(payload && payload.items ? payload.items : []);
+            }
+
+            async function fetchNotifications() {
+                try {
+                    const res = await fetch(NOTIF_URL, { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const data = await res.json();
+                    updateNotifUI(data);
+                } catch (e) {
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-red-600">تعذر تحميل الإشعارات.</div>';
+                    notifBadge.classList.add('hidden');
+                }
+            }
+
+            // Initial fetch and polling every 20s
+            fetchNotifications();
+            let notifInterval = setInterval(fetchNotifications, 20000);
+
+            // Toggle dropdown
+            if (notifButton) {
+                notifButton.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    notifDropdown.classList.toggle('hidden');
+                    if (!notifDropdown.classList.contains('hidden')) {
+                        fetchNotifications();
+                    }
+                });
+            }
+
+            // Manual refresh
+            if (notifRefresh) {
+                notifRefresh.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    fetchNotifications();
+                });
+            }
+
+            // Close dropdown on outside click
+            document.addEventListener('click', function (e) {
+                const within = e.target.closest('#notifContainer');
+                if (!within && notifDropdown && !notifDropdown.classList.contains('hidden')) {
+                    notifDropdown.classList.add('hidden');
+                }
+            });
+        </script>

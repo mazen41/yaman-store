@@ -1,0 +1,373 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit();
+}
+
+require_once '../../config/database.php';
+
+$page_title = 'قائمة عرض طلبات العملاء';
+$error_message = '';
+$success_message = '';
+
+if (isset($_GET['success'])) {
+    $messages = [
+        'created' => 'تم إنشاء الطلب بنجاح',
+        'updated' => 'تم تحديث الطلب بنجاح',
+        'deleted' => 'تم حذف الطلب بنجاح',
+    ];
+    $success_key = $_GET['success'];
+    $success_message = $messages[$success_key] ?? 'تمت العملية بنجاح';
+}
+
+// Get filter parameters from the URL
+$status_filter = $_GET['status'] ?? '';
+$creator_filter = $_GET['creator_id'] ?? '';
+$date_from = $_GET['date_from'] ?? '';
+$date_to = $_GET['date_to'] ?? '';
+$search = $_GET['search'] ?? '';
+$basket_filter = $_GET['basket_id'] ?? '';
+$group_filter = $_GET['group_id'] ?? '';
+
+// Pagination setup
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$records_per_page = 20;
+$offset = ($page - 1) * $records_per_page;
+
+// Fetch data for all filter dropdowns
+try {
+    $users = $db->query("SELECT id, username FROM users ORDER BY username ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $baskets = $db->query("SELECT id, basket_code FROM purchase_baskets ORDER BY created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
+    $groups = $db->query("SELECT id, group_name FROM purchase_groups ORDER BY group_name ASC")->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $users = [];
+    $baskets = [];
+    $groups = [];
+}
+
+// Define the common FROM and JOIN clauses
+$from_joins = "FROM customer_orders o 
+               LEFT JOIN customers c ON o.customer_id = c.id
+               LEFT JOIN users u ON o.created_by = u.id
+               LEFT JOIN purchase_baskets pb ON o.basket_id = pb.id
+               LEFT JOIN purchase_groups pg ON pb.purchase_group_id = pg.id";
+
+// The main SELECT part, including basket and group info
+$select_part = "SELECT 
+                    o.id, 
+                    o.order_number, 
+                    o.customer_id, 
+                    o.status,
+                    o.order_link,
+                    o.created_at,
+                    o.basket_id,
+                    c.name as customer_name, 
+                    c.mobile_number,
+                    COALESCE(o.subtotal_amount, 0) as subtotal_amount,
+                    COALESCE(o.discount_amount, 0) as discount_amount,
+                    COALESCE(o.final_amount, 0) as final_amount, 
+                    COALESCE(o.paid_amount, 0) as paid_amount,                   
+                    COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = o.id), 0) as total_quantity,
+                    pb.basket_code,
+                    pg.group_name as purchase_group_name,
+                    pg.group_number as purchase_group_number,
+                    (SELECT GROUP_CONCAT(CONCAT(ci.id, ':', ci.invoice_number) SEPARATOR ';') 
+                     FROM customer_invoices ci WHERE ci.order_id = o.id) as invoice_data
+                ";
+
+// Base queries
+$query = $select_part . " " . $from_joins . " WHERE 1=1";
+$count_query = "SELECT COUNT(o.id) " . $from_joins . " WHERE 1=1";
+
+$params = [];
+
+// Appending all filters
+if ($status_filter) {
+    $query .= " AND o.status = ?"; $count_query .= " AND o.status = ?";
+    $params[] = $status_filter;
+}
+if ($creator_filter) {
+    $query .= " AND o.created_by = ?"; $count_query .= " AND o.created_by = ?";
+    $params[] = $creator_filter;
+}
+if ($date_from) {
+    $query .= " AND DATE(o.created_at) >= ?"; $count_query .= " AND DATE(o.created_at) >= ?";
+    $params[] = $date_from;
+}
+if ($date_to) {
+    $query .= " AND DATE(o.created_at) <= ?"; $count_query .= " AND DATE(o.created_at) <= ?";
+    $params[] = $date_to;
+}
+if ($basket_filter) {
+    $query .= " AND o.basket_id = ?"; $count_query .= " AND o.basket_id = ?";
+    $params[] = $basket_filter;
+}
+if ($group_filter) {
+    $query .= " AND pb.purchase_group_id = ?"; $count_query .= " AND pb.purchase_group_id = ?";
+    $params[] = $group_filter;
+}
+if ($search) {
+    $search_param = "%$search%";
+    $query .= " AND (o.order_number LIKE ? OR c.name LIKE ? OR c.mobile_number LIKE ?)";
+    $count_query .= " AND (o.order_number LIKE ? OR c.name LIKE ? OR c.mobile_number LIKE ?)";
+    $params = array_merge($params, [$search_param, $search_param, $search_param]);
+}
+
+$query .= " ORDER BY o.created_at DESC LIMIT $records_per_page OFFSET $offset";
+
+try {
+    $count_stmt = $db->prepare($count_query);
+    $count_stmt->execute($params);
+    $total_records = (int)$count_stmt->fetchColumn();
+    $total_pages = ceil($total_records / $records_per_page);
+
+    $stmt = $db->prepare($query);
+    $stmt->execute($params);
+    $orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+} catch (PDOException $e) {
+    $error_message = 'حدث خطأ أثناء استرجاع الطلبات: ' . $e->getMessage();
+    $orders = [];
+    $total_records = 0;
+    $total_pages = 0;
+}
+
+include '../../includes/header.php';
+?>
+
+<!-- Custom Styles -->
+<style>
+    :root {
+        --header-bg: #3b82f6; --body-bg: #f9fafb; --card-bg: #ffffff;
+        --border-color: #e5e7eb; --text-dark: #1f2937; --text-light: #6b7280;
+        --btn-primary-bg: #2563eb; --btn-primary-hover: #1d4ed8;
+    }
+    .page-header-blue { background-color: var(--header-bg); color: white; padding: 1.5rem; text-align: center; }
+    .page-header-blue h1 { font-size: 1.75rem; font-weight: bold; }
+    .filter-card { background: var(--card-bg); border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); padding: 1.5rem; margin-bottom: 1.5rem; }
+    .table-container { background: var(--card-bg); border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); overflow: hidden; }
+    .table-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); }
+    .table-header h2 { font-size: 1.25rem; font-weight: 700; color: var(--text-dark); }
+    .custom-table { width: 100%; text-align: right; }
+    .custom-table thead { background-color: #f3f4f6; }
+    .custom-table th, .custom-table td { padding: 0.75rem 1rem; white-space: nowrap; vertical-align: middle; }
+    .custom-table th { font-weight: 600; font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+    .custom-table tbody tr:hover { background-color: #f9fafb; }
+    .form-control { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 0.5rem; transition: all 0.2s; }
+    .form-control:focus { outline: none; border-color: var(--header-bg); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3); }
+    .btn-search { background-color: var(--btn-primary-bg); color: white; padding: 0.6rem 1.5rem; border-radius: 0.5rem; font-weight: 600; border: none; cursor: pointer; transition: background-color 0.2s; }
+    .btn-search:hover { background-color: var(--btn-primary-hover); }
+    .btn-cancel { background-color: #e5e7eb; color: #374151; padding: 0.6rem 1.5rem; border-radius: 0.5rem; font-weight: 600; border: none; cursor: pointer; transition: background-color 0.2s; text-decoration: none; display: inline-block; text-align:center; }
+    .btn-cancel:hover { background-color: #d1d5db; }
+    .status-badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
+    .status-new { background-color: #fef3c7; color: #92400e; }
+    .status-processing { background-color: #dbeafe; color: #1e40af; }
+    .status-completed { background-color: #d1fae5; color: #065f46; }
+    .status-cancelled { background-color: #fee2e2; color: #b91c1c; }
+</style>
+
+<div dir="rtl" class="bg-gray-50 p-4 md:p-8">
+    
+    <div class="page-header-blue rounded-lg mb-6">
+        <h1><?php echo $page_title; ?></h1>
+    </div>
+
+    <?php if ($success_message): ?>
+    <div class="bg-green-100 border-r-4 border-green-500 text-green-800 p-4 rounded-lg mb-6 shadow-md"><i class="fas fa-check-circle mr-2"></i><?php echo $success_message; ?></div>
+    <?php endif; ?>
+    <?php if ($error_message): ?>
+    <div class="bg-red-100 border-r-4 border-red-500 text-red-800 p-4 rounded-lg mb-6 shadow-md"><i class="fas fa-exclamation-circle mr-2"></i><?php echo $error_message; ?></div>
+    <?php endif; ?>
+
+    <!-- Filters Section -->
+    <div class="filter-card">
+        <form method="GET" action="">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4 items-end">
+                <!-- Search -->
+                <div class="lg:col-span-2 xl:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">البحث</label>
+                    <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="رقم طلب، اسم عميل، جوال..." class="form-control">
+                </div>
+                <!-- Status -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الحالة</label>
+                    <select name="status" class="form-control">
+                        <option value="">الكل</option>
+                        <option value="new" <?php echo $status_filter == 'new' ? 'selected' : ''; ?>>جديد</option>
+                        <option value="processing" <?php echo $status_filter == 'processing' ? 'selected' : ''; ?>>قيد المعالجة</option>
+                        <option value="completed" <?php echo $status_filter == 'completed' ? 'selected' : ''; ?>>مكتمل</option>
+                        <option value="cancelled" <?php echo $status_filter == 'cancelled' ? 'selected' : ''; ?>>ملغي</option>
+                    </select>
+                </div>
+                 <!-- Purchase Basket Filter -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">سلة الشراء</label>
+                    <select name="basket_id" class="form-control">
+                        <option value="">الكل</option>
+                        <?php foreach($baskets as $basket): ?>
+                        <option value="<?php echo $basket['id']; ?>" <?php echo $basket_filter == $basket['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($basket['basket_code']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <!-- Purchase Group Filter -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">المجموعة الشرائية</label>
+                    <select name="group_id" class="form-control">
+                        <option value="">الكل</option>
+                        <?php foreach($groups as $group): ?>
+                        <option value="<?php echo $group['id']; ?>" <?php echo $group_filter == $group['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($group['group_name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                 <!-- Creator (Employee) -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">الموظف</label>
+                    <select name="creator_id" class="form-control">
+                        <option value="">الكل</option>
+                        <?php foreach($users as $user): ?>
+                        <option value="<?php echo $user['id']; ?>" <?php echo $creator_filter == $user['id'] ? 'selected' : ''; ?>><?php echo htmlspecialchars($user['username']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <!-- Date From -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">من تاريخ</label>
+                    <input type="date" name="date_from" value="<?php echo htmlspecialchars($date_from); ?>" class="form-control">
+                </div>
+                <!-- Date To -->
+                <div class="xl:col-span-1">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">إلى تاريخ</label>
+                    <input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>" class="form-control">
+                </div>
+            </div>
+            <div class="mt-4 flex gap-x-2">
+                <button type="submit" class="btn-search"><i class="fas fa-search ml-2"></i>بحث</button>
+                <a href="index.php" class="btn-cancel"><i class="fas fa-redo ml-2"></i>إلغاء</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Table Section -->
+    <div class="table-container">
+        <div class="table-header flex justify-between items-center">
+            <h2>عرض جدول قائمة الطلبات (<?php echo $total_records; ?>)</h2>
+            <a href="create.php" class="btn-search"><i class="fas fa-plus ml-2"></i>طلب جديد</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="custom-table">
+                <thead>
+                    <!-- MODIFIED: Rearranged table headers -->
+                    <tr>
+                        <th>رقم الطلب</th>
+                        <th>العميل</th>
+                        <th>عدد القطع</th>
+                        <th>رابط الطلب</th>
+                        <th>الخصم</th>
+                        <th>المدفوع</th>
+                        <th>المتبقي</th>
+                        <th>الحالة</th>
+                        <th>رقم سلة الشراء</th>
+                        <th>المجموعة الشرائية</th>
+                        <th>الفواتير</th>
+                        <th>الإجمالي قبل الخصم</th>
+                        <th>الإجمالي النهائي</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    <?php if (empty($orders)): ?>
+                    <tr><td colspan="14" class="p-6 text-center text-gray-500">لا توجد طلبات تطابق معايير البحث.</td></tr>
+                    <?php else: ?>
+                    <?php foreach ($orders as $order): 
+                        $remaining_amount = $order['final_amount'] - $order['paid_amount'];
+                    ?>
+                    <tr>
+                        <!-- MODIFIED: Rearranged table data cells to match new header order -->
+                        <td class="font-medium text-gray-800"><?php echo htmlspecialchars($order['order_number']); ?></td>
+                        <td>
+                            <div><?php echo htmlspecialchars($order['customer_name'] ?? 'N/A'); ?></div>
+                            <div class="text-xs text-gray-500"><?php echo htmlspecialchars($order['mobile_number'] ?? ''); ?></div>
+                        </td>
+                        <td class="font-bold text-center"><?php echo $order['total_quantity']; ?></td>
+                        <td>
+                            <?php if (!empty($order['order_link'])): ?>
+                                <a href="<?php echo htmlspecialchars($order['order_link']); ?>" target="_blank" class="text-blue-600 hover:underline">عرض الرابط</a>
+                            <?php else: ?>
+                                <span class="text-gray-400">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?php echo number_format($order['discount_amount'], 2); ?></td>
+                        <td class="text-green-600 font-semibold"><?php echo number_format($order['paid_amount'], 2); ?></td>
+                        <td class="font-semibold <?php echo ($remaining_amount > 0.01) ? 'text-red-600' : 'text-gray-600'; ?>"><?php echo number_format($remaining_amount, 2); ?></td>
+                        <td><span class="status-badge status-<?php echo str_replace('_', '-', $order['status']); ?>"><?php echo htmlspecialchars($order['status']); ?></span></td>
+                        <td>
+                            <?php if (!empty($order['basket_code'])): ?>
+                                <a href="../baskets/view.php?id=<?php echo $order['basket_id']; ?>" class="text-blue-600 hover:underline"><?php echo htmlspecialchars($order['basket_code']); ?></a>
+                            <?php else: ?>
+                                <span class="text-gray-400">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php echo htmlspecialchars($order['purchase_group_name'] ?? '-'); ?>
+                            <?php if(!empty($order['purchase_group_number'])): ?>
+                                <div class="text-xs text-gray-500">(<?php echo htmlspecialchars($order['purchase_group_number']); ?>)</div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <?php if (!empty($order['invoice_data'])): 
+                                $invoices = explode(';', $order['invoice_data']);
+                                foreach ($invoices as $invoice_str):
+                                    if (strpos($invoice_str, ':') !== false) {
+                                        list($inv_id, $inv_number) = explode(':', $invoice_str, 2);
+                            ?>
+                                <a href="/modules/invoices/view.php?id=<?php echo htmlspecialchars($inv_id); ?>" class="text-blue-600 hover:underline block text-xs">
+                                    <?php echo htmlspecialchars($inv_number); ?>
+                                </a>
+                            <?php 
+                                    }
+                                endforeach; 
+                            else: ?>
+                                <span class="text-gray-400">-</span>
+                            <?php endif; ?>
+                        </td>
+                        
+                        <!-- Moved columns -->
+                        <td><?php echo number_format($order['subtotal_amount'], 2); ?></td>
+                        <td class="font-semibold text-gray-900"><?php echo number_format($order['final_amount'], 2); ?></td>
+
+                        <td>
+                            <div class="flex items-center justify-center space-x-1 space-x-reverse">
+                                <a href="edit.php?id=<?php echo $order['id']; ?>" class="p-2 text-yellow-500 hover:bg-yellow-100 rounded-full" title="تعديل"><i class="fas fa-edit"></i></a>
+                                <a href="view.php?id=<?php echo $order['id']; ?>" class="p-2 text-blue-500 hover:bg-blue-100 rounded-full" title="عرض"><i class="fas fa-eye"></i></a>
+                                <a href="print.php?id=<?php echo $order['id']; ?>" target="_blank" class="p-2 text-gray-500 hover:bg-gray-200 rounded-full" title="طباعة"><i class="fas fa-print"></i></a>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        <?php if ($total_pages > 1): ?>
+        <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+                عرض <?php echo $offset + 1; ?> - <?php echo min($offset + $records_per_page, $total_records); ?> من <?php echo $total_records; ?>
+            </div>
+            <div class="inline-flex rounded-md shadow-sm -space-x-px">
+                <?php for ($i = 1; $i <= $total_pages; $i++): 
+                    $page_params = $_GET; $page_params['page'] = $i; ?>
+                <a href="?<?php echo http_build_query($page_params); ?>" class="<?php echo $i == $page ? 'z-10 bg-blue-50 border-blue-500 text-blue-600' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'; ?> relative inline-flex items-center px-4 py-2 border text-sm font-medium">
+                    <?php echo $i; ?>
+                </a>
+                <?php endfor; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php include '../../includes/footer.php'; ?>

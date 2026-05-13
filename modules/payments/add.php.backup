@@ -1,0 +1,343 @@
+<?php
+session_start();
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit();
+}
+
+require_once '../../config/database.php';
+
+$page_title = 'إضافة دفعة';
+$error_message = '';
+$success_message = '';
+$loading = false;
+
+// Get invoice ID
+$invoice_id = intval($_GET['invoice_id'] ?? 0);
+if (!$invoice_id) {
+    header('Location: ../customers/show_invoices.php');
+    exit();
+}
+
+// Fetch invoice with RECALCULATED paid_amount
+$stmt = $db->prepare("
+    SELECT 
+        ci.*,
+        COALESCE((SELECT SUM(amount) FROM customer_payments WHERE invoice_id = ci.id), 0) as actual_paid,
+        co.order_number,
+        c.name as customer_name
+    FROM customer_invoices ci
+    LEFT JOIN customer_orders co ON ci.order_id = co.id
+    LEFT JOIN customers c ON ci.customer_id = c.id
+    WHERE ci.id = ?
+");
+$stmt->execute([$invoice_id]);
+$invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$invoice) {
+    header('Location: ../customers/show_invoices.php');
+    exit();
+}
+
+// Use ACTUAL paid from SUM, not stored value
+$invoice['paid_amount'] = $invoice['actual_paid'];
+$remaining = max(0, $invoice['total_amount'] - $invoice['paid_amount']);
+
+// Handle form submission with CORRECT LOGIC
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $amount = floatval($_POST['amount'] ?? 0);
+    $payment_method = trim($_POST['payment_method'] ?? '');
+    $payment_date = $_POST['payment_date'] ?? date('Y-m-d');
+    $notes = trim($_POST['notes'] ?? '');
+    
+    // VALIDATION (prevent overpayment)
+    if ($amount <= 0) {
+        $error_message = 'المبلغ يجب أن يكون أكبر من صفر';
+    } elseif (empty($payment_method)) {
+        $error_message = 'يرجى اختيار طريقة الدفع';
+    } elseif ($amount > $remaining) {
+        $error_message = sprintf(
+            'خطأ: المبلغ (%.2f ريال) أكبر من المتبقي (%.2f ريال)',
+            $amount,
+            $remaining
+        );
+    } else {
+        try {
+            // ATOMIC TRANSACTION with CORRECT LOGIC
+            $db->beginTransaction();
+            
+            // 1. Check for duplicate (idempotency - prevent double-click)
+            $stmt = $db->prepare("
+                SELECT COUNT(*) FROM customer_payments 
+                WHERE invoice_id = ? 
+                AND amount = ? 
+                AND created_at > DATE_SUB(NOW(), INTERVAL 5 SECOND)
+            ");
+            $stmt->execute([$invoice_id, $amount]);
+            if ($stmt->fetchColumn() > 0) {
+                throw new Exception('طلب مكرر - تم إضافة هذه الدفعة للتو');
+            }
+            
+            // 2. Generate payment number
+            $payment_count = $db->query("SELECT COUNT(*) FROM customer_payments")->fetchColumn();
+            $payment_number = 'PAY-' . date('Ymd') . '-' . str_pad($payment_count + 1, 8, '0', STR_PAD_LEFT);
+            
+            // 3. Insert payment
+            $stmt = $db->prepare("
+                INSERT INTO customer_payments 
+                (payment_number, customer_id, invoice_id, amount, currency, payment_method, 
+                 payment_date, notes, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'SAR', ?, ?, ?, ?, NOW(), NOW())
+            ");
+            $stmt->execute([
+                $payment_number,
+                $invoice['customer_id'],
+                $invoice_id,
+                $amount,
+                $payment_method,
+                $payment_date,
+                $notes,
+                $_SESSION['user_id']
+            ]);
+            
+            // 4. RECALCULATE paid_amount using SUM (CORRECT LOGIC - not +=)
+            $stmt = $db->prepare("
+                UPDATE customer_invoices 
+                SET paid_amount = (
+                    SELECT COALESCE(SUM(amount), 0) 
+                    FROM customer_payments 
+                    WHERE invoice_id = ?
+                ),
+                updated_at = NOW()
+                WHERE id = ?
+            ");
+            $stmt->execute([$invoice_id, $invoice_id]);
+            
+            // 5. Calculate remaining with MAX guard
+            $stmt = $db->prepare("
+                UPDATE customer_invoices 
+                SET remaining_amount = GREATEST(0, total_amount - paid_amount)
+                WHERE id = ?
+            ");
+            $stmt->execute([$invoice_id]);
+            
+            // 6. Update status with CORRECT conditional logic
+            $stmt = $db->prepare("
+                UPDATE customer_invoices 
+                SET status = CASE
+                    WHEN paid_amount = 0 THEN 'pending'
+                    WHEN paid_amount >= total_amount THEN 'paid'
+                    WHEN paid_amount > 0 AND paid_amount < total_amount THEN 'partially_paid'
+                    ELSE 'pending'
+                END,
+                updated_at = NOW()
+                WHERE id = ?
+            ");
+            $stmt->execute([$invoice_id]);
+            
+            // 7. Sync order (if exists)
+            if ($invoice['order_id']) {
+                // Recalculate order paid_amount using SUM
+                $stmt = $db->prepare("
+                    UPDATE customer_orders 
+                    SET paid_amount = (
+                        SELECT COALESCE(SUM(cp.amount), 0)
+                        FROM customer_payments cp
+                        INNER JOIN customer_invoices ci ON cp.invoice_id = ci.id
+                        WHERE ci.order_id = ?
+                    ),
+                    updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$invoice['order_id'], $invoice['order_id']]);
+                
+                // Update order status
+                $stmt = $db->prepare("
+                    UPDATE customer_orders 
+                    SET status = CASE
+                        WHEN paid_amount >= final_amount THEN 'completed'
+                        WHEN paid_amount > 0 THEN 'processing'
+                        ELSE status
+                    END,
+                    updated_at = NOW()
+                    WHERE id = ?
+                ");
+                $stmt->execute([$invoice['order_id']]);
+            }
+            
+            // COMMIT
+            $db->commit();
+            
+            // Refresh invoice data
+            $stmt = $db->prepare("
+                SELECT *,
+                COALESCE((SELECT SUM(amount) FROM customer_payments WHERE invoice_id = id), 0) as actual_paid
+                FROM customer_invoices WHERE id = ?
+            ");
+            $stmt->execute([$invoice_id]);
+            $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+            $invoice['paid_amount'] = $invoice['actual_paid'];
+            $remaining = max(0, $invoice['total_amount'] - $invoice['paid_amount']);
+            
+            $success_message = "✅ تم إضافة الدفعة بنجاح - رقم الدفعة: {$payment_number}";
+            
+        } catch (Exception $e) {
+            $db->rollBack();
+            $error_message = 'حدث خطأ: ' . $e->getMessage();
+        }
+    }
+}
+
+include '../../includes/header.php';
+?>
+
+<div class="min-h-screen bg-gray-50 py-6" dir="rtl">
+    <div class="max-w-2xl mx-auto px-4">
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-6 py-4 border-b bg-blue-600 text-white rounded-t-lg">
+                <h1 class="text-xl font-bold">إضافة دفعة للفاتورة #<?php echo htmlspecialchars($invoice['invoice_number']); ?></h1>
+                <?php if ($invoice['customer_name']): ?>
+                <p class="text-sm mt-1">العميل: <?php echo htmlspecialchars($invoice['customer_name']); ?></p>
+                <?php endif; ?>
+            </div>
+
+            <?php if ($error_message): ?>
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg m-6">
+                <strong>❌ خطأ:</strong> <?php echo $error_message; ?>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($success_message): ?>
+            <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg m-6">
+                <strong><?php echo $success_message; ?></strong>
+                <div class="mt-3 text-sm space-y-1">
+                    <p><strong>المبلغ الإجمالي:</strong> <?php echo number_format($invoice['total_amount'], 2); ?> ريال</p>
+                    <p><strong>المبلغ المدفوع:</strong> <?php echo number_format($invoice['paid_amount'], 2); ?> ريال</p>
+                    <p><strong>المتبقي:</strong> <?php echo number_format($remaining, 2); ?> ريال</p>
+                    <p><strong>الحالة:</strong> 
+                        <?php 
+                        if ($invoice['status'] == 'paid') echo '<span class="text-green-600 font-bold">✅ مدفوع</span>';
+                        elseif ($invoice['status'] == 'partially_paid') echo '<span class="text-yellow-600 font-bold">⚠️ مدفوع جزئياً</span>';
+                        else echo '<span class="text-red-600 font-bold">⏳ معلق</span>';
+                        ?>
+                    </p>
+                </div>
+                <div class="mt-4">
+                    <a href="../customers/show_invoices.php" class="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        ← العودة إلى قائمة الفواتير
+                    </a>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($remaining > 0 && !$success_message): ?>
+            <form method="POST" class="p-6 space-y-4" id="paymentForm" enctype="multipart/form-data">
+                <!-- Invoice Summary -->
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h3 class="font-bold text-lg mb-2">ملخص الفاتورة</h3>
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <span class="text-gray-600">المبلغ الإجمالي:</span>
+                            <span class="font-bold"><?php echo number_format($invoice['total_amount'], 2); ?> ريال</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">المدفوع حالياً:</span>
+                            <span class="font-bold text-green-600"><?php echo number_format($invoice['paid_amount'], 2); ?> ريال</span>
+                        </div>
+                        <div class="col-span-2">
+                            <span class="text-gray-600">المتبقي:</span>
+                            <span class="font-bold text-red-600 text-xl"><?php echo number_format($remaining, 2); ?> ريال</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Amount -->
+                <div>
+                    <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">
+                        مبلغ الدفعة * <span class="text-xs text-gray-500">(الحد الأقصى: <?php echo number_format($remaining, 2); ?> ريال)</span>
+                    </label>
+                    <input 
+                        type="number" 
+                        id="amount" 
+                        name="amount" 
+                        step="0.01" 
+                        min="0.01" 
+                        max="<?php echo $remaining; ?>" 
+                        value="<?php echo $remaining; ?>"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" 
+                        required
+                    >
+                </div>
+
+                <!-- Payment Method -->
+                <div>
+                    <label for="payment_method" class="block text-sm font-medium text-gray-700 mb-1">طريقة الدفع *</label>
+                    <select id="payment_method" name="payment_method" class="w-full px-4 py-2 border border-gray-300 rounded-lg" required>
+                        <option value="">-- اختر طريقة الدفع --</option>
+                        <option value="cash">نقدي</option>
+                        <option value="transfer">تحويل بنكي</option>
+                        <option value="credit_card">بطاقة ائتمانية</option>
+                        <option value="check">شيك</option>
+                    </select>
+                </div>
+
+                <!-- Payment Date -->
+                <div>
+                    <label for="payment_date" class="block text-sm font-medium text-gray-700 mb-1">تاريخ الدفع</label>
+                    <input type="date" id="payment_date" name="payment_date" value="<?php echo date('Y-m-d'); ?>" class="w-full px-4 py-2 border border-gray-300 rounded-lg">
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">ملاحظات</label>
+                    <textarea id="notes" name="notes" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg"></textarea>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex justify-between pt-4 border-t">
+                    <a href="../customers/show_invoices.php" class="px-6 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600">
+                        إلغاء
+                    </a>
+                    <button 
+                        type="submit" 
+                        class="px-8 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        id="submitBtn"
+                    >
+                        💰 حفظ الدفعة
+                    </button>
+                </div>
+            </form>
+
+            <script>
+            // IDEMPOTENCY: Prevent double-click
+            let submitted = false;
+            document.getElementById('paymentForm').addEventListener('submit', function(e) {
+                if (submitted) {
+                    e.preventDefault();
+                    return false;
+                }
+                submitted = true;
+                const btn = document.getElementById('submitBtn');
+                btn.disabled = true;
+                btn.textContent = '⏳ جاري الحفظ...';
+            });
+            </script>
+
+            <?php elseif ($remaining <= 0): ?>
+            <div class="p-6">
+                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg text-center">
+                    <p class="text-xl font-bold">✅ الفاتورة مدفوعة بالكامل</p>
+                    <p class="mt-2">المبلغ المدفوع: <?php echo number_format($invoice['paid_amount'], 2); ?> ريال</p>
+                    <div class="mt-4">
+                        <a href="../customers/show_invoices.php" class="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            ← العودة إلى قائمة الفواتير
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<?php include '../../includes/footer.php'; ?>

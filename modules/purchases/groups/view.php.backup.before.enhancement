@@ -1,0 +1,286 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../../login.php');
+    exit();
+}
+
+require_once '../../../config/database.php';
+
+$page_title = 'عرض مجموعة الشراء';
+$group_id = intval($_GET['id'] ?? 0);
+
+if (!$group_id) {
+    header('Location: index.php');
+    exit();
+}
+
+try {
+    // 1. Fetch group details and the creator's name
+    $stmt = $db->prepare("
+        SELECT pg.*, u.full_name as created_by_name
+        FROM purchase_groups pg
+        LEFT JOIN users u ON pg.created_by = u.id
+        WHERE pg.id = ?
+    ");
+    $stmt->execute([$group_id]);
+    $group = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$group) {
+        header('Location: index.php');
+        exit();
+    }
+
+    // 2. Fetch related purchase baskets
+    $baskets_stmt = $db->prepare("
+        SELECT pb.id, pb.basket_code, pb.final_amount, pb.status, pb.created_at
+        FROM purchase_baskets pb
+        WHERE pb.purchase_group_id = ?
+        ORDER BY pb.created_at DESC
+    ");
+    $baskets_stmt->execute([$group_id]);
+    $baskets = $baskets_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // 3. Fetch related customer orders (linked via the baskets)
+    $customer_orders_stmt = $db->prepare("
+        SELECT co.id, co.order_number, co.final_amount, co.status, co.created_at, c.name as customer_name
+        FROM customer_orders co
+        JOIN purchase_baskets pb ON co.basket_id = pb.id
+        LEFT JOIN customers c ON co.customer_id = c.id
+        WHERE pb.purchase_group_id = ?
+        ORDER BY co.created_at DESC
+    ");
+    $customer_orders_stmt->execute([$group_id]);
+    $customer_orders = $customer_orders_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // START: MODIFIED BLOCK - Detailed Business Calculations
+    // 4. Calculate statistics and business metrics
+    $stats = [
+        'total_baskets' => count($baskets),
+        'total_baskets_amount' => array_sum(array_column($baskets, 'final_amount')),
+        'total_customer_orders' => count($customer_orders),
+        'total_customer_orders_amount' => array_sum(array_column($customer_orders, 'final_amount'))
+    ];
+
+    // Business Intelligence Calculations
+    $revenue = $stats['total_customer_orders_amount'];
+    $cost = $stats['total_baskets_amount'];
+    $profit = $revenue - $cost;
+
+    // Calculate profit margin, avoiding division by zero
+    $profit_margin = ($revenue > 0) ? ($profit / $revenue) * 100 : 0;
+    // Calculate markup on cost (ROI), avoiding division by zero
+    $markup_percentage = ($cost > 0) ? ($profit / $cost) * 100 : 0;
+
+    // Add new metrics to the stats array for easy access in the view
+    $stats['profit'] = $profit;
+    $stats['profit_margin'] = $profit_margin;
+    $stats['markup_percentage'] = $markup_percentage;
+
+    // Determine color and icon for profit/loss display
+    $profit_color = 'text-gray-800';
+    $profit_icon = 'fas fa-minus';
+    if ($stats['profit'] > 0.01) { // Use a small threshold to avoid floating point issues
+        $profit_color = 'text-green-600';
+        $profit_icon = 'fas fa-arrow-up';
+    } elseif ($stats['profit'] < -0.01) {
+        $profit_color = 'text-red-600';
+        $profit_icon = 'fas fa-arrow-down';
+    }
+    // END: MODIFIED BLOCK
+
+} catch (PDOException $e) {
+    $error_message = "حدث خطأ في قاعدة البيانات: " . $e->getMessage();
+    // Initialize variables to prevent errors on the page
+    $group = [];
+    $baskets = [];
+    $customer_orders = [];
+    $stats = array_fill_keys(['total_baskets', 'total_baskets_amount', 'total_customer_orders', 'total_customer_orders_amount', 'profit', 'profit_margin', 'markup_percentage'], 0);
+    $profit_color = 'text-gray-800';
+    $profit_icon = 'fas fa-minus';
+}
+
+include '../../../includes/header.php';
+?>
+
+<div class="min-h-screen bg-gray-50 py-6" dir="rtl">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-purple-600 to-indigo-700 shadow-xl rounded-2xl mb-8 overflow-hidden">
+            <div class="px-8 py-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold text-white flex items-center">
+                            <i class="fas fa-layer-group ml-3 text-purple-200"></i>
+                            <?php echo htmlspecialchars($group['group_name'] ?? 'مجموعة غير موجودة'); ?>
+                        </h1>
+                        <p class="text-purple-100 mt-2 text-lg">
+                            رقم المجموعة: <?php echo htmlspecialchars($group['group_number'] ?? 'غير محدد'); ?>
+                        </p>
+                    </div>
+                    <div class="flex gap-3">
+                        <a href="edit.php?id=<?php echo $group_id; ?>" class="inline-flex items-center px-6 py-3 bg-white text-purple-600 rounded-xl hover:bg-purple-50 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 font-semibold">
+                            <i class="fas fa-edit ml-2"></i>
+                            تعديل
+                        </a>
+                        <a href="index.php" class="inline-flex items-center px-6 py-3 bg-purple-800 text-white rounded-xl hover:bg-purple-900 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 font-semibold">
+                            <i class="fas fa-arrow-right ml-2"></i>
+                            العودة
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- START: MODIFIED BLOCK - Financial Analysis Section -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 mb-8 border-t-4 border-indigo-500">
+            <h2 class="text-2xl font-bold text-gray-900 flex items-center mb-6">
+                <i class="fas fa-chart-line ml-3 text-indigo-500"></i>
+                التحليل المالي للمجموعة
+            </h2>
+
+            <!-- Main Financial Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                <!-- Total Revenue -->
+                <div class="bg-teal-50 p-5 rounded-xl border border-teal-200">
+                    <p class="text-md font-semibold text-teal-800">إجمالي الإيرادات (المبيعات)</p>
+                    <div class="flex items-center justify-center gap-2 mt-2">
+                        <p class="text-4xl font-bold text-teal-600"><?php echo number_format($stats['total_customer_orders_amount'], 2); ?></p>
+                        <span class="text-lg font-semibold text-teal-700">ر.س</span>
+                    </div>
+                </div>
+                <!-- Total Cost -->
+                <div class="bg-orange-50 p-5 rounded-xl border border-orange-200">
+                    <p class="text-md font-semibold text-orange-800">إجمالي التكاليف (المشتريات)</p>
+                     <div class="flex items-center justify-center gap-2 mt-2">
+                        <p class="text-4xl font-bold text-orange-600"><?php echo number_format($stats['total_baskets_amount'], 2); ?></p>
+                        <span class="text-lg font-semibold text-orange-700">ر.س</span>
+                    </div>
+                </div>
+                <!-- Net Profit / Loss -->
+                <div class="bg-gray-50 p-5 rounded-xl border <?php echo ($stats['profit'] > 0.01) ? 'border-green-300' : (($stats['profit'] < -0.01) ? 'border-red-300' : 'border-gray-200'); ?>">
+                    <p class="text-md font-semibold text-gray-800">صافي الربح / الخسارة</p>
+                    <div class="flex items-center justify-center gap-2 mt-2">
+                        <i class="<?php echo $profit_icon; ?> text-2xl <?php echo $profit_color; ?>"></i>
+                        <p class="text-4xl font-bold <?php echo $profit_color; ?>"><?php echo number_format(abs($stats['profit']), 2); ?></p>
+                        <span class="text-lg font-semibold <?php echo $profit_color; ?>">ر.س</span>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="my-6 border-dashed">
+
+            <!-- Secondary Percentage Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <p class="text-sm font-medium text-gray-600">هامش الربح (من الإيرادات)</p>
+                    <p class="text-2xl font-bold text-indigo-700 mt-1"><?php echo number_format($stats['profit_margin'], 2); ?>%</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-xl">
+                    <p class="text-sm font-medium text-gray-600">نسبة الربح على التكلفة (ROI)</p>
+                    <p class="text-2xl font-bold text-indigo-700 mt-1"><?php echo number_format($stats['markup_percentage'], 2); ?>%</p>
+                </div>
+            </div>
+        </div>
+        <!-- END: MODIFIED BLOCK -->
+
+
+        <!-- Main Content -->
+        <div class="space-y-8">
+        
+            <!-- Associated Purchase Baskets Table -->
+            <div class="bg-white shadow-xl rounded-2xl overflow-hidden">
+                <div class="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-900 flex items-center">
+                        <i class="fas fa-shopping-basket ml-2 text-green-600"></i>
+                        سلال الشراء المرتبطة بالمجموعة (<?php echo $stats['total_baskets']; ?>)
+                    </h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <?php if (empty($baskets)): ?>
+                    <p class="p-6 text-center text-gray-500">لا توجد سلال شراء مرتبطة بهذه المجموعة حتى الآن.</p>
+                    <?php else: ?>
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">رقم السلة</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">تاريخ الإنشاء</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">المبلغ النهائي</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">الحالة</th>
+                                <th class="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase">عرض</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php foreach ($baskets as $basket): ?>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600"><?php echo htmlspecialchars($basket['basket_code']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700"><?php echo date('Y/m/d', strtotime($basket['created_at'])); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700"><?php echo number_format($basket['final_amount'], 2); ?> ر.س</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-green-100 text-green-800">
+                                        <?php echo htmlspecialchars($basket['status']); ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-center">
+                                    <a href="../../baskets/view.php?id=<?php echo $basket['id']; ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all" title="عرض السلة"><i class="fas fa-eye text-sm"></i></a>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Associated Customer Orders Table -->
+            <div class="bg-white shadow-xl rounded-2xl overflow-hidden">
+                <div class="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-900 flex items-center">
+                        <i class="fas fa-users ml-2 text-teal-600"></i>
+                        طلبات العملاء المرتبطة بالمجموعة (<?php echo $stats['total_customer_orders']; ?>)
+                    </h2>
+                </div>
+                <div class="overflow-x-auto">
+                    <?php if (empty($customer_orders)): ?>
+                    <p class="p-6 text-center text-gray-500">لا توجد طلبات عملاء مرتبطة بهذه المجموعة حتى الآن.</p>
+                    <?php else: ?>
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">رقم الطلب</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">اسم العميل</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">تاريخ الطلب</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">المبلغ النهائي</th>
+                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">الحالة</th>
+                                <th class="px-6 py-3 text-center text-xs font-bold text-gray-700 uppercase">عرض</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <?php foreach ($customer_orders as $co): ?>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600"><?php echo htmlspecialchars($co['order_number']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900"><?php echo htmlspecialchars($co['customer_name']); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700"><?php echo date('Y/m/d', strtotime($co['created_at'])); ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-teal-700"><?php echo number_format($co['final_amount'], 2); ?> ر.س</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                     <span class="px-3 py-1 inline-flex text-xs font-bold rounded-full bg-teal-100 text-teal-800">
+                                        <?php echo htmlspecialchars($co['status']); ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-center">
+                                    <a href="../../orders/view.php?id=<?php echo $co['id']; ?>" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all" title="عرض الطلب"><i class="fas fa-eye text-sm"></i></a>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php include '../../../includes/footer.php'; ?>
