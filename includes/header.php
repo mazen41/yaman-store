@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>نظام إدارة يمان</title>
+    <title><?php echo isset($page_title) ? $page_title . ' - ' : ''; ?>Yaman Accounting Calculator</title>
 
     <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -307,8 +307,8 @@
                 style="background: linear-gradient(to left, #C7A46D, #B8956A);">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
-                        <img src="/assets/images/yamman_logo.png" alt="نظام إدارة يمان" class="h-10 w-auto mr-2">
-                        <h1 class="text-xl font-bold text-gray-800">نظام إدارة يمان</h1>
+                        <img src="/assets/images/yamman_logo.png" alt="Yaman Accounting Calculator" class="h-10 w-auto mr-2">
+                        <h1 class="text-xl font-bold text-gray-800">Yaman Accounting Calculator</h1>
                     </div>
                     <button id="closeSidebarButton"
                         class="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 hover:bg-gray-200 rounded-full transition-all duration-300 transform hover:scale-110 focus:outline-none md:hidden">
@@ -423,7 +423,7 @@
 
             <!-- Footer -->
             <div class="px-5 py-3 text-center text-xs border-t border-gray-200 bg-gray-50">
-                <p class="font-medium" style="color: #C7A46D;">© <?php echo date('Y'); ?> نظام إدارة يمان</p>
+                <p class="font-medium" style="color: #C7A46D;">© <?php echo date('Y'); ?> Yaman Accounting Calculator</p>
             </div>
         </div>
     </aside>
@@ -446,7 +446,7 @@
             </div>
 
             <!-- Page Title -->
-            <h1 class="text-lg font-bold text-white shadow-sm"><?php echo $page_title ?? 'نظام إدارة يمان'; ?></h1>
+            <h1 class="text-lg font-bold text-white shadow-sm"><?php echo $page_title ?? 'Yaman Accounting Calculator'; ?></h1>
 
             <!-- Right Side Actions -->
             <div class="flex items-center space-x-4 space-x-reverse">

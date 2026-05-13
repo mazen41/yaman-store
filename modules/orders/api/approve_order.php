@@ -79,7 +79,7 @@ try {
         'customer_type_name' => $customer['customer_type_name'] ?? 'عام',
         'items' => $final_items,
         // NEW PAYMENT DATA
-        'payment_method' => trim($_POST['payment_method'] ?? 'cash'),
+        'payment_method' => trim($_POST['payment_method'] ?? ''),
         'bank_account_id' => isset($_POST['bank_account_id']) ? intval($_POST['bank_account_id']) : null,
         'customer_card_number' => trim($_POST['customer_card_number'] ?? ''),
         'reference_number' => trim($_POST['reference_number'] ?? ''),
@@ -102,9 +102,8 @@ try {
 
     if ($final_amount < 0) $final_amount = 0;
     
-    // Ensure paid amount does not exceed final amount (unless it's a new system rule for overpayment, which is not implied)
-    if ($final_data['paid_amount'] > $final_amount) {
-         $final_data['paid_amount'] = $final_amount;
+    if (empty($final_data['payment_method'])) {
+        throw new Exception('يرجى اختيار طريقة الدفع قبل الموافقة.');
     }
 
     // --- NEW: Payment Method Server-Side Validation ---

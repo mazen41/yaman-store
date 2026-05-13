@@ -147,7 +147,7 @@ include '../../includes/header.php';
     <!-- Data Table -->
     <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
         <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
+            <table class="min-w-full divide-y divide-gray-200" style="min-width: 1100px;">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
@@ -158,6 +158,7 @@ include '../../includes/header.php';
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">مبلغ المشتريات</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الرصيد الحالي</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الربح من البطاقة</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نسبة الربح</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">تاريخ الإنشاء</th>
                         <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">الإجراءات</th>
                     </tr>
@@ -165,7 +166,7 @@ include '../../includes/header.php';
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php if (empty($items)): ?>
                     <tr>
-                        <td colspan="10" class="px-6 py-12 text-center text-gray-500">
+                        <td colspan="11" class="px-6 py-12 text-center text-gray-500">
                             <i class="fas fa-inbox text-5xl mb-3 text-gray-300"></i>
                             <p class="text-lg font-semibold">لا توجد بطاقات شراء لعرضها.</p>
                             <?php if ($can_add): ?>
@@ -190,6 +191,7 @@ include '../../includes/header.php';
 
                             // Calculate profit for this card
                             $profit = $initial_balance - $card_purchase_amount;
+                            $profit_percentage = ($card_purchase_amount > 0) ? ($profit / $card_purchase_amount) * 100 : 0;
 
                             $total_card_purchase_amount += $card_purchase_amount;
                             $total_initial_balance += $initial_balance;
@@ -215,6 +217,9 @@ include '../../includes/header.php';
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-bold <?php echo ($profit >= 0) ? 'text-teal-600' : 'text-orange-600'; ?>">
                                 <?php echo number_format($profit, 0, '', ''); ?> <?php echo $currency_symbol; ?>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $profit_percentage >= 0 ? 'text-green-600' : 'text-red-600'; ?>">
+                                <?php echo number_format($profit_percentage, 2); ?>%
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                 <?php echo date('Y-m-d H:i', strtotime($item['created_at'])); ?>

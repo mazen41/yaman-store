@@ -37,8 +37,17 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 $customer_id = intval($_GET['id']);
 $active_tab = $_GET['tab'] ?? 'details';
 
+$can_view_customers = hasPermission($user_id, 'customers', 'view');
+$can_edit_customers = hasPermission($user_id, 'customers', 'edit');
+$can_delete_customers = hasPermission($user_id, 'customers', 'delete');
+$can_view_orders = hasPermission($user_id, 'orders', 'view');
 $can_add_orders = hasPermission($user_id, 'orders', 'add');
 $can_edit_orders = hasPermission($user_id, 'orders', 'edit');
+$can_delete_orders = hasPermission($user_id, 'orders', 'delete') || $can_edit_orders;
+$can_view_invoices = hasPermission($user_id, 'customer_invoices', 'view');
+$can_view_payments = hasPermission($user_id, 'payments', 'view');
+$can_edit_payments = hasPermission($user_id, 'payments', 'edit');
+$can_delete_payments = hasPermission($user_id, 'payments', 'delete') || $can_edit_payments;
 
 $payment_method_translations = [
     'cash'        => 'نقدي',
@@ -290,7 +299,7 @@ include '../../includes/header.php';
                         <p class="text-gray-600 mt-1"><?php echo htmlspecialchars($customer['name']); ?> &mdash; <span class="text-blue-600 font-bold"><?php echo htmlspecialchars($customer['customer_code']); ?></span></p>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <a href="edit.php?id=<?php echo $customer_id; ?>" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><i class="fas fa-edit ml-2"></i>تعديل</a>
+                        <?php if ($can_edit_customers): ?><a href="edit.php?id=<?php echo $customer_id; ?>" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"><i class="fas fa-edit ml-2"></i>تعديل</a><?php endif; ?>
                         <a href="../orders/sync_customer_invoices.php?customer_id=<?php echo $customer_id; ?>&redirect=<?php echo urlencode($_SERVER['REQUEST_URI']); ?>" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm"><i class="fas fa-sync ml-2"></i>مزامنة الفواتير</a>
                         <button onclick="copyPortalLink('<?php echo $customer['portal_token']; ?>')" class="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"><i class="fas fa-copy ml-2"></i>نسخ رابط البوابة</button>
                         <a href="../../customer_portal/portal.php?token=<?php echo $customer['portal_token']; ?>" target="_blank" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"><i class="fas fa-external-link-alt ml-2"></i>فتح البوابة</a>
@@ -586,7 +595,7 @@ include '../../includes/header.php';
                                     </td>
                                     <td>
                                         <div style="display:flex;gap:5px;justify-content:center;">
-                                            <a href="../orders/view.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background:#dbeafe;color:#1e40af;" title="عرض"><i class="fas fa-eye"></i></a>
+                                            <?php if ($can_view_orders): ?><a href="../orders/view.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background:#dbeafe;color:#1e40af;" title="عرض"><i class="fas fa-eye"></i></a><?php endif; ?>
                                             <?php if ($can_add_orders): ?>
                                                 <button onclick="openManagerNotesModal(<?php echo $order['id']; ?>)" class="action-icon" style="background:#e0e7ff;color:#4338ca;border:none;" title="ملاحظات المدير"><i class="fas fa-user-shield"></i></button>
                                             <?php endif; ?>
@@ -594,7 +603,7 @@ include '../../includes/header.php';
                                                 <a href="../orders/edit.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background:#fef3c7;color:#92400e;" title="تعديل"><i class="fas fa-edit"></i></a>
                                             <?php endif; ?>
                                             <a href="../orders/print.php?id=<?php echo $order['id']; ?>" target="_blank" class="action-icon" style="background:#f3f4f6;color:#374151;" title="طباعة"><i class="fas fa-print"></i></a>
-                                            <?php if ($can_edit_orders): ?>
+                                            <?php if ($can_delete_orders): ?>
                                                 <button onclick="deleteOrder(<?php echo $order['id']; ?>, '<?php echo htmlspecialchars($order['order_number']); ?>')" class="action-icon" style="background:#fee2e2;color:#b91c1c;border:none;" title="حذف"><i class="fas fa-trash-alt"></i></button>
                                             <?php endif; ?>
                                         </div>
@@ -668,7 +677,7 @@ include '../../includes/header.php';
                                     <td class="px-6 py-4 text-sm text-gray-500"><?php echo date('d/m/Y', strtotime($invoice['created_at'])); ?></td>
                                     <td class="px-6 py-4 text-sm">
                                         <div class="flex gap-2">
-                                            <a href="../invoices/view.php?id=<?php echo $invoice['id']; ?>" class="text-blue-600 hover:text-blue-900" title="عرض"><i class="fas fa-eye"></i></a>
+                                            <?php if ($can_view_invoices): ?><a href="../invoices/view.php?id=<?php echo $invoice['id']; ?>" class="text-blue-600 hover:text-blue-900" title="عرض"><i class="fas fa-eye"></i></a><?php endif; ?>
                                             <?php if ($inv_remain > 0): ?>
                                             <a href="../payments/add.php?invoice_id=<?php echo $invoice['id']; ?>" class="text-purple-600 hover:text-purple-900" title="تسجيل دفعة"><i class="fas fa-money-bill-wave"></i></a>
                                             <?php endif; ?>
@@ -719,9 +728,9 @@ include '../../includes/header.php';
                                     <td class="px-6 py-4 text-sm text-gray-500"><?php echo date('d/m/Y', strtotime($payment['payment_date'])); ?></td>
                                     <td class="px-6 py-4 text-sm">
                                         <div class="flex gap-2">
-                                            <a href="../payments/view.php?id=<?php echo $payment['id']; ?>" class="text-blue-600 hover:text-blue-900" title="عرض"><i class="fas fa-eye"></i></a>
-                                            <a href="../payments/edit.php?id=<?php echo $payment['id']; ?>" class="text-green-600 hover:text-green-900" title="تعديل"><i class="fas fa-edit"></i></a>
-                                            <a href="../payments/delete.php?id=<?php echo $payment['id']; ?>" class="text-red-600 hover:text-red-900" title="حذف" onclick="return confirm('هل أنت متأكد من حذف هذه الدفعة؟');"><i class="fas fa-trash"></i></a>
+                                            <?php if ($can_view_payments): ?><a href="../payments/view.php?id=<?php echo $payment['id']; ?>" class="text-blue-600 hover:text-blue-900" title="عرض"><i class="fas fa-eye"></i></a><?php endif; ?>
+                                            <?php if ($can_edit_payments): ?><a href="../payments/edit.php?id=<?php echo $payment['id']; ?>" class="text-green-600 hover:text-green-900" title="تعديل"><i class="fas fa-edit"></i></a><?php endif; ?>
+                                            <?php if ($can_delete_payments): ?><a href="../payments/delete.php?id=<?php echo $payment['id']; ?>" class="text-red-600 hover:text-red-900" title="حذف" onclick="return confirm('هل أنت متأكد من حذف هذه الدفعة؟');"><i class="fas fa-trash"></i></a><?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>

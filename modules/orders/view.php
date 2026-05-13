@@ -322,7 +322,11 @@ include '../../includes/header.php';
                         <div class="card-header"><h3 class="card-title text-purple-600"><i class="fas fa-images"></i> صور ومرفقات الطلب</h3></div>
                         <div class="card-body">
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <?php foreach ($images as $img):
+                                <?php $gallery_images = []; foreach ($images as $img) {
+                                    $stored_path_for_gallery = $img['image_path'] ?? '';
+                                    $gallery_images[] = ($stored_path_for_gallery !== '' && strpos($stored_path_for_gallery, 'uploads/') === 0) ? '../../' . $stored_path_for_gallery : $stored_path_for_gallery;
+                                } ?>
+                                <?php foreach ($images as $gallery_index => $img):
                                     $stored_path = $img['image_path'] ?? '';
                                     if ($stored_path !== '' && strpos($stored_path, 'uploads/') === 0) {
                                         $image_url = '../../' . $stored_path;
@@ -330,10 +334,10 @@ include '../../includes/header.php';
                                         $image_url = $stored_path;
                                     }
                                     ?>
-                                    <a href="<?php echo htmlspecialchars($image_url); ?>" target="_blank" class="block group">
+                                    <button type="button" onclick="openOrderImageGallery(<?php echo $gallery_index; ?>)" class="block group w-full text-right">
                                         <img src="<?php echo htmlspecialchars($image_url); ?>" alt="Order Image" class="img-thumbnail">
                                         <div class="mt-1 text-xs text-center text-gray-500 truncate"><?php echo htmlspecialchars($img['image_name']); ?></div>
-                                    </a>
+                                    </button>
                                 <?php endforeach; ?>
                             </div>
                         </div>
@@ -503,5 +507,36 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+
+<?php if (!empty($images)): ?>
+<div id="orderImageGalleryModal" class="fixed inset-0 z-[9999] hidden bg-black/90 items-center justify-center p-4" onclick="if(event.target === this) closeOrderImageGallery()">
+    <button type="button" onclick="closeOrderImageGallery()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white text-gray-800 flex items-center justify-center shadow z-10"><i class="fas fa-times"></i></button>
+    <button type="button" onclick="changeOrderGalleryImage(-1)" class="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow z-10"><i class="fas fa-chevron-right"></i></button>
+    <img id="orderGalleryImage" src="" alt="Order Image" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl">
+    <button type="button" onclick="changeOrderGalleryImage(1)" class="absolute left-4 md:left-8 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow z-10"><i class="fas fa-chevron-left"></i></button>
+</div>
+<script>
+const orderGalleryImages = <?php echo json_encode($gallery_images ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+let currentOrderGalleryIndex = 0;
+function openOrderImageGallery(index) {
+    currentOrderGalleryIndex = index;
+    document.getElementById('orderGalleryImage').src = orderGalleryImages[currentOrderGalleryIndex] || '';
+    const modal = document.getElementById('orderImageGalleryModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+function closeOrderImageGallery() {
+    const modal = document.getElementById('orderImageGalleryModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+function changeOrderGalleryImage(delta) {
+    if (!orderGalleryImages.length) return;
+    currentOrderGalleryIndex = (currentOrderGalleryIndex + delta + orderGalleryImages.length) % orderGalleryImages.length;
+    document.getElementById('orderGalleryImage').src = orderGalleryImages[currentOrderGalleryIndex];
+}
+</script>
+<?php endif; ?>
 
 <?php include '../../includes/footer.php'; ?>

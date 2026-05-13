@@ -36,9 +36,9 @@ if ($user_id === 0) {
 }
 
 // Check if the user has the specific permission to delete purchase groups
-if (!hasPermission($user_id, 'purchase_groups', 'delete')) {
+if (!hasPermission($user_id, 'purchase_groups', 'edit')) {
     http_response_code(403); // Forbidden
-    echo json_encode(['success' => false, 'message' => 'ليس لديك صلاحية لحذف مجموعات الشراء.']);
+    echo json_encode(['success' => false, 'message' => 'ليس لديك صلاحية لتعديل أو حذف مجموعات الشراء.']);
     exit();
 }
 

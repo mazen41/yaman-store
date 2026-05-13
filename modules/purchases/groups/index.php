@@ -24,7 +24,7 @@ if (!hasPermission($user_id, 'purchase_groups', 'view')) {
 
 // Get permissions
 $can_edit_groups = hasPermission($user_id, 'purchase_groups', 'edit');
-$can_delete_groups = hasPermission($user_id, 'purchase_groups', 'delete');
+$can_delete_groups = $can_edit_groups;
 $can_create_status = hasPermission($user_id, 'purchase_groups', 'create_status');
 
 $page_title = 'مجموعات الشراء';
@@ -185,9 +185,11 @@ include '../../../includes/header.php';
             <i class="fas fa-folder-open" style="font-size: 48px; color: #d1d5db; margin-bottom: 15px;"></i>
             <h3>لا توجد مجموعات شراء تطابق البحث</h3>
             <p style="margin-bottom: 20px;">يمكنك إضافة مجموعة يدوياً لتنظيم سلال الشراء والطلبات.</p>
-            <a href="add.php" class="btn btn-primary">
-                <i class="fas fa-plus"></i> إنشاء مجموعة يدوية
-            </a>
+            <?php if ($can_edit_groups): ?>
+                <a href="add.php" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> إنشاء مجموعة يدوية
+                </a>
+            <?php endif; ?>
         </div>
     <?php else: ?>
         <div class="table-container">

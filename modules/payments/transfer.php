@@ -69,14 +69,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare("UPDATE bank_accounts SET current_balance = ? WHERE id = ?")->execute([$new_to_balance, $to_account_id]);
             $target_name = $to_account['bank_name'];
 
-            // Log bank-to-bank transactions
+            // Log bank-to-bank transactions and link both sides so reports can reconcile every movement
             $desc_out = "تحويل إلى {$to_account['bank_name']}. " . $description;
-            $db->prepare("INSERT INTO bank_account_transactions (account_id, transaction_type, amount, balance_before, balance_after, description, created_by) VALUES (?, 'transfer_out', ?, ?, ?, ?, ?)")
-               ->execute([$from_account_id, $amount, $from_account['current_balance'], $new_from_balance, $desc_out, $_SESSION['user_id']]);
+            $log_out = $db->prepare("INSERT INTO bank_account_transactions (account_id, transaction_type, amount, balance_before, balance_after, description, created_by) VALUES (?, 'transfer_out', ?, ?, ?, ?, ?)");
+            $log_out->execute([$from_account_id, $amount, $from_account['current_balance'], $new_from_balance, $desc_out, $_SESSION['user_id']]);
+            $out_transaction_id = $db->lastInsertId();
             
             $desc_in = "استلام من {$from_account['bank_name']}. " . $description;
-            $db->prepare("INSERT INTO bank_account_transactions (account_id, transaction_type, amount, balance_before, balance_after, description, created_by) VALUES (?, 'transfer_in', ?, ?, ?, ?, ?)")
-               ->execute([$to_account_id, $amount, $to_account['current_balance'], $new_to_balance, $desc_in, $_SESSION['user_id']]);
+            $log_in = $db->prepare("INSERT INTO bank_account_transactions (account_id, transaction_type, amount, balance_before, balance_after, description, related_transaction_id, created_by) VALUES (?, 'transfer_in', ?, ?, ?, ?, ?, ?)");
+            $log_in->execute([$to_account_id, $amount, $to_account['current_balance'], $new_to_balance, $desc_in, $out_transaction_id, $_SESSION['user_id']]);
+            $in_transaction_id = $db->lastInsertId();
+            $db->prepare("UPDATE bank_account_transactions SET related_transaction_id = ? WHERE id = ?")->execute([$in_transaction_id, $out_transaction_id]);
         }
 
         $db->commit();

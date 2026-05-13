@@ -10,6 +10,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 require_once '../../../config/database.php';
+require_once '../../../includes/check_permissions.php';
 $page_title = 'عرض مجموعة الشراء';
 $group_id = intval($_GET['id'] ?? 0);
 $success_message = '';
@@ -38,10 +39,21 @@ function isAdmin($user_id, $db) {
     }
 }
 $current_user_id = $_SESSION['user_id'] ?? 0;
+if (!hasPermission($current_user_id, 'purchase_groups', 'view')) {
+    $_SESSION['error_message'] = 'ليس لديك صلاحية لعرض مجموعات الشراء.';
+    header('Location: ../../../index.php');
+    exit();
+}
+$can_edit_groups = hasPermission($current_user_id, 'purchase_groups', 'edit');
 $isAdmin = isAdmin($current_user_id, $db);
 
 // Handle POST requests for adding baskets and orders
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!$can_edit_groups) {
+        $_SESSION['error_message'] = 'ليس لديك صلاحية لتعديل مجموعات الشراء.';
+        header('Location: view.php?id=' . $group_id);
+        exit();
+    }
     if (isset($_POST['action'])) {
         try {
             if ($_POST['action'] === 'add_basket') {
@@ -313,9 +325,9 @@ include '../../../includes/header.php';
                         </p>
                     </div>
                     <div class="flex gap-3">
-                        <a href="edit.php?id=<?php echo $group_id; ?>" class="inline-flex items-center px-6 py-3 bg-white text-purple-600 rounded-xl hover:bg-purple-50 transition-all duration-200 shadow-lg font-semibold">
+                        <?php if ($can_edit_groups): ?><a href="edit.php?id=<?php echo $group_id; ?>" class="inline-flex items-center px-6 py-3 bg-white text-purple-600 rounded-xl hover:bg-purple-50 transition-all duration-200 shadow-lg font-semibold">
                             <i class="fas fa-edit ml-2"></i> تعديل
-                        </a>
+                        </a><?php endif; ?>
                         <a href="index.php" class="inline-flex items-center px-6 py-3 bg-purple-800 text-white rounded-xl hover:bg-purple-900 transition-all duration-200 shadow-lg font-semibold">
                             <i class="fas fa-arrow-right ml-2"></i> العودة
                         </a>
@@ -373,9 +385,9 @@ include '../../../includes/header.php';
                 <h2 class="text-xl font-bold text-gray-900 flex items-center">
                     <i class="fas fa-shopping-basket ml-2 text-amber-600"></i> سلال الشراء المرتبطة
                 </h2>
-                <button onclick="openAddBasketModal()" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all shadow-lg">
+                <?php if ($can_edit_groups): ?><button onclick="openAddBasketModal()" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all shadow-lg">
                     <i class="fas fa-plus ml-2"></i> إضافة سلة
-                </button>
+                </button><?php endif; ?>
             </div>
             <div class="overflow-x-auto">
                 <?php if (empty($baskets)): ?>
@@ -391,7 +403,6 @@ include '../../../includes/header.php';
                                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700">عدد المنتجات</th>
                                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700">رقم السلة</th>
                                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700">تاريخ الطلب</th>
-                                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700">الإجمالي النهائي</th>
                                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700">الحالة</th>
                                 <th class="px-6 py-3 text-center text-xs font-bold text-gray-700">الإجراءات</th>
                             </tr>
@@ -404,7 +415,6 @@ include '../../../includes/header.php';
                             foreach ($baskets as $basket): 
                                 $sum_basket_items += intval($basket['items_count'] ?? 0);
                                 $sum_basket_subtotal += floatval($basket['subtotal_amount'] ?? 0);
-                                $sum_basket_final += floatval($basket['final_amount'] ?? 0);
                             ?>
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-6 py-4 text-sm font-semibold text-gray-900"><?php echo htmlspecialchars($basket['basket_name'] ?? '-'); ?></td>
@@ -414,7 +424,6 @@ include '../../../includes/header.php';
                                     <td class="px-6 py-4 text-center text-sm font-bold text-blue-600"><?php echo intval($basket['items_count'] ?? 0); ?></td>
                                     <td class="px-6 py-4 text-sm font-bold text-blue-600"><?php echo htmlspecialchars($basket['id']); ?></td>
                                     <td class="px-6 py-4 text-sm text-gray-700"><?php echo $basket['purchase_date'] ? date('Y/m/d', strtotime($basket['purchase_date'])) : date('Y/m/d', strtotime($basket['created_at'])); ?></td>
-                                    <td class="px-6 py-4 text-sm font-bold text-green-600"><?php echo number_format($basket['final_amount']); ?></td>
                                     <td class="px-6 py-4">
                                         <?php 
                                         $st = [
@@ -427,7 +436,7 @@ include '../../../includes/header.php';
                                             'finished' => 'منتهية',
                                             'cancelled' => 'ملغية',
                                             'shipped' => 'مشحونة',
-                                            't' => 'قيد المعالجة / ترانزيت' // معالجة حالة حرف T
+                                            't' => 'ترانزيت' // معالجة حالة حرف T
                                         ]; 
                                         $raw_status = strtolower(trim($basket['status'] ?? ''));
                                         $display_status = $st[$raw_status] ?? $basket['status'];
@@ -439,7 +448,7 @@ include '../../../includes/header.php';
                                     <td class="px-6 py-4 text-center">
                                         <div class="flex items-center justify-center gap-2">
                                             <a href="/modules/purchases/view_basket.php?id=<?php echo $basket['id']; ?>" class="w-8 h-8 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"><i class="fas fa-eye text-sm"></i></a>
-                                            <button onclick="deleteBasket(<?php echo $basket['id']; ?>, '<?php echo htmlspecialchars(addslashes($basket['basket_code'])); ?>')" class="w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all"><i class="fas fa-trash text-sm"></i></button>
+                                            <?php if ($can_edit_groups): ?><button onclick="deleteBasket(<?php echo $basket['id']; ?>, '<?php echo htmlspecialchars(addslashes($basket['basket_code'])); ?>')" class="w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all"><i class="fas fa-trash text-sm"></i></button><?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -449,9 +458,7 @@ include '../../../includes/header.php';
                             <tr>
                                 <td colspan="4" class="px-6 py-4 text-left text-gray-900">إجمالي عدد المنتجات:</td>
                                 <td class="px-6 py-4 text-center text-blue-700 font-bold"><?php echo $sum_basket_items; ?></td>
-                                <td colspan="2" class="px-6 py-4 text-left text-gray-900">الإجمالي الكلي:</td>
-                                <td class="px-6 py-4 text-green-700"><?php echo number_format($sum_basket_final); ?> ر.ي</td>
-                                <td colspan="2"></td>
+                                <td colspan="4"></td>
                             </tr>
                         </tfoot>
                     </table>
@@ -465,9 +472,9 @@ include '../../../includes/header.php';
                 <h2 class="text-xl font-bold text-gray-900 flex items-center">
                     <i class="fas fa-users ml-2 text-teal-600"></i> طلبات العملاء المرتبطة
                 </h2>
-                <button onclick="openAddOrderModal()" class="inline-flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all shadow-lg">
+                <?php if ($can_edit_groups): ?><button onclick="openAddOrderModal()" class="inline-flex items-center px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all shadow-lg">
                     <i class="fas fa-plus ml-2"></i> إضافة طلب
-                </button>
+                </button><?php endif; ?>
             </div>
             <div class="overflow-x-auto">
                 <?php if (empty($customer_orders)): ?>
@@ -482,7 +489,6 @@ include '../../../includes/header.php';
                                 <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">الكمية</th>
                                 <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">الحالة</th>
                                 <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">العملة</th>
-                                <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">الإجمالي النهائي</th>
                                 <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">المدفوع</th>
                                 <th class="px-4 py-3 text-right text-xs font-bold text-gray-700">المتبقي</th>
                                 <th class="px-4 py-3 text-center text-xs font-bold text-gray-700">الروابط</th>
@@ -502,7 +508,6 @@ include '../../../includes/header.php';
                                 $sum_order_qty += intval($co['total_quantity'] ?? 0);
                                 $sum_order_subtotal += floatval($co['subtotal_amount'] ?? $co['final_amount']);
                                 $sum_order_discount += floatval($co['discount_amount'] ?? 0);
-                                $sum_order_final += floatval($co['final_amount'] ?? 0);
                                 $sum_order_paid += floatval($co['paid_amount'] ?? 0);
                                 $sum_order_remaining += $rem;
                             ?>
@@ -526,7 +531,7 @@ include '../../../includes/header.php';
                                             'ready_to_deliver' => 'جاهز للتسليم',
                                             'shipped' => 'قيد الشحن',
                                             'purchased' => 'تم الشراء',
-                                            't' => 'قيد المعالجة / ترانزيت' // معالجة حالة حرف T
+                                            't' => 'ترانزيت' // معالجة حالة حرف T
                                         ]; 
                                         $raw_order_status = strtolower(trim($co['status'] ?? ''));
                                         $display_order_status = $os[$raw_order_status] ?? $co['status'];
@@ -536,7 +541,6 @@ include '../../../includes/header.php';
                                         </span>
                                     </td>
                                     <td class="px-4 py-4 text-sm"><span class="px-2 py-1 text-xs font-bold rounded bg-blue-50 text-blue-700 border border-blue-200"><?php echo htmlspecialchars($co['currency'] ?? 'SAR'); ?></span></td>
-                                    <td class="px-4 py-4 text-sm font-bold text-emerald-700"><?php echo number_format($co['final_amount'] ?? 0); ?></td>
                                     <td class="px-4 py-4 text-sm text-green-600 font-semibold"><?php echo number_format($co['paid_amount'] ?? 0); ?></td>
                                     <td class="px-4 py-4 text-sm <?php echo $rem > 0 ? 'text-red-600' : 'text-gray-700'; ?> font-semibold"><?php echo number_format($rem); ?></td>
                                     <td class="px-4 py-4 text-center text-sm">
@@ -559,7 +563,7 @@ include '../../../includes/header.php';
                                     <td class="px-4 py-4 text-center">
                                         <div class="flex items-center justify-center gap-2">
                                             <a href="../../orders/view.php?id=<?php echo $co['id']; ?>" class="w-8 h-8 flex items-center justify-center rounded-full bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"><i class="fas fa-eye text-sm"></i></a>
-                                            <button onclick="deleteOrder(<?php echo $co['id']; ?>, '<?php echo htmlspecialchars(addslashes($co['order_number'])); ?>')" class="w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all"><i class="fas fa-times"></i></button>
+                                            <?php if ($can_edit_groups): ?><button onclick="deleteOrder(<?php echo $co['id']; ?>, '<?php echo htmlspecialchars(addslashes($co['order_number'])); ?>')" class="w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all"><i class="fas fa-times"></i></button><?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -570,7 +574,6 @@ include '../../../includes/header.php';
                                 <td colspan="3" class="px-4 py-4 text-left text-gray-900">الإجمالي الكلي للطلبات:</td>
                                 <td class="px-4 py-4 text-center text-gray-900"><?php echo $sum_order_qty; ?></td>
                                 <td colspan="2"></td>
-                                <td class="px-4 py-4 text-emerald-700"><?php echo number_format($sum_order_final); ?> ر.ي</td>
                                 <td class="px-4 py-4 text-green-700"><?php echo number_format($sum_order_paid); ?> ر.ي</td>
                                 <td class="px-4 py-4 text-red-700"><?php echo number_format($sum_order_remaining); ?> ر.ي</td>
                                 <td colspan="2"></td>

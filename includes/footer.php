@@ -5,7 +5,7 @@
         <div class="px-6 mx-auto">
             <div class="flex flex-col md:flex-row justify-between items-center">
                 <div class="mb-4 md:mb-0">
-                    <p class="text-sm">&copy; <?php echo date('Y'); ?> نظام إدارة يمان. جميع الحقوق محفوظة.</p>
+                    <p class="text-sm">&copy; <?php echo date('Y'); ?> Yaman Accounting Calculator. جميع الحقوق محفوظة.</p>
                 </div>
                 <div class="flex space-x-4 space-x-reverse">
                     <a href="#" class="text-gray-500 hover:text-blue-600 transition duration-200">

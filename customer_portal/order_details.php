@@ -355,6 +355,16 @@ $remaining_amount = $final_amount - $paid_amount;
                                             <span class="block text-xs text-gray-400 sm:hidden">المبلغ</span>
                                             <span class="font-bold text-green-600 dir-ltr text-lg"><?php echo number_format($pay['amount'] ?? 0, 0); ?> ريال</span>
                                         </div>
+                                        <?php if (!empty($pay['receipt_image_path'])):
+                                            $receipt_path = $pay['receipt_image_path'];
+                                            if (strpos($receipt_path, 'uploads/') === 0) {
+                                                $receipt_path = '../' . $receipt_path;
+                                            }
+                                        ?>
+                                            <button type="button" onclick="openPaymentImageModal('<?php echo htmlspecialchars($receipt_path, ENT_QUOTES); ?>')" class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition flex items-center justify-center" title="عرض صورة الدفع">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        <?php endif; ?>
                                     </div>
 
                                 </div>
@@ -606,5 +616,24 @@ $remaining_amount = $final_amount - $paid_amount;
         &copy; <?php echo date('Y'); ?> جميع الحقوق محفوظة
     </div>
 
+
+<div id="paymentImageModal" class="fixed inset-0 z-[9999] hidden bg-black/80 items-center justify-center p-4" onclick="if(event.target === this) closePaymentImageModal()">
+    <button type="button" onclick="closePaymentImageModal()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white text-gray-800 flex items-center justify-center shadow"><i class="fas fa-times"></i></button>
+    <img id="paymentImagePreview" src="" alt="Payment receipt" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl bg-white object-contain">
+</div>
+<script>
+function openPaymentImageModal(src) {
+    const modal = document.getElementById('paymentImageModal');
+    document.getElementById('paymentImagePreview').src = src;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+function closePaymentImageModal() {
+    const modal = document.getElementById('paymentImageModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.getElementById('paymentImagePreview').src = '';
+}
+</script>
 </body>
 </html>
