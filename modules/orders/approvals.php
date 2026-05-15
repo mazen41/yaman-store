@@ -56,6 +56,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
 $search = trim($_GET['search'] ?? '');
+$status_filter = $_GET['status'] ?? 'pending_rejected';
+$self_order_filter = $_GET['self_order'] ?? '';
+$allowed_statuses = ['pending_rejected', 'all', 'pending', 'approved', 'rejected'];
+if (!in_array($status_filter, $allowed_statuses, true)) { $status_filter = 'pending_rejected'; }
+$advanced_filters_active = !empty($date_from) || !empty($date_to) || $status_filter !== 'pending_rejected' || !empty($self_order_filter);
 $status_filter = $_GET['status'] ?? 'pending';
 $self_order_filter = $_GET['self_order'] ?? '';
 $allowed_statuses = ['all', 'pending', 'approved', 'rejected'];
@@ -73,6 +78,9 @@ try {
     $where_clause = " WHERE 1=1";
     $params = [];
 
+    if ($status_filter === 'pending_rejected') {
+        $where_clause .= " AND oa.status IN ('pending', 'rejected')";
+    } elseif ($status_filter !== 'all') {
     if ($status_filter !== 'all') {
         $where_clause .= " AND oa.status = ?";
         $params[] = $status_filter;
@@ -197,6 +205,7 @@ include '../../includes/header.php';
             <div class="filters-grid">
                 <div><label>البحث (رقم طلب، اسم، هاتف)</label><input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" class="form-control" placeholder="ابحث هنا..."></div>
                 <div><label>حالة الطلب</label><select name="status" class="form-control">
+                    <option value="pending_rejected" <?php echo $status_filter === 'pending_rejected' ? 'selected' : ''; ?>>قيد المراجعة والمرفوضة</option>
                     <option value="all" <?php echo $status_filter === 'all' ? 'selected' : ''; ?>>كل الحالات</option>
                     <option value="pending" <?php echo $status_filter === 'pending' ? 'selected' : ''; ?>>قيد المراجعة</option>
                     <option value="approved" <?php echo $status_filter === 'approved' ? 'selected' : ''; ?>>تمت الموافقة</option>
@@ -233,7 +242,7 @@ include '../../includes/header.php';
                 </thead>
                 <tbody>
                     <?php if (empty($orders)): ?>
-                        <tr><td colspan="10" style="text-align: center; padding: 40px;">لا توجد طلبات بانتظار الموافقة</td></tr>
+                        <tr><td colspan="10" style="text-align: center; padding: 40px;">لا توجد طلبات مطابقة للفلاتر</td></tr>
                     <?php else: ?>
                         <?php foreach ($orders as $order): ?>
                             <tr id="row-<?php echo $order['id']; ?>">

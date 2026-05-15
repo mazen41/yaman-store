@@ -76,6 +76,7 @@ $total_customer_orders = 0;
 $total_all_discounts = 0;
 
 $orders = [];
+$order_status_options = [];
 
 // Status Colors Helper
 function getStatusClass($status) {
@@ -100,7 +101,8 @@ try {
     // Main customer orders (طلباتي): keep simple legacy query — no coupon CASE, no order_approvals flags.
     $query = "SELECT 
                 co.*,
-                cos.status_name_ar,
+                COALESCE(NULLIF(co.status, ''), 'new') AS display_status_key,
+                COALESCE(NULLIF(cos.status_name_ar, ''), NULLIF(co.status, ''), 'جديد') AS display_status_label,
                 COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = co.id), 0) AS total_quantity,
                 (SELECT GROUP_CONCAT(invoice_number SEPARATOR ', ') FROM customer_invoices ci WHERE ci.order_id = co.id) AS invoice_numbers,
                 co.automatic_discount_percentage AS display_discount_percentage,
@@ -119,6 +121,10 @@ try {
     $total_customer_orders = count($orders);
 
     foreach ($orders as $order) {
+        $status_key = $order['display_status_key'] ?? ($order['status'] ?? '');
+        if ($status_key !== '') {
+            $order_status_options[$status_key] = $order['display_status_label'] ?? $status_key;
+        }
         $total_quantity += $order['total_quantity'];
         $total_subtotal += $order['subtotal_amount'];
         $total_discount += $order['discount_amount'];
@@ -533,6 +539,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                     <input type="text" id="ordersSearch" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="بحث في طلباتي...">
                     <select id="ordersStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
                         <option value="">كل الحالات</option>
+                        <?php foreach ($order_status_options as $key => $label): ?>
                         <?php foreach ($status_translations as $key => $label): ?>
                             <option value="<?php echo htmlspecialchars($key); ?>"><?php echo htmlspecialchars($label); ?></option>
                         <?php endforeach; ?>
@@ -572,14 +579,11 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 $remaining = $order['final_amount'] - $order['paid_amount'];
                                 
                                 $display_discount_pct = floatval($order['display_discount_percentage'] ?? 0);
-                                if ($order['status'] === 'processing') {
-                                    $status_text = 'جديد';
-                                    $status_class = getStatusClass('new'); 
-                                } else {
-                                    $status_text = !empty($order['status_name_ar']) ? $order['status_name_ar'] : $order['status'];
-                                    $status_class = getStatusClass($order['status']);
-                                }
+                                $display_status_key = $order['display_status_key'] ?? ($order['status'] ?? 'new');
+                                $status_text = $order['display_status_label'] ?? $display_status_key;
+                                $status_class = getStatusClass($display_status_key);
                             ?>
+                            <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($display_status_key); ?>">
                             <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($order['status'] ?? ''); ?>">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <div class="flex items-center gap-2">
