@@ -25,27 +25,63 @@ unset($_SESSION['error_message']);
 $success_message = $_SESSION['success_message'] ?? '';
 unset($_SESSION['success_message']);
 
+// Handle permanent deletion for rejected approvals only.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_rejected') {
+    $delete_id = (int)($_POST['approval_id'] ?? 0);
+    try {
+        $db->beginTransaction();
+        $status_stmt = $db->prepare("SELECT status FROM order_approvals WHERE id = ? FOR UPDATE");
+        $status_stmt->execute([$delete_id]);
+        $delete_status = $status_stmt->fetchColumn();
+
+        if ($delete_status !== 'rejected') {
+            throw new Exception('يمكن حذف الطلبات المرفوضة فقط.');
+        }
+
+        $db->prepare("DELETE FROM order_approval_items WHERE approval_id = ?")->execute([$delete_id]);
+        $db->prepare("DELETE FROM order_approvals_images WHERE approval_id = ?")->execute([$delete_id]);
+        $db->prepare("DELETE FROM notifications WHERE related_id = ? AND related_table = 'order_approvals'")->execute([$delete_id]);
+        $db->prepare("DELETE FROM order_approvals WHERE id = ? AND status = 'rejected'")->execute([$delete_id]);
+        $db->commit();
+        $_SESSION['success_message'] = 'تم حذف الطلب المرفوض نهائياً.';
+    } catch (Exception $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        $_SESSION['error_message'] = 'فشل حذف الطلب: ' . $e->getMessage();
+    }
+    header('Location: approvals.php?' . http_build_query(array_diff_key($_GET, ['page' => true])));
+    exit();
+}
+
 // Get filter parameters from the URL
 $date_from = $_GET['date_from'] ?? '';
 $date_to = $_GET['date_to'] ?? '';
-$search = $_GET['search'] ?? '';
-$advanced_filters_active = !empty($date_from) || !empty($date_to);
+$search = trim($_GET['search'] ?? '');
+$status_filter = $_GET['status'] ?? 'pending';
+$self_order_filter = $_GET['self_order'] ?? '';
+$allowed_statuses = ['all', 'pending', 'approved', 'rejected'];
+if (!in_array($status_filter, $allowed_statuses, true)) { $status_filter = 'pending'; }
+$advanced_filters_active = !empty($date_from) || !empty($date_to) || $status_filter !== 'pending' || !empty($self_order_filter);
 
 // --- 3. FETCH DATA ---
 try {
-    // Base query setup for pending approvals
+    // Base query setup for approvals
     $from_joins = "FROM order_approvals oa
                    LEFT JOIN customers c ON oa.customer_id = c.id
                    LEFT JOIN customer_types ct ON c.customer_type_id = ct.id";
 
     // Build the WHERE clause and parameters
-    $where_clause = " WHERE oa.status = 'pending'";
+    $where_clause = " WHERE 1=1";
     $params = [];
+
+    if ($status_filter !== 'all') {
+        $where_clause .= " AND oa.status = ?";
+        $params[] = $status_filter;
+    }
 
     if ($search) {
         $search_param = "%$search%";
-        $where_clause .= " AND (oa.id LIKE ? OR c.name LIKE ? OR c.mobile_number LIKE ?)";
-        array_push($params, $search_param, $search_param, $search_param);
+        $where_clause .= " AND (oa.id LIKE ? OR c.name LIKE ? OR oa.customer_name LIKE ? OR c.mobile_number LIKE ? OR c.whatsapp_number LIKE ?)";
+        array_push($params, $search_param, $search_param, $search_param, $search_param, $search_param);
     }
     if ($date_from) {
         $where_clause .= " AND DATE(oa.created_at) >= ?";
@@ -54,6 +90,9 @@ try {
     if ($date_to) {
         $where_clause .= " AND DATE(oa.created_at) <= ?";
         $params[] = $date_to;
+    }
+    if ($self_order_filter === 'yes') {
+        $where_clause .= " AND oa.customer_id IS NOT NULL";
     }
 
     // Get total count for pagination
@@ -72,7 +111,7 @@ try {
     // --- FIX: The main SQL query now selects `oa.id` correctly ---
     $query = "SELECT
         oa.id,
-        oa.currency, oa.created_at, oa.customer_id,
+        oa.currency, oa.created_at, oa.customer_id, oa.status, oa.final_order_id,
         oa.notes, oa.payment_proof_path, oa.subtotal_amount, oa.automatic_discount_amount, 
         oa.shipping_cost, oa.automatic_discount_percentage, oa.paid_amount,
         c.name as customer_name, c.mobile_number, c.whatsapp_number,
@@ -137,6 +176,12 @@ include '../../includes/header.php';
     .action-cell > div { display: flex; flex-direction: column; gap: 5px; min-width: 80px; }
     .action-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; text-decoration: none; transition: all 0.2s; }
     .action-icon:hover { transform: scale(1.05); }
+    .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; align-items: end; }
+    .order-date-small { display: block; margin-top: 4px; color: #6b7280; font-size: 11px; font-weight: 500; }
+    .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid transparent; }
+    .status-pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+    .status-approved { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+    .status-rejected { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
 </style>
 
 <div class="min-h-screen" dir="rtl">
@@ -149,8 +194,18 @@ include '../../includes/header.php';
         </div>
 
         <form method="GET" action="" class="filter-section">
-            <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
-                <div style="flex-grow: 1;"><label>البحث (رقم طلب، اسم، هاتف)</label><input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" class="form-control"></div>
+            <div class="filters-grid">
+                <div><label>البحث (رقم طلب، اسم، هاتف)</label><input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" class="form-control" placeholder="ابحث هنا..."></div>
+                <div><label>حالة الطلب</label><select name="status" class="form-control">
+                    <option value="all" <?php echo $status_filter === 'all' ? 'selected' : ''; ?>>كل الحالات</option>
+                    <option value="pending" <?php echo $status_filter === 'pending' ? 'selected' : ''; ?>>قيد المراجعة</option>
+                    <option value="approved" <?php echo $status_filter === 'approved' ? 'selected' : ''; ?>>تمت الموافقة</option>
+                    <option value="rejected" <?php echo $status_filter === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
+                </select></div>
+                <div><label>الطلبات الذاتية</label><select name="self_order" class="form-control">
+                    <option value="" <?php echo $self_order_filter === '' ? 'selected' : ''; ?>>الكل</option>
+                    <option value="yes" <?php echo $self_order_filter === 'yes' ? 'selected' : ''; ?>>طلبات العملاء الذاتية</option>
+                </select></div>
                 <div><label>من تاريخ</label><input type="date" name="date_from" value="<?php echo htmlspecialchars($date_from); ?>" class="form-control"></div>
                 <div><label>إلى تاريخ</label><input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>" class="form-control"></div>
                 <div style="display: flex; gap: 10px;">
@@ -165,7 +220,7 @@ include '../../includes/header.php';
                 <thead>
                     <tr>
                         <th>رقم الطلب</th>
-                        <th>تاريخ التقديم</th>
+                        <th>الحالة</th>
                         <th>العميل</th>
                         <th>رابط الطلب</th>
                         <th>رابط إضافي</th>
@@ -182,8 +237,15 @@ include '../../includes/header.php';
                     <?php else: ?>
                         <?php foreach ($orders as $order): ?>
                             <tr id="row-<?php echo $order['id']; ?>">
-                                <td><strong>#<?php echo htmlspecialchars($order['id']); ?></strong></td>
-                                <td><?php echo date('Y-m-d H:i', strtotime($order['created_at'])); ?></td>
+                                <td><strong>#<?php echo htmlspecialchars($order['id']); ?></strong><small class="order-date-small"><i class="far fa-clock"></i> <?php echo date('Y-m-d H:i', strtotime($order['created_at'])); ?></small></td>
+                                <td>
+                                    <?php
+                                    $status_labels = ['pending' => 'قيد المراجعة', 'approved' => 'تمت الموافقة', 'rejected' => 'مرفوض'];
+                                    $status_icons = ['pending' => 'fa-clock', 'approved' => 'fa-check-circle', 'rejected' => 'fa-times-circle'];
+                                    $status_key = $order['status'] ?? 'pending';
+                                    ?>
+                                    <span class="status-badge status-<?php echo htmlspecialchars($status_key); ?>"><i class="fas <?php echo $status_icons[$status_key] ?? 'fa-info-circle'; ?>"></i><?php echo $status_labels[$status_key] ?? htmlspecialchars($status_key); ?></span>
+                                </td>
                                 <td>
                                     <div><?php echo htmlspecialchars($order['customer_name'] ?? 'N/A'); ?></div>
                                     <small><?php echo htmlspecialchars($order['mobile_number'] ?? ''); ?></small>
@@ -222,6 +284,13 @@ include '../../includes/header.php';
                                 <td class="action-cell">
                                     <div>
                                         <a href="view_approval.php?id=<?php echo $order['id']; ?>" class="btn btn-primary"><i class="fas fa-search-plus"></i> مراجعة</a>
+                                        <?php if (($order['status'] ?? '') === 'rejected'): ?>
+                                            <form method="POST" action="" onsubmit="return confirm('سيتم حذف الطلب المرفوض نهائياً من قاعدة البيانات. هل أنت متأكد؟');">
+                                                <input type="hidden" name="action" value="delete_rejected">
+                                                <input type="hidden" name="approval_id" value="<?php echo (int)$order['id']; ?>">
+                                                <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> حذف</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>

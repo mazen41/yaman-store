@@ -197,6 +197,8 @@ $remaining_amount = $final_amount - $paid_amount;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             background-color: #f8fafc;
         }
+        .gallery-modal-btn { transition: all 0.2s ease; }
+        .gallery-modal-btn:hover { transform: scale(1.05); }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen pb-10">
@@ -381,19 +383,21 @@ $remaining_amount = $final_amount - $paid_amount;
                         <h3 class="font-bold text-purple-700 flex items-center"><i class="fas fa-images ml-2"></i> المرفقات والصور</h3>
                     </div>
                     <div class="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <?php foreach ($images as $img):
+                        <?php $gallery_paths = []; ?>
+                        <?php foreach ($images as $idx => $img):
                              $path = $img['image_path'];
                              if (strpos($path, 'uploads/') === 0) {
                                  $path = '../' . $path;
                              }
+                             $gallery_paths[] = $path;
                         ?>
-                        <a href="<?php echo htmlspecialchars($path ?? ''); ?>" target="_blank" class="block group relative overflow-hidden rounded-xl border border-gray-200 shadow-sm">
+                        <button type="button" onclick="openOrderGallery(<?php echo (int)$idx; ?>)" class="block group relative overflow-hidden rounded-xl border border-gray-200 shadow-sm text-right" aria-label="عرض الصورة">
                             <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition z-10"></div>
-                            <img src="<?php echo htmlspecialchars($path ?? ''); ?>" class="w-full h-32 object-cover transform group-hover:scale-110 transition duration-500 ease-in-out">
+                            <img src="<?php echo htmlspecialchars($path ?? ''); ?>" class="w-full h-32 object-cover transform group-hover:scale-110 transition duration-500 ease-in-out" alt="صورة مرفقة">
                             <div class="absolute bottom-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition translate-y-2 group-hover:translate-y-0">
                                 <span class="bg-white/90 p-1.5 rounded-full shadow text-gray-700 text-xs"><i class="fas fa-search-plus"></i></span>
                             </div>
-                        </a>
+                        </button>
                         <?php endforeach; ?>
                     </div>
                 </div>
@@ -616,6 +620,46 @@ $remaining_amount = $final_amount - $paid_amount;
         &copy; <?php echo date('Y'); ?> جميع الحقوق محفوظة
     </div>
 
+
+
+<?php if (!empty($images)): ?>
+<div id="orderGalleryModal" class="fixed inset-0 z-[9998] hidden bg-black/90 items-center justify-center p-4" onclick="if(event.target === this) closeOrderGallery()">
+    <button type="button" onclick="closeOrderGallery()" class="gallery-modal-btn absolute top-4 left-4 w-10 h-10 rounded-full bg-white text-gray-800 flex items-center justify-center shadow" aria-label="إغلاق"><i class="fas fa-times"></i></button>
+    <button type="button" onclick="showOrderGalleryImage(currentOrderGalleryIndex - 1)" class="gallery-modal-btn absolute right-4 md:right-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 text-gray-900 flex items-center justify-center shadow" aria-label="السابق"><i class="fas fa-chevron-right"></i></button>
+    <img id="orderGalleryImage" src="" alt="صورة مرفقة" class="max-w-full max-h-[85vh] rounded-lg shadow-2xl bg-white object-contain">
+    <button type="button" onclick="showOrderGalleryImage(currentOrderGalleryIndex + 1)" class="gallery-modal-btn absolute left-4 md:left-8 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/90 text-gray-900 flex items-center justify-center shadow" aria-label="التالي"><i class="fas fa-chevron-left"></i></button>
+    <div id="orderGalleryCounter" class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 text-gray-800 px-4 py-1 rounded-full text-sm font-bold"></div>
+</div>
+<script>
+const orderGalleryImages = <?php echo json_encode($gallery_paths ?? [], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
+let currentOrderGalleryIndex = 0;
+function openOrderGallery(index) {
+    const modal = document.getElementById('orderGalleryModal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    showOrderGalleryImage(index);
+}
+function closeOrderGallery() {
+    const modal = document.getElementById('orderGalleryModal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    document.getElementById('orderGalleryImage').src = '';
+}
+function showOrderGalleryImage(index) {
+    if (!orderGalleryImages.length) return;
+    currentOrderGalleryIndex = (index + orderGalleryImages.length) % orderGalleryImages.length;
+    document.getElementById('orderGalleryImage').src = orderGalleryImages[currentOrderGalleryIndex];
+    document.getElementById('orderGalleryCounter').textContent = (currentOrderGalleryIndex + 1) + ' / ' + orderGalleryImages.length;
+}
+document.addEventListener('keydown', function(event) {
+    const modal = document.getElementById('orderGalleryModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (event.key === 'Escape') closeOrderGallery();
+    if (event.key === 'ArrowRight') showOrderGalleryImage(currentOrderGalleryIndex - 1);
+    if (event.key === 'ArrowLeft') showOrderGalleryImage(currentOrderGalleryIndex + 1);
+});
+</script>
+<?php endif; ?>
 
 <div id="paymentImageModal" class="fixed inset-0 z-[9999] hidden bg-black/80 items-center justify-center p-4" onclick="if(event.target === this) closePaymentImageModal()">
     <button type="button" onclick="closePaymentImageModal()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white text-gray-800 flex items-center justify-center shadow"><i class="fas fa-times"></i></button>
