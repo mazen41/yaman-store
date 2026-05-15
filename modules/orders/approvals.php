@@ -61,11 +61,6 @@ $self_order_filter = $_GET['self_order'] ?? '';
 $allowed_statuses = ['pending_rejected', 'all', 'pending', 'approved', 'rejected'];
 if (!in_array($status_filter, $allowed_statuses, true)) { $status_filter = 'pending_rejected'; }
 $advanced_filters_active = !empty($date_from) || !empty($date_to) || $status_filter !== 'pending_rejected' || !empty($self_order_filter);
-$status_filter = $_GET['status'] ?? 'pending';
-$self_order_filter = $_GET['self_order'] ?? '';
-$allowed_statuses = ['all', 'pending', 'approved', 'rejected'];
-if (!in_array($status_filter, $allowed_statuses, true)) { $status_filter = 'pending'; }
-$advanced_filters_active = !empty($date_from) || !empty($date_to) || $status_filter !== 'pending' || !empty($self_order_filter);
 
 // --- 3. FETCH DATA ---
 try {
@@ -81,7 +76,6 @@ try {
     if ($status_filter === 'pending_rejected') {
         $where_clause .= " AND oa.status IN ('pending', 'rejected')";
     } elseif ($status_filter !== 'all') {
-    if ($status_filter !== 'all') {
         $where_clause .= " AND oa.status = ?";
         $params[] = $status_filter;
     }

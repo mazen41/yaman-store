@@ -540,7 +540,6 @@ if ($customer['enable_create_self_order'] === 'active') {
                     <select id="ordersStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
                         <option value="">كل الحالات</option>
                         <?php foreach ($order_status_options as $key => $label): ?>
-                        <?php foreach ($status_translations as $key => $label): ?>
                             <option value="<?php echo htmlspecialchars($key); ?>"><?php echo htmlspecialchars($label); ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -584,7 +583,6 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 $status_class = getStatusClass($display_status_key);
                             ?>
                             <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($display_status_key); ?>">
-                            <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($order['status'] ?? ''); ?>">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <div class="flex items-center gap-2">
                                         <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a>
