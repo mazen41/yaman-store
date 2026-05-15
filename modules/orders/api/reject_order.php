@@ -27,8 +27,8 @@ $user_id = $_SESSION['user_id'];
 try {
     $db->beginTransaction();
 
-    // 1. Fetch customer details for WhatsApp notification
-    $customer_stmt = $db->prepare("SELECT c.mobile_number, c.whatsapp_number, c.name FROM order_approvals oa LEFT JOIN customers c ON oa.customer_id = c.id WHERE oa.id = ?");
+    // 1. Fetch customer details for notification
+    $customer_stmt = $db->prepare("SELECT c.id AS customer_id, c.mobile_number, c.whatsapp_number, c.name FROM order_approvals oa LEFT JOIN customers c ON oa.customer_id = c.id WHERE oa.id = ?");
     $customer_stmt->execute([$approval_id]);
     $customer = $customer_stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -67,13 +67,15 @@ try {
     $notif_update_stmt = $db->prepare("UPDATE notifications SET is_read = 1 WHERE related_id = ? AND related_table = 'order_approvals'");
     $notif_update_stmt->execute([$approval_id]);
 
-    // 4. Create WhatsApp notification records for each selected number
+    // 4. Create customer notification records for selected contacts using the actual notifications columns
     if (!empty($selected_numbers)) {
-        $notif_stmt = $db->prepare("INSERT INTO notifications (related_id, related_table, type, status, sent_to, title, message, created_at) VALUES (?, ?, 'whatsapp', 'pending', ?, ?, ?, NOW())");
-        $notif_title = 'تم رفض طلبك #' . $approval_id;
+        $notif_stmt = $db->prepare("
+            INSERT INTO notifications (customer_id, related_id, related_table, message, is_read, created_at)
+            VALUES (?, ?, 'order_approvals', ?, 0, NOW())
+        ");
         $notif_message = 'عزيزي ' . ($customer['name'] ?? 'العميل') . '، نود إبلاغك بأنه تم رفض طلبك #' . $approval_id . '. السبب: ' . $rejection_reason;
         foreach ($selected_numbers as $num) {
-            $notif_stmt->execute([$approval_id, 'order_approvals', $num, $notif_title, $notif_message]);
+            $notif_stmt->execute([$customer['customer_id'] ?? null, $approval_id, $notif_message . ' - رقم التواصل: ' . $num]);
         }
     }
 

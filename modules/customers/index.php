@@ -86,20 +86,26 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
             } catch (PDOException $e) {
                 $error_message = 'حدث خطأ أثناء تحديث حالة السماح بالطلب بدون دفعة أولى.';
             }
-        } elseif ($_GET['action'] == 'bulk_self_service_all') {
+        } elseif ($_GET['action'] == 'allow_self_order_all' || $_GET['action'] == 'bulk_self_service_all') {
             try {
-                $bulk_state = $_GET['bulk_state'] ?? '';
-                if ($bulk_state === '1') {
-                    $db->exec("UPDATE customers SET enable_create_self_order = 'active', allow_no_deposit_orders = 1, show_shop_for_customer = 1, updated_at = NOW()");
-                    $success_message = 'تم تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
-                } elseif ($bulk_state === '0') {
-                    $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', allow_no_deposit_orders = 0, show_shop_for_customer = 0, updated_at = NOW()");
-                    $success_message = 'تم تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
-                } else {
-                    $error_message = 'طلب غير صالح لتعديل جماعي.';
-                }
+                $db->exec("UPDATE customers SET enable_create_self_order = 'active', updated_at = NOW()");
+                $success_message = 'تم تفعيل الطلب الذاتي لجميع العملاء.';
             } catch (PDOException $e) {
-                $error_message = 'حدث خطأ أثناء التحديث الجماعي.';
+                $error_message = 'حدث خطأ أثناء تفعيل الطلب الذاتي لجميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'enable_all_customers') {
+            try {
+                $db->exec("UPDATE customers SET is_active = 1, updated_at = NOW()");
+                $success_message = 'تم تفعيل جميع العملاء بنجاح.';
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تفعيل جميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'disable_all_customers') {
+            try {
+                $db->exec("UPDATE customers SET is_active = 0, updated_at = NOW()");
+                $success_message = 'تم تعطيل جميع العملاء بنجاح.';
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تعطيل جميع العملاء.';
             }
         } elseif ($_GET['action'] == 'toggle_show_shop') {
             try {
@@ -363,13 +369,17 @@ include '../../includes/header.php';
                     </button>
                     
                     <?php if ($can_edit): ?>
-                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=1" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-toggle-on ml-1"></i> تفعيل الكل
+                        <a href="index.php?action=allow_self_order_all" onclick="return confirm('تفعيل الطلب الذاتي لجميع العملاء؟');"
+                            class="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition duration-200 text-sm font-semibold">
+                            <i class="fas fa-user-edit ml-1"></i> السماح بالطلب الذاتي للكل
                         </a>
-                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=0" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-toggle-off ml-1"></i> تعطيل الكل
+                        <a href="index.php?action=enable_all_customers" onclick="return confirm('تفعيل جميع العملاء؟');"
+                            class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-sm font-semibold">
+                            <i class="fas fa-check-circle ml-1"></i> تفعيل كل العملاء
+                        </a>
+                        <a href="index.php?action=disable_all_customers" onclick="return confirm('تعطيل جميع العملاء؟');"
+                            class="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200 text-sm font-semibold">
+                            <i class="fas fa-ban ml-1"></i> تعطيل كل العملاء
                         </a>
                     <?php endif; ?>
                     <?php if ($can_add): ?>
