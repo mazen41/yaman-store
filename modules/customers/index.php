@@ -143,26 +143,6 @@ if (isset($_GET['action'])) {
             }
         } elseif ($_GET['action'] == 'enable_all_customers') {
             try {
-                $db->exec("UPDATE customers SET enable_create_self_order = 'active', allow_no_deposit_orders = 1, show_shop_for_customer = 1, updated_at = NOW()");
-                $success_message = 'تم تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
-            } catch (PDOException $e) {
-                $error_message = 'حدث خطأ أثناء تفعيل إعدادات جميع العملاء.';
-            }
-        } elseif ($_GET['action'] == 'disable_all_customers') {
-            try {
-                $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', allow_no_deposit_orders = 0, show_shop_for_customer = 0, updated_at = NOW()");
-                $success_message = 'تم تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
-            } catch (PDOException $e) {
-                $error_message = 'حدث خطأ أثناء تعطيل إعدادات جميع العملاء.';
-        } elseif ($_GET['action'] == 'allow_self_order_all' || $_GET['action'] == 'bulk_self_service_all') {
-            try {
-                $db->exec("UPDATE customers SET enable_create_self_order = 'active', updated_at = NOW()");
-                $success_message = 'تم تفعيل الطلب الذاتي لجميع العملاء.';
-            } catch (PDOException $e) {
-                $error_message = 'حدث خطأ أثناء تفعيل الطلب الذاتي لجميع العملاء.';
-            }
-        } elseif ($_GET['action'] == 'enable_all_customers') {
-            try {
                 $db->exec("UPDATE customers SET is_active = 1, updated_at = NOW()");
                 $success_message = 'تم تفعيل جميع العملاء بنجاح.';
             } catch (PDOException $e) {
