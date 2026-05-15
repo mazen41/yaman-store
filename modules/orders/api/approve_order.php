@@ -22,7 +22,7 @@ require_once '../../../includes/check_permissions.php';
 require_once '../../../includes/accounting_functions.php';
 require_once '../../../includes/auto_generate_helpers.php'; // Ensure this is included for generateOrderNumber and createInvoiceForOrder
 
-if (!hasPermission($_SESSION['user_id'], 'orders', 'edit')) {
+if (!canApproveOrderApprovals($_SESSION['user_id'])) {
     $_SESSION['error_message'] = 'ليس لديك صلاحية لإجراء الموافقة.';
     header('Location: ../approvals.php');
     exit();
@@ -221,6 +221,22 @@ try {
         ':inv_num' => $invoice_number_for_order // BIND the generated invoice number
     ]);
     $order_id = $db->lastInsertId();
+
+    $primary_order_link = '';
+    $primary_additional_link = '';
+    foreach ($final_data['items'] as $it) {
+        if ($primary_order_link === '' && !empty(trim($it['product_link'] ?? ''))) {
+            $primary_order_link = trim($it['product_link']);
+        }
+        if ($primary_additional_link === '' && !empty(trim($it['additional_link'] ?? ''))) {
+            $primary_additional_link = trim($it['additional_link']);
+        }
+    }
+    $db->prepare('UPDATE customer_orders SET order_link = ?, additional_link = ? WHERE id = ?')->execute([
+        $primary_order_link !== '' ? $primary_order_link : null,
+        $primary_additional_link !== '' ? $primary_additional_link : null,
+        $order_id,
+    ]);
 
     // --- 8. INSERT ORDER ITEMS ---
     // Delete existing approval items before re-inserting, as they might have been modified

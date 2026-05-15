@@ -400,19 +400,24 @@ include '../../includes/header.php';
                                         <?php echo date('Y/m/d', strtotime($product['created_at'])); ?>
                                     </td>
                                     <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-center">
-                                        <div class="flex justify-center items-center space-x-2 space-x-reverse">
+                                        <div class="flex flex-wrap justify-center items-center gap-2 gap-y-2">
                                             <a href="view.php?id=<?php echo $product['id']; ?>"
-                                                class="text-blue-600 hover:text-blue-900" title="عرض"><i
-                                                    class="fas fa-eye"></i></a>
+                                                class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-blue-600 hover:text-blue-900 hover:bg-blue-50 border border-blue-100" title="عرض"><i
+                                                    class="fas fa-eye"></i><span class="text-xs">عرض</span></a>
                                             <?php if ($can_edit): ?>
                                                 <a href="edit.php?id=<?php echo $product['id']; ?>"
-                                                    class="text-green-600 hover:text-green-900" title="تعديل"><i
-                                                        class="fas fa-edit"></i></a>
-                                                <a href="?action=toggle_active&id=<?php echo $product['id']; ?>&status=<?php echo $product['is_active'] . '&' . http_build_query(array_filter($_GET, fn($k) => $k != 'action' && $k != 'id' && $k != 'status', ARRAY_FILTER_USE_KEY)); ?>"
-                                                    class="<?php echo $product['is_active'] ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'; ?>"
+                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-green-600 hover:text-green-900 hover:bg-green-50 border border-green-100" title="تعديل"><i
+                                                        class="fas fa-edit"></i><span class="text-xs">تعديل</span></a>
+                                                <a href="?action=delete&id=<?php echo $product['id'] . '&' . http_build_query(array_filter($_GET, function ($k) { return $k != 'action' && $k != 'id'; }, ARRAY_FILTER_USE_KEY)); ?>"
+                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-red-600 hover:text-red-900 hover:bg-red-50 border border-red-100" title="حذف"
+                                                    onclick="return confirm('هل أنت متأكد من حذف هذا المنتج؟')">
+                                                    <i class="fas fa-trash"></i><span class="text-xs">حذف</span>
+                                                </a>
+                                                <a href="?action=toggle_active&id=<?php echo $product['id']; ?>&status=<?php echo $product['is_active'] . '&' . http_build_query(array_filter($_GET, function ($k) { return $k != 'action' && $k != 'id' && $k != 'status'; }, ARRAY_FILTER_USE_KEY)); ?>"
+                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded-md <?php echo $product['is_active'] ? 'text-red-600 hover:bg-red-50 border border-red-100' : 'text-green-600 hover:bg-green-50 border border-green-100'; ?>"
                                                     title="<?php echo $product['is_active'] ? 'تعطيل' : 'تفعيل'; ?>"
                                                     onclick="return confirm('<?php echo $product['is_active'] ? 'هل أنت متأكد من تعطيل هذا المنتج؟' : 'هل أنت متأكد من تفعيل هذا المنتج؟'; ?>')">
-                                                    <i class="fas fa-power-off"></i>
+                                                    <i class="fas fa-power-off"></i><span class="text-xs"><?php echo $product['is_active'] ? 'تعطيل' : 'تفعيل'; ?></span>
                                                 </a>
                                             <?php endif; ?>
                                         </div>

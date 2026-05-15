@@ -556,6 +556,14 @@ foreach ($products as $key => $product) {
             });
         }
 
+        function effectiveProductStock(product) {
+            const tq = parseInt(product['total_quantity'], 10);
+            const pq = parseInt(product['product_quantity'], 10);
+            if (!isNaN(tq) && tq > 0) return tq;
+            if (!isNaN(pq) && pq > 0) return pq;
+            return 0;
+        }
+
         function renderProducts(productsToRender) {
             const grid = document.getElementById('products-grid');
             const noProductsFound = document.getElementById('no-products-found');
@@ -565,7 +573,7 @@ foreach ($products as $key => $product) {
             noProductsFound.classList.add('hidden');
 
             productsToRender.forEach((product, index) => {
-                const qty            = product['total_quantity'] || 0;
+                const qty            = effectiveProductStock(product);
                 const base_price     = parseFloat(product['price']);
                 const discount_price = parseFloat(product['discount_price']);
                 const has_discount   = (discount_price > 0 && discount_price < base_price);
@@ -575,7 +583,7 @@ foreach ($products as $key => $product) {
                 const created_time = new Date(product['created_at']).getTime();
                 const seven_days_ago = new Date().getTime() - (7 * 24 * 60 * 60 * 1000);
 
-                if (qty <= 0) { badge = { text: 'نفذت الكمية', class: 'bg-gray-700' }; } 
+                if (qty < 1) { badge = { text: 'نفذت الكمية', class: 'bg-gray-700' }; }
                 else if (qty < 5) { badge = { text: `تبقى ${qty} فقط`, class: 'bg-orange-500' }; } 
                 else if (has_discount) { const pct = Math.round(((base_price - discount_price) / base_price) * 100); badge = { text: `خصم ${pct}%`, class: 'bg-[#FF6B00]' }; } 
                 else if (created_time > seven_days_ago) { badge = { text: 'جديد', class: 'bg-purple-500' }; }
@@ -686,7 +694,13 @@ foreach ($products as $key => $product) {
             const discountPrice = parseFloat(productOrVariant.discount_price || currentModalProduct.discount_price || 0);
             const hasDiscount = discountPrice > 0 && discountPrice < basePrice;
             const finalPrice = hasDiscount ? discountPrice : basePrice;
-            const maxStock = parseInt(productOrVariant.quantity || productOrVariant.total_quantity || 0);
+            const maxStock = (() => {
+                if (productOrVariant.quantity !== undefined && productOrVariant.quantity !== null && productOrVariant.quantity !== '') {
+                    const v = parseInt(productOrVariant.quantity, 10);
+                    if (!isNaN(v) && v > 0) return v;
+                }
+                return effectiveProductStock(currentModalProduct || productOrVariant);
+            })();
 
             document.getElementById('modal-price').innerText = finalPrice.toFixed(2);
             const oldEl = document.getElementById('modal-price-old');
@@ -714,7 +728,7 @@ foreach ($products as $key => $product) {
         function changeModalQty(delta) {
             const input = document.getElementById('modal-qty');
             let v = parseInt(input.value) + delta;
-            const maxQty = selectedVariant ? parseInt(selectedVariant.quantity) : (currentModalProduct ? parseInt(currentModalProduct.total_quantity) : 0);
+            const maxQty = selectedVariant ? parseInt(selectedVariant.quantity, 10) : (currentModalProduct ? effectiveProductStock(currentModalProduct) : 0);
             if (v > maxQty) { alert(`نعتذر، المتوفر في المخزون هو ${maxQty} فقط.`); v = maxQty; }
             if (v < 1) v = 1;
             if (maxQty === 0) v = 0;
@@ -903,7 +917,7 @@ foreach ($products as $key => $product) {
                 if (selectedVariant.attribute_value_name) variantParts.push(selectedVariant.attribute_value_name);
                 variantText = variantParts.join(' / ');
             } else {
-                maxStock = parseInt(currentModalProduct.total_quantity);
+                maxStock = effectiveProductStock(currentModalProduct);
                 itemImage = currentModalProduct.main_image_url;
             }
 
@@ -943,7 +957,7 @@ foreach ($products as $key => $product) {
                     const variantId = item.cartKey.split('v')[1].split('_')[0];
                     const variant = product.variants.find(v => v.id == variantId);
                     if (variant) maxQty = parseInt(variant.quantity);
-                } else { maxQty = parseInt(product.total_quantity); }
+                } else { maxQty = effectiveProductStock(product); }
             }
             
             if (item.qty + delta > maxQty) { alert(`نعتذر، المتوفر في المخزون هو ${maxQty}`); return; }

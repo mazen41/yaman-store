@@ -16,8 +16,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../../../config/database.php';
 require_once '../../../includes/check_permissions.php';
 
-// Check for necessary permission (adjust as needed)
-if (!hasPermission($_SESSION['user_id'], 'orders', 'edit')) {
+if (!canOpenOrderApprovalDetail($_SESSION['user_id'])) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Forbidden']);
     exit();

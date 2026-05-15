@@ -150,7 +150,7 @@ if (isset($_SESSION['user_id'])) {
             // Try underscore notation
             elseif (strpos($key, '_') !== false) {
                 // Remove action suffix (_view, _edit, _add, _delete, _manage)
-                $base_key = preg_replace('/(_(view|edit|add|delete|manage|create))$/', '', $key);
+                $base_key = preg_replace('/(_(view|edit|add|delete|manage|create|approve|reject))$/', '', $key);
                 $user_permission_keys[] = $base_key;
             }
             else {

@@ -1,11 +1,9 @@
 <?php
 /**
  * Customer Portal - Specific Customer View
- * FIX: Logic updated to match Admin Index Page (fetching paid_amount directly from table column).
  * PREVIOUS FIXES: Mobile Optimized + No Overlay + Full Image Visibility
  * NEW: Added conditional "Shop/Products" button based on 'show_shop_for_customer' column, integrated into the top navigation bar.
- * RECENT FIX: Order Approval table enhancements - Display links as copyable buttons, filter approved orders, display correct financial data.
- * NEW FIX: Added 'Self-Order' indicator icon in the first table for orders approved from the self-ordering system.
+ * طلباتي: simple legacy SQL on customer_orders (+ status join + small subqueries). Review/approval table keeps its own query.
  */
 
 error_reporting(E_ALL);
@@ -99,39 +97,18 @@ function getStatusClass($status) {
 }
 
 try {
-    // 4. Main Order Query - UPDATED LOGIC TO MATCH ADMIN PAGE
-    // We now select paid_amount directly from the table (co.paid_amount) 
-    // instead of calculating it via subquery from payments table.
-    // ADDED: is_self_order check to identify orders coming from the approval system
+    // Main customer orders (طلباتي): keep simple legacy query — no coupon CASE, no order_approvals flags.
     $query = "SELECT 
-                co.id,
-                co.order_number,
-                co.created_at,
-                co.status,
-                co.order_link,
-                co.additional_link,
-                co.currency,
-                co.coupon_id,
+                co.*,
                 cos.status_name_ar,
-                COALESCE(co.subtotal_amount, 0) as subtotal_amount,
-                COALESCE(co.discount_amount, 0) as discount_amount,
-                COALESCE(co.final_amount, 0) as final_amount,
-                COALESCE(co.paid_amount, 0) as paid_amount, 
-                CASE
-                    WHEN co.coupon_id IS NOT NULL AND coup.discount_type = 'percentage' THEN coup.discount_value
-                    WHEN co.coupon_id IS NOT NULL AND coup.discount_type = 'fixed' AND co.subtotal_amount > 0.01 THEN (co.discount_amount / co.subtotal_amount) * 100
-                    ELSE co.automatic_discount_percentage
-                END as display_discount_percentage,
                 COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = co.id), 0) AS total_quantity,
-                COALESCE((SELECT SUM(odi.price) FROM order_damaged_items odi WHERE odi.order_id = co.id), 0) AS damaged_amount,
-                (SELECT GROUP_CONCAT(invoice_number SEPARATOR ', ') FROM customer_invoices ci WHERE ci.order_id = co.id) as invoice_numbers,
-                CASE WHEN EXISTS (SELECT 1 FROM order_approvals oa WHERE oa.final_order_id = co.id) THEN 1 ELSE 0 END AS is_self_order
+                (SELECT GROUP_CONCAT(invoice_number SEPARATOR ', ') FROM customer_invoices ci WHERE ci.order_id = co.id) AS invoice_numbers,
+                co.automatic_discount_percentage AS display_discount_percentage,
+                (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = co.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) AS first_product_link
             FROM customer_orders co
             LEFT JOIN customer_order_statuses cos ON co.status = cos.status_key
-            LEFT JOIN coupons coup ON co.coupon_id = coup.id
             WHERE co.customer_id = ? 
             AND co.status NOT IN ('cancelled', 'rejected')
-            GROUP BY co.id
             ORDER BY co.created_at DESC";
 
     $stmt = $db->prepare($query);
@@ -144,12 +121,11 @@ try {
         $total_quantity += $order['total_quantity'];
         $total_subtotal += $order['subtotal_amount'];
         $total_discount += $order['discount_amount'];
-        $total_damaged += $order['damaged_amount'];
+        $total_damaged += (float) ($order['damaged_amount'] ?? 0);
         $total_final += $order['final_amount'];
         $total_paid += $order['paid_amount'];
-        // Calculation now uses the direct column values
         $total_remaining += ($order['final_amount'] - $order['paid_amount']);
-        $total_all_discounts += $order['discount_amount']; 
+        $total_all_discounts += $order['discount_amount'];
     }
 
 } catch (PDOException $e) {
@@ -181,27 +157,33 @@ function getSubmittedStatusDetails($status) {
 if ($customer['enable_create_self_order'] === 'active') {
     try {
         // MODIFICATION: Filter out 'approved' orders and fetch necessary columns for display
-        $query_approvals = "SELECT 
+        $query_approvals = "SELECT
                     oa.id,
                     oa.created_at,
                     oa.status,
-                    oa.payment_proof_path,        
-                    oa.subtotal_amount,           
-                    oa.shipping_cost,             
-                    oa.coupon_code,               
-                    oa.coupon_discount_amount,    
-                    oa.automatic_discount_percentage, 
-                    oa.automatic_discount_amount, 
+                    oa.payment_proof_path,
+                    oa.subtotal_amount,
+                    oa.shipping_cost,
+                    oa.coupon_code,
+                    oa.coupon_discount_amount,
+                    oa.automatic_discount_percentage,
+                    oa.automatic_discount_amount,
                     oa.paid_amount,
-                    oa.total_after_discounts,     
+                    oa.total_after_discounts,
                     oa.rejection_reason,
                     oa.notes,
                     COALESCE((SELECT SUM(oai.item_count) FROM order_approval_items oai WHERE oai.approval_id = oa.id), 0) AS total_quantity,
-                    co.order_number AS final_order_number
+                    co.order_number AS final_order_number,
+                    COALESCE(NULLIF(TRIM(co.order_link), ''),
+                        (SELECT TRIM(oai.product_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.product_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1)
+                    ) AS display_order_link,
+                    COALESCE(NULLIF(TRIM(co.additional_link), ''),
+                        (SELECT TRIM(oai.additional_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.additional_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1)
+                    ) AS display_additional_link
                 FROM order_approvals oa
                 LEFT JOIN customer_orders co ON oa.final_order_id = co.id
                 WHERE oa.customer_id = ?
-                AND oa.status != 'approved' 
+                AND oa.status != 'approved'
                 ORDER BY oa.created_at DESC";
 
         $stmt_approvals = $db->prepare($query_approvals);
@@ -284,18 +266,15 @@ if ($customer['enable_create_self_order'] === 'active') {
         }
         .slider-dot.active { background: #C7A46D; width: 25px; border-radius: 10px; opacity: 1; }
         
-        @media (max-width: 768px) { 
-            .portal-slider { 
-                height: 200px; 
-                min-height: auto;
-                border-radius: 15px;
-                margin-bottom: 1.5rem;
-            } 
-            .slide-img-main { 
-                border-radius: 15px; 
-            }
-            .nav-logo { height: 32px; }
-            .nav-container { padding: 0 10px; }
+        .portal-nav-drawer { display: none; }
+        .portal-nav-drawer.is-open { display: block; }
+        @media (min-width: 768px) {
+            .portal-nav-drawer { display: none !important; }
+        }
+        @media (max-width: 768px) {
+            .portal-slider { height: 200px; min-height: auto; border-radius: 15px; margin-bottom: 1.5rem; }
+            .slide-img-main { border-radius: 15px; }
+            .nav-logo { max-height: 32px; }
         }
 
         /* Scrollbar styles for both tables */
@@ -328,33 +307,53 @@ if ($customer['enable_create_self_order'] === 'active') {
     
     <!-- Navbar -->
     <nav class="text-white shadow-lg sticky top-0 z-50" style="background: linear-gradient(135deg, #C7A46D, #9e7f4e);">
-        <div class="max-w-6xl mx-auto px-4 h-16 flex justify-between items-center nav-container">
-            <!-- Grouping for Customer Info and Shop Button -->
-            <div class="flex items-center gap-4"> 
-                <div class="flex items-center min-w-0 gap-3">
-                    <i class="fas fa-user-circle text-3xl"></i>
-                    <div class="truncate">
-                        <h1 class="text-lg font-bold truncate leading-tight"><?php echo htmlspecialchars($customer['name']); ?></h1>
-                        <p class="text-xs opacity-80">CUST<?php echo str_pad($customer['id'], 3, '0', STR_PAD_LEFT); ?></p>
+        <div class="max-w-6xl mx-auto px-3 sm:px-4 min-h-[4rem] flex flex-wrap items-center justify-between gap-2 py-2 nav-container">
+            <div class="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 md:flex-initial">
+                <button type="button" class="portal-nav-toggle md:hidden flex-shrink-0 w-10 h-10 rounded-lg bg-white/15 hover:bg-white/25 flex items-center justify-center border border-white/20" onclick="document.getElementById('portalNavDrawer').classList.add('is-open')" aria-label="القائمة">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
+                <div class="flex items-center min-w-0 gap-2 sm:gap-3">
+                    <i class="fas fa-user-circle text-2xl sm:text-3xl flex-shrink-0"></i>
+                    <div class="truncate min-w-0">
+                        <h1 class="text-base sm:text-lg font-bold truncate leading-tight"><?php echo htmlspecialchars($customer['name']); ?></h1>
+                        <p class="text-[10px] sm:text-xs opacity-80 truncate">CUST<?php echo str_pad($customer['id'], 3, '0', STR_PAD_LEFT); ?></p>
                     </div>
                 </div>
+            </div>
 
-                <!-- NEW: Shop Button - inside the nav bar -->
+            <div class="portal-nav-desktop hidden md:flex items-center gap-3 flex-shrink-0">
                 <?php if ($showShopLink): ?>
-                    <a href="products.php?token=<?php echo htmlspecialchars($token); ?>" 
-                       class="inline-flex items-center px-3 py-1 text-sm font-semibold rounded-full text-white bg-red-500 hover:bg-red-600 transition-colors">
+                    <a href="products.php?token=<?php echo htmlspecialchars($token); ?>"
+                       class="inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-full text-white bg-red-500 hover:bg-red-600 transition-colors whitespace-nowrap">
                         <i class="fas fa-store-alt ml-1"></i>
                         <span>المنتجات</span>
                     </a>
                 <?php endif; ?>
+                <img src="../assets/images/yamman_logo.png" alt="Yamman Logo" class="h-9 md:h-12 w-auto object-contain nav-logo" style="border-radius: 8px;">
             </div>
 
-            <!-- Right: Logo -->
-            <div class="flex-shrink-0">
-                <img src="../assets/images/yamman_logo.png" alt="Yamman Logo" class="h-10 md:h-12 w-auto object-contain nav-logo" style="border-radius: 8px;">
+            <div class="flex md:hidden flex-shrink-0">
+                <img src="../assets/images/yamman_logo.png" alt="" class="h-8 w-auto object-contain nav-logo rounded-lg">
             </div>
         </div>
     </nav>
+
+    <div id="portalNavDrawer" class="portal-nav-drawer fixed inset-0 z-[60]">
+        <div class="absolute inset-0 bg-black/40" onclick="document.getElementById('portalNavDrawer').classList.remove('is-open')"></div>
+        <div class="absolute top-0 right-0 h-full w-[min(100%,280px)] shadow-2xl p-5 pt-16" style="background: linear-gradient(180deg, #2d2419 0%, #1a1510 100%);">
+            <button type="button" class="absolute top-4 left-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center" onclick="document.getElementById('portalNavDrawer').classList.remove('is-open')" aria-label="إغلاق">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="flex flex-col gap-3 text-right">
+                <?php if ($showShopLink): ?>
+                    <a href="products.php?token=<?php echo htmlspecialchars($token); ?>" class="block w-full text-center py-3 rounded-xl bg-red-500 hover:bg-red-600 font-bold text-white" onclick="document.getElementById('portalNavDrawer').classList.remove('is-open')">
+                        <i class="fas fa-store-alt ml-2"></i> المنتجات
+                    </a>
+                <?php endif; ?>
+                <p class="text-xs text-white/60 mt-4">بوابة العميل</p>
+            </div>
+        </div>
+    </div>
 
     <div class="max-w-6xl mx-auto px-4 py-8">
         
@@ -580,8 +579,10 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600"><?php echo date('Y-m-d', strtotime($order['created_at'])); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-center font-bold text-gray-900"><?php echo number_format($order['total_quantity']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    <?php if (!empty($order['order_link'])): ?>
-                                        <a href="<?php echo htmlspecialchars($order['order_link']); ?>" target="_blank" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded transition"><i class="fas fa-link ml-1"></i> رابط</a>
+                                    <?php
+                                    $pLink = !empty(trim($order['order_link'] ?? '')) ? trim($order['order_link']) : trim($order['first_product_link'] ?? '');
+                                    if (!empty($pLink)): ?>
+                                        <a href="<?php echo htmlspecialchars($pLink); ?>" target="_blank" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded transition"><i class="fas fa-link ml-1"></i> رابط</a>
                                     <?php else: echo '-'; endif; ?>
                                 </td>
                                 <td class="px-4 py-3 whitespace-nowrap">
@@ -608,7 +609,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                     }
                                     ?>
                                 </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-red-500"><?php echo number_format($order['damaged_amount']); ?></td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-red-500"><?php echo number_format((float) ($order['damaged_amount'] ?? 0)); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-emerald-600"><?php echo number_format($order['final_amount']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-600"><?php echo number_format($order['paid_amount']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold <?php echo $remaining > 0.01 ? 'text-red-600' : 'text-green-600'; ?>"><?php echo number_format($remaining); ?></td>
@@ -726,17 +727,26 @@ if ($customer['enable_create_self_order'] === 'active') {
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600"><?php echo date('Y-m-d', strtotime($approval['created_at'])); ?></td>
                                         <!-- 3. عدد القطع -->
                                         <td class="px-4 py-3 whitespace-nowrap text-center font-bold text-gray-900"><?php echo number_format($approval['total_quantity']); ?></td>
-                                        <!-- 4. رابط الطلب (Not available in order_approvals schema) -->
-                                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">-</td>
-                                        <!-- 5. رابط إضافي (Payment Proof Path from order_approvals) -->
+                                        <!-- 4. رابط الطلب -->
                                         <td class="px-4 py-3 whitespace-nowrap">
-                                            <?php if (!empty($approval['payment_proof_path'])): ?>
-                                                <button onclick="copyToClipboard(this, '<?php echo htmlspecialchars($approval['payment_proof_path']); ?>')" 
-                                                        class="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs rounded transition whitespace-nowrap copy-btn"
-                                                        data-original-text="نسخ رابط الإثبات">
-                                                    <i class="fas fa-copy ml-1"></i> <span>نسخ رابط</span>
-                                                </button>
+                                            <?php if (!empty($approval['display_order_link'])): ?>
+                                                <a href="<?php echo htmlspecialchars($approval['display_order_link']); ?>" target="_blank" class="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs rounded transition"><i class="fas fa-link ml-1"></i> رابط</a>
                                             <?php else: echo '-'; endif; ?>
+                                        </td>
+                                        <!-- 5. رابط إضافي -->
+                                        <td class="px-4 py-3 whitespace-nowrap">
+                                            <?php if (!empty($approval['display_additional_link'])): ?>
+                                                <a href="<?php echo htmlspecialchars($approval['display_additional_link']); ?>" target="_blank" class="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs rounded transition"><i class="fas fa-link ml-1"></i> رابط</a>
+                                            <?php else: echo '-'; endif; ?>
+                                            <?php if (!empty($approval['payment_proof_path'])): ?>
+                                                <div class="mt-1">
+                                                    <button type="button" onclick="copyToClipboard(this, '<?php echo htmlspecialchars($approval['payment_proof_path']); ?>')"
+                                                            class="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded transition whitespace-nowrap copy-btn"
+                                                            data-original-text="نسخ رابط الإثبات">
+                                                        <i class="fas fa-copy ml-1"></i> <span>نسخ إثبات الدفع</span>
+                                                    </button>
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
                                         <!-- 6. الحالة -->
                                         <td class="px-4 py-3 whitespace-nowrap">

@@ -242,3 +242,44 @@ function canDeleteCustomers($user_id = null, $db = null) {
     $uid = $user_id ?? ($_SESSION['user_id'] ?? 0);
     return hasPermission($uid, 'customers', 'edit'); // delete = edit permission
 }
+
+/**
+ * Order approvals (customer self-service) — list page access.
+ * Allows users with orders view and/or order_approval view/approve/reject.
+ */
+function canAccessOrderApprovalsPage($user_id = null) {
+    global $db;
+    $uid = $user_id ?? ($_SESSION['user_id'] ?? 0);
+    if (isUserAdmin($uid, $db)) {
+        return true;
+    }
+    return hasPermission($uid, 'orders', 'view')
+        || hasPermission($uid, 'order_approval', 'view')
+        || hasPermission($uid, 'order_approval', 'approve')
+        || hasPermission($uid, 'order_approval', 'reject');
+}
+
+/** Open approval detail / perform workflow (legacy: full orders edit). */
+function canOpenOrderApprovalDetail($user_id = null) {
+    global $db;
+    $uid = $user_id ?? ($_SESSION['user_id'] ?? 0);
+    if (isUserAdmin($uid, $db)) {
+        return true;
+    }
+    return hasPermission($uid, 'order_approval', 'approve')
+        || hasPermission($uid, 'order_approval', 'reject')
+        || hasPermission($uid, 'order_approval', 'view')
+        || hasPermission($uid, 'orders', 'edit');
+}
+
+function canApproveOrderApprovals($user_id = null) {
+    $uid = $user_id ?? ($_SESSION['user_id'] ?? 0);
+    return hasPermission($uid, 'order_approval', 'approve')
+        || hasPermission($uid, 'orders', 'edit');
+}
+
+function canRejectOrderApprovals($user_id = null) {
+    $uid = $user_id ?? ($_SESSION['user_id'] ?? 0);
+    return hasPermission($uid, 'order_approval', 'reject')
+        || hasPermission($uid, 'orders', 'edit');
+}

@@ -11,8 +11,7 @@ require_once '../../includes/check_permissions.php';
 
 // --- 1. PERMISSIONS ---
 $user_id = $_SESSION['user_id'] ?? 0;
-// An employee needs 'edit' permission on 'orders' to manage these approvals
-if (!hasPermission($user_id, 'order_approval', 'view')) {
+if (!canAccessOrderApprovalsPage($user_id)) {
     $_SESSION['error_message'] = 'ليس لديك صلاحية للوصول لهذه الصفحة.';
     header('Location: ../../index.php');
     exit();
@@ -72,14 +71,16 @@ try {
 
     // --- FIX: The main SQL query now selects `oa.id` correctly ---
     $query = "SELECT
-        oa.id, -- This was the missing piece
+        oa.id,
         oa.currency, oa.created_at, oa.customer_id,
         oa.notes, oa.payment_proof_path, oa.subtotal_amount, oa.automatic_discount_amount, 
         oa.shipping_cost, oa.automatic_discount_percentage, oa.paid_amount,
         c.name as customer_name, c.mobile_number, c.whatsapp_number,
         ct.name as customer_type_name_from_table,
         (oa.subtotal_amount - oa.automatic_discount_amount + oa.shipping_cost) as final_amount,
-        oa.expected_delivery_date, oa.coupon_code, oa.coupon_discount_amount
+        oa.expected_delivery_date, oa.coupon_code, oa.coupon_discount_amount,
+        (SELECT TRIM(oai.product_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.product_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1) AS first_product_link,
+        (SELECT TRIM(oai.additional_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.additional_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1) AS first_additional_link
     " . $from_joins . $where_clause . " ORDER BY oa.created_at DESC LIMIT $records_per_page OFFSET $offset";
 
     $stmt = $db->prepare($query);
@@ -134,6 +135,8 @@ include '../../includes/header.php';
     .alert-success { background: #d1fae5; color: var(--success); }
     .alert-danger { background: #fee2e2; color: var(--danger); }
     .action-cell > div { display: flex; flex-direction: column; gap: 5px; min-width: 80px; }
+    .action-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; text-decoration: none; transition: all 0.2s; }
+    .action-icon:hover { transform: scale(1.05); }
 </style>
 
 <div class="min-h-screen" dir="rtl">
@@ -152,7 +155,7 @@ include '../../includes/header.php';
                 <div><label>إلى تاريخ</label><input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>" class="form-control"></div>
                 <div style="display: flex; gap: 10px;">
                     <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> بحث</button>
-                    <a href="pending.php" class="btn btn-secondary"><i class="fas fa-redo"></i> إلغاء</a>
+                    <a href="approvals.php" class="btn btn-secondary"><i class="fas fa-redo"></i> إلغاء</a>
                 </div>
             </div>
         </form>
@@ -164,6 +167,8 @@ include '../../includes/header.php';
                         <th>رقم الطلب</th>
                         <th>تاريخ التقديم</th>
                         <th>العميل</th>
+                        <th>رابط الطلب</th>
+                        <th>رابط إضافي</th>
                         <th>الإجمالي النهائي</th>
                         <th>المدفوع</th>
                         <th>إثبات الدفع</th>
@@ -173,7 +178,7 @@ include '../../includes/header.php';
                 </thead>
                 <tbody>
                     <?php if (empty($orders)): ?>
-                        <tr><td colspan="8" style="text-align: center; padding: 40px;">لا توجد طلبات بانتظار الموافقة</td></tr>
+                        <tr><td colspan="10" style="text-align: center; padding: 40px;">لا توجد طلبات بانتظار الموافقة</td></tr>
                     <?php else: ?>
                         <?php foreach ($orders as $order): ?>
                             <tr id="row-<?php echo $order['id']; ?>">
@@ -182,6 +187,20 @@ include '../../includes/header.php';
                                 <td>
                                     <div><?php echo htmlspecialchars($order['customer_name'] ?? 'N/A'); ?></div>
                                     <small><?php echo htmlspecialchars($order['mobile_number'] ?? ''); ?></small>
+                                </td>
+                                <td>
+                                    <?php
+                                    $primary_link = trim($order['first_product_link'] ?? '');
+                                    if (!empty($primary_link)): ?>
+                                        <a href="<?php echo htmlspecialchars($primary_link); ?>" target="_blank" class="action-icon" style="background: #dbeafe; color: #1e40af;" title="فتح رابط الطلب"><i class="fas fa-external-link-alt"></i></a>
+                                    <?php else: ?><span>-</span><?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php
+                                    $addl = trim($order['first_additional_link'] ?? '');
+                                    if (!empty($addl)): ?>
+                                        <a href="<?php echo htmlspecialchars($addl); ?>" target="_blank" class="action-icon" style="background: #fef3c7; color: #92400e;" title="فتح الرابط الإضافي"><i class="fas fa-link"></i></a>
+                                    <?php else: ?><span>-</span><?php endif; ?>
                                 </td>
                                 <td>
                                     <span style="font-weight: bold; color: var(--dark-gold);"><?php echo number_format($order['final_amount'], 2); ?></span>
@@ -212,7 +231,7 @@ include '../../includes/header.php';
                  <?php if (!empty($orders)): $page_totals = calculatePageTotals($orders); ?>
                     <tfoot style="background: #f3f4f6; border-top: 2px solid var(--primary); font-weight: bold;">
                         <tr>
-                            <td colspan="3">إجمالي الصفحة</td>
+                            <td colspan="5">إجمالي الصفحة</td>
                             <td><?php echo number_format($page_totals['final_amount_sum'], 2); ?></td>
                             <td><?php echo number_format($page_totals['paid_amount_sum'], 2); ?></td>
                             <td colspan="3"></td>
@@ -268,6 +287,17 @@ include '../../includes/header.php';
                 alert("سبب الرفض مطلوب.");
                 return;
             }
+
+            // WhatsApp contact selection
+            const whatsappContact = prompt("اختر رقم الواتساب للإرسال:\n1. رقم الهاتف المحمول\n2. رقم الواتساب\nأدخل 1 أو 2:", "1");
+            if (whatsappContact === null) {
+                return;
+            }
+            if (whatsappContact !== '1' && whatsappContact !== '2') {
+                alert("الرجاء اختيار 1 أو 2.");
+                return;
+            }
+
             url = 'api/reject_order.php';
         }
 
@@ -316,6 +346,12 @@ include '../../includes/header.php';
             reasonInput.name = 'rejection_reason';
             reasonInput.value = reason;
             form.appendChild(reasonInput);
+
+            const whatsappContactInput = document.createElement('input');
+            whatsappContactInput.type = 'hidden';
+            whatsappContactInput.name = 'whatsapp_contact';
+            whatsappContactInput.value = whatsappContact;
+            form.appendChild(whatsappContactInput);
         } else { // If approving, add all the other required fields from approvalDetails
             // Add items from fetched details
             approvalDetails.items.forEach((item, index) => {
@@ -366,6 +402,16 @@ include '../../includes/header.php';
         document.body.appendChild(form);
         form.submit(); // This will trigger a full page navigation, and the PHP redirect will work.
     }
+</script>
+
+<script>
+(function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('button[title*="الوضع"], button[title*="مظلم"], button[title*="داكن"], #darkModeToggle, #themeToggle, .theme-toggle-btn').forEach(function (el) {
+            el.remove();
+        });
+    });
+})();
 </script>
 
 <?php include '../../includes/footer.php'; ?>

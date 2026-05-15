@@ -1,5 +1,5 @@
 <?php
-// modules/orders/calculate_page.php
+// modules/customer_text/copying.php
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
@@ -24,7 +24,7 @@ if (!hasPermission($_SESSION['user_id'], 'calculations', 'view')) {
 $canEditCalculations = hasPermission($_SESSION['user_id'], 'calculations', 'edit');
 
 
-$page_title = "حاسبة يمان";
+$page_title = 'حاسبة المحاسبة يمان';
 include '../../includes/header.php';
 
 // Initialize variables

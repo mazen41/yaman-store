@@ -50,10 +50,12 @@ $currency = $customer['currency'] ?? 'YER';
 
 try {
     // 2. Main Approvals Query
-    $query = "SELECT 
+    $query = "SELECT
                 oa.*,
                 COALESCE((SELECT SUM(oai.item_count) FROM order_approval_items oai WHERE oai.approval_id = oa.id), 0) AS total_quantity,
-                co.order_number AS final_order_number
+                co.order_number AS final_order_number,
+                co.order_link,
+                co.additional_link
             FROM order_approvals oa
             LEFT JOIN customer_orders co ON oa.final_order_id = co.id
             WHERE oa.customer_id = ?
@@ -222,6 +224,7 @@ try {
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase">#الطلب</th>
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase">التاريخ</th>
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-center">القطع</th>
+                                <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase">الروابط</th>
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase">المدفوع</th>
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase text-center">الحالة</th>
                                 <th class="px-6 py-4 text-xs font-bold text-gray-500 uppercase">ملاحظات</th>
@@ -248,6 +251,23 @@ try {
                                     <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg text-sm font-bold">
                                         <?php echo number_format($approval['total_quantity']); ?>
                                     </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="flex flex-col gap-1">
+                                        <?php if (!empty($approval['order_link'])): ?>
+                                            <a href="<?php echo htmlspecialchars($approval['order_link']); ?>" target="_blank" class="text-blue-600 hover:underline text-sm">
+                                                <i class="fas fa-link ml-1"></i> رابط الطلب
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($approval['additional_link'])): ?>
+                                            <a href="<?php echo htmlspecialchars($approval['additional_link']); ?>" target="_blank" class="text-amber-600 hover:underline text-sm">
+                                                <i class="fas fa-external-link-alt ml-1"></i> رابط إضافي
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if (empty($approval['order_link']) && empty($approval['additional_link'])): ?>
+                                            <span class="text-gray-400 text-sm">-</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="font-bold text-gray-900"><?php echo number_format($approval['paid_amount'], 2); ?> <small class="text-gray-500 font-normal"><?php echo $currency; ?></small></div>

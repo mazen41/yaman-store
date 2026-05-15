@@ -15,11 +15,14 @@ require_once '../../includes/accounting_functions.php';
 require_once '../../includes/auto_generate_helpers.php';
 require_once '../../includes/status_helpers.php'; // Added for getOrderStatusBadge
 
-if (!hasPermission($_SESSION['user_id'], 'order_approval', 'approve')) {
+if (!canOpenOrderApprovalDetail($_SESSION['user_id'])) {
     $_SESSION['error_message'] = 'ليس لديك صلاحية لتعديل/الموافقة على الطلبات.';
     header('Location: index.php');
     exit();
 }
+
+$can_approve_sa = canApproveOrderApprovals($_SESSION['user_id']);
+$can_reject_sa = canRejectOrderApprovals($_SESSION['user_id']);
 
 $approval_id = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 if (!$approval_id) {
@@ -29,7 +32,7 @@ if (!$approval_id) {
 
 // --- Fetch Approval Details ---
 $app_stmt = $db->prepare("
-    SELECT oa.*, c.name as customer_name_from_customer_table, c.customer_code, ct.name as customer_type_name_from_db
+    SELECT oa.*, c.name as customer_name_from_customer_table, c.customer_code, c.mobile_number as customer_mobile_number, c.whatsapp_number as customer_whatsapp_number, ct.name as customer_type_name_from_db
     FROM order_approvals oa
     LEFT JOIN customers c ON oa.customer_id = c.id
     LEFT JOIN customer_types ct ON c.customer_type_id = ct.id
@@ -364,8 +367,12 @@ include '../../includes/header.php';
                             </div>
 
                             <div class="grid grid-cols-1 gap-3 pt-4">
+                                <?php if ($can_approve_sa): ?>
                                 <button type="submit" name="action" value="approve" onclick="return validateAndConfirmApproval();" class="btn-grad-primary py-3.5 rounded-xl font-bold">اعتماد وموافقة</button>
+                                <?php endif; ?>
+                                <?php if ($can_reject_sa): ?>
                                 <button type="button" onclick="openModal()" class="btn-grad-danger py-3 rounded-xl font-bold">رفض الطلب</button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -412,6 +419,7 @@ include '../../includes/header.php';
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md m-4" id="modalContent">
         <h5 class="text-red-700 font-bold p-4 border-b">رفض الطلب</h5>
         <form action="api/reject_order.php" method="POST">
+            <input type="hidden" name="whatsapp_contacts_form" value="1">
             <input type="hidden" name="approval_id" value="<?php echo $approval_id; ?>">
             <div class="p-6">
                 <p class="mb-3 text-sm font-bold">يرجى توضيح سبب الرفض (إلزامي - سيظهر للعميل):</p>
@@ -419,6 +427,31 @@ include '../../includes/header.php';
                 
                 <p class="mb-3 text-sm font-bold text-gray-600">ملاحظات الإدارة (داخلية فقط - اختياري):</p>
                 <textarea name="admin_notes" id="modal_admin_notes" class="modern-input w-full h-20 placeholder-gray-400" placeholder="احتفظ بملاحظاتك حول سبب الرفض هنا..."></textarea>
+
+                <p class="mb-2 mt-4 text-sm font-bold text-gray-800">إرسال إشعار واتساب بالرفض إلى:</p>
+                <div class="space-y-2 text-right border border-gray-100 rounded-lg p-3 bg-gray-50">
+                    <?php
+                    $mob = trim($approval['customer_mobile_number'] ?? '');
+                    $wa = trim($approval['customer_whatsapp_number'] ?? '');
+                    $has_any = ($mob !== '' || $wa !== '');
+                    if (!$has_any): ?>
+                        <p class="text-xs text-gray-500">لا توجد أرقار مسجلة للعميل.</p>
+                    <?php else: ?>
+                        <?php if ($mob !== ''): ?>
+                        <label class="flex items-center gap-2 cursor-pointer text-sm">
+                            <input type="checkbox" name="whatsapp_contacts[]" value="mobile" class="rounded" checked>
+                            <span>الجوال: <?php echo htmlspecialchars($mob); ?></span>
+                        </label>
+                        <?php endif; ?>
+                        <?php if ($wa !== ''): ?>
+                        <label class="flex items-center gap-2 cursor-pointer text-sm">
+                            <input type="checkbox" name="whatsapp_contacts[]" value="whatsapp" class="rounded" <?php echo ($mob === '') ? 'checked' : ''; ?>>
+                            <span>واتساب: <?php echo htmlspecialchars($wa); ?></span>
+                        </label>
+                        <?php endif; ?>
+                        <p class="text-xs text-gray-500 mt-2">اترك كل الخيارات غير محددة لعدم إرسال إشعار واتساب.</p>
+                    <?php endif; ?>
+                </div>
             </div>
             <div class="bg-gray-50 p-4 flex justify-end gap-3 rounded-b-2xl">
                 <button type="button" onclick="closeModal()" class="px-4 py-2 bg-white border rounded">إلغاء</button>

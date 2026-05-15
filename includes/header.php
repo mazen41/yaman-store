@@ -307,8 +307,7 @@
                 style="background: linear-gradient(to left, #C7A46D, #B8956A);">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
-                        <img src="/assets/images/yamman_logo.png" alt="Yaman Accounting Calculator" class="h-10 w-auto mr-2">
-                        <h1 class="text-xl font-bold text-gray-800">Yaman Accounting Calculator</h1>
+                        <img src="/assets/images/yamman_logo.png" alt="يمان" class="h-10 w-auto mr-2">
                     </div>
                     <button id="closeSidebarButton"
                         class="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 hover:bg-gray-200 rounded-full transition-all duration-300 transform hover:scale-110 focus:outline-none md:hidden">

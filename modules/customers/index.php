@@ -86,7 +86,21 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
             } catch (PDOException $e) {
                 $error_message = 'حدث خطأ أثناء تحديث حالة السماح بالطلب بدون دفعة أولى.';
             }
-        // --- NEW: Handle Toggle Show Shop For Customer ---
+        } elseif ($_GET['action'] == 'bulk_self_service_all') {
+            try {
+                $bulk_state = $_GET['bulk_state'] ?? '';
+                if ($bulk_state === '1') {
+                    $db->exec("UPDATE customers SET enable_create_self_order = 'active', allow_no_deposit_orders = 1, show_shop_for_customer = 1, updated_at = NOW()");
+                    $success_message = 'تم تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
+                } elseif ($bulk_state === '0') {
+                    $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', allow_no_deposit_orders = 0, show_shop_for_customer = 0, updated_at = NOW()");
+                    $success_message = 'تم تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
+                } else {
+                    $error_message = 'طلب غير صالح لتعديل جماعي.';
+                }
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء التحديث الجماعي.';
+            }
         } elseif ($_GET['action'] == 'toggle_show_shop') {
             try {
                 $current_status = $_GET['status'] ?? 0; // Expecting 0 or 1
@@ -97,7 +111,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
             } catch (PDOException $e) {
                 $error_message = 'حدث خطأ أثناء تحديث حالة عرض المتجر للعميل.';
             }
-        // --- END NEW ---
         }
     }
 }
@@ -349,6 +362,16 @@ include '../../includes/header.php';
                         <i class="fas fa-filter ml-2"></i> <span id="toggleText"><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
                     </button>
                     
+                    <?php if ($can_edit): ?>
+                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=1" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                            class="inline-flex items-center px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition duration-200 text-sm font-semibold">
+                            <i class="fas fa-toggle-on ml-1"></i> تفعيل الكل
+                        </a>
+                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=0" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                            class="inline-flex items-center px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition duration-200 text-sm font-semibold">
+                            <i class="fas fa-toggle-off ml-1"></i> تعطيل الكل
+                        </a>
+                    <?php endif; ?>
                     <?php if ($can_add): ?>
                         <a href="add.php"
                             class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
