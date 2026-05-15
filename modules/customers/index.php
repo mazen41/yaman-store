@@ -31,7 +31,7 @@ $page_title = 'إدارة العملاء';
 
 // --- Handle Actions (Delete/Toggle Status/Toggle Self Order/Toggle No Deposit Order/Toggle Show Shop) ---
 // Note: These actions now update the `updated_at` field to reflect the change in sorting.
-if (isset($_GET['action']) && isset($_GET['id'])) {
+if (isset($_GET['action'])) {
     // Check edit permission for actions that modify data
     if (!$can_edit) {
         $error_message = 'ليس لديك صلاحية لتنفيذ هذا الإجراء';
@@ -86,20 +86,74 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
             } catch (PDOException $e) {
                 $error_message = 'حدث خطأ أثناء تحديث حالة السماح بالطلب بدون دفعة أولى.';
             }
-        } elseif ($_GET['action'] == 'bulk_self_service_all') {
+        } elseif ($_GET['action'] == 'bulk_all_customer_features') {
             try {
-                $bulk_state = $_GET['bulk_state'] ?? '';
-                if ($bulk_state === '1') {
+                $bulk_state = $_GET['state'] ?? '';
+                if ($bulk_state === 'enable') {
                     $db->exec("UPDATE customers SET enable_create_self_order = 'active', allow_no_deposit_orders = 1, show_shop_for_customer = 1, updated_at = NOW()");
                     $success_message = 'تم تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
-                } elseif ($bulk_state === '0') {
+                } elseif ($bulk_state === 'disable') {
                     $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', allow_no_deposit_orders = 0, show_shop_for_customer = 0, updated_at = NOW()");
                     $success_message = 'تم تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
                 } else {
-                    $error_message = 'طلب غير صالح لتعديل جماعي.';
+                    $error_message = 'طلب غير صالح للتحكم الجماعي.';
                 }
             } catch (PDOException $e) {
-                $error_message = 'حدث خطأ أثناء التحديث الجماعي.';
+                $error_message = 'حدث خطأ أثناء تحديث إعدادات جميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'bulk_self_order') {
+            try {
+                $bulk_state = $_GET['state'] ?? '';
+                if ($bulk_state === 'enable') {
+                    $db->exec("UPDATE customers SET enable_create_self_order = 'active', updated_at = NOW()");
+                    $success_message = 'تم تفعيل الطلب الذاتي لجميع العملاء.';
+                } elseif ($bulk_state === 'disable') {
+                    $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', updated_at = NOW()");
+                    $success_message = 'تم تعطيل الطلب الذاتي لجميع العملاء.';
+                } else {
+                    $error_message = 'طلب غير صالح لتحديث الطلب الذاتي.';
+                }
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تحديث الطلب الذاتي لجميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'bulk_feature_toggle') {
+            try {
+                $feature = $_GET['feature'] ?? '';
+                $bulk_state = $_GET['state'] ?? '';
+                $allowed_features = [
+                    'no_deposit' => ['column' => 'allow_no_deposit_orders', 'label' => 'بدون دفعة أولى'],
+                    'show_shop' => ['column' => 'show_shop_for_customer', 'label' => 'عرض المتجر'],
+                ];
+                if (!isset($allowed_features[$feature]) || !in_array($bulk_state, ['enable', 'disable'], true)) {
+                    throw new Exception('طلب غير صالح لتحديث الميزة.');
+                }
+                $new_value = $bulk_state === 'enable' ? 1 : 0;
+                $column = $allowed_features[$feature]['column'];
+                $db->exec("UPDATE customers SET {$column} = {$new_value}, updated_at = NOW()");
+                $success_message = ($bulk_state === 'enable' ? 'تم تفعيل ' : 'تم تعطيل ') . $allowed_features[$feature]['label'] . ' لجميع العملاء.';
+            } catch (Exception $e) {
+                $error_message = 'حدث خطأ أثناء تحديث الميزة لجميع العملاء: ' . $e->getMessage();
+            }
+        } elseif ($_GET['action'] == 'allow_self_order_all' || $_GET['action'] == 'bulk_self_service_all') {
+            try {
+                $db->exec("UPDATE customers SET enable_create_self_order = 'active', updated_at = NOW()");
+                $success_message = 'تم تفعيل الطلب الذاتي لجميع العملاء.';
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تفعيل الطلب الذاتي لجميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'enable_all_customers') {
+            try {
+                $db->exec("UPDATE customers SET enable_create_self_order = 'active', allow_no_deposit_orders = 1, show_shop_for_customer = 1, updated_at = NOW()");
+                $success_message = 'تم تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تفعيل إعدادات جميع العملاء.';
+            }
+        } elseif ($_GET['action'] == 'disable_all_customers') {
+            try {
+                $db->exec("UPDATE customers SET enable_create_self_order = 'inactive', allow_no_deposit_orders = 0, show_shop_for_customer = 0, updated_at = NOW()");
+                $success_message = 'تم تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء.';
+            } catch (PDOException $e) {
+                $error_message = 'حدث خطأ أثناء تعطيل إعدادات جميع العملاء.';
             }
         } elseif ($_GET['action'] == 'toggle_show_shop') {
             try {
@@ -355,28 +409,56 @@ include '../../includes/header.php';
                     <h1 class="text-2xl font-bold text-gray-900">إدارة العملاء</h1>
                     <p class="text-gray-600 mt-1">فلترة، ترتيب، وإدارة بيانات العملاء.</p>
                 </div>
-                <div class="mt-4 sm:mt-0 flex items-center space-x-3 space-x-reverse">
-                    <!-- Toggle Filters Button -->
-                    <button type="button" id="toggleAdvancedFiltersBtn"
-                        class="inline-flex items-center px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-200 text-sm">
-                        <i class="fas fa-filter ml-2"></i> <span id="toggleText"><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
-                    </button>
-                    
+                <div class="mt-4 sm:mt-0 flex flex-col lg:flex-row lg:items-center gap-3 w-full lg:w-auto">
+                    <div class="flex flex-wrap gap-2 justify-start lg:justify-end">
+                        <!-- Toggle Filters Button -->
+                        <button type="button" id="toggleAdvancedFiltersBtn"
+                            class="inline-flex items-center px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-200 text-sm">
+                            <i class="fas fa-filter ml-2"></i> <span id="toggleText"><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
+                        </button>
+                        <?php if ($can_add): ?>
+                            <a href="add.php"
+                                class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-sm font-semibold">
+                                <i class="fas fa-plus ml-2"></i> عميل جديد
+                            </a>
+                        <?php endif; ?>
+                    </div>
+
                     <?php if ($can_edit): ?>
-                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=1" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-toggle-on ml-1"></i> تفعيل الكل
-                        </a>
-                        <a href="index.php?action=bulk_self_service_all&amp;bulk_state=0" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-toggle-off ml-1"></i> تعطيل الكل
-                        </a>
-                    <?php endif; ?>
-                    <?php if ($can_add): ?>
-                        <a href="add.php"
-                            class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
-                            <i class="fas fa-plus ml-2"></i> عميل جديد
-                        </a>
+                        <div class="w-full lg:w-auto bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                                <span class="text-xs font-bold text-gray-500 whitespace-nowrap">تحكم جماعي</span>
+                                <div class="flex flex-wrap gap-2">
+                                    <a href="index.php?action=bulk_all_customer_features&state=enable" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                                        class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-xs sm:text-sm font-semibold">
+                                        <i class="fas fa-check-circle ml-1"></i> Enable All Customers
+                                    </a>
+                                    <a href="index.php?action=bulk_all_customer_features&state=disable" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                                        class="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200 text-xs sm:text-sm font-semibold">
+                                        <i class="fas fa-ban ml-1"></i> Disable All Customers
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="text-xs font-semibold text-purple-700">الطلب الذاتي</span>
+                                    <a href="index.php?action=bulk_self_order&state=enable" onclick="return confirm('تفعيل الطلب الذاتي لجميع العملاء؟');" class="px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 text-xs font-bold">Enable All</a>
+                                    <a href="index.php?action=bulk_self_order&state=disable" onclick="return confirm('تعطيل الطلب الذاتي لجميع العملاء؟');" class="px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-bold">Disable All</a>
+                                </div>
+                                <form method="GET" class="flex flex-col sm:flex-row gap-2">
+                                    <input type="hidden" name="action" value="bulk_feature_toggle">
+                                    <select name="feature" class="px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm">
+                                        <option value="no_deposit">بدون دفعة أولى</option>
+                                        <option value="show_shop">عرض المتجر</option>
+                                    </select>
+                                    <select name="state" class="px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm">
+                                        <option value="enable">Enable All</option>
+                                        <option value="disable">Disable All</option>
+                                    </select>
+                                    <button type="submit" onclick="return confirm('تنفيذ الإجراء على جميع العملاء؟');" class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs sm:text-sm font-semibold">تطبيق</button>
+                                </form>
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>

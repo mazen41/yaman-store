@@ -47,6 +47,19 @@ function formatToYemenTime($dateString, $format = 'Y-m-d h:i A') {
     }
 }
 
+function isModifiedHistoryRecord($transaction) {
+    $history_types = ['order_status_history', 'order_state_history'];
+    if (!in_array($transaction['transaction_type'] ?? '', $history_types, true)) {
+        return false;
+    }
+
+    $status = trim((string)($transaction['status'] ?? ''));
+    $reference = trim((string)($transaction['reference_number'] ?? ''));
+    $modified_values = ['معدل', 'modified', 'modifed'];
+
+    return in_array($status, $modified_values, true) || in_array($reference, $modified_values, true);
+}
+
 
 // معالجة طلب المراجعة عبر AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'review') {
@@ -196,31 +209,10 @@ try {
     $stmt->execute($params);
     $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Re-calculate counts based on the filtered results
-    $orders_count = count(array_filter($transactions, fn($t) => $t['transaction_type'] === 'order'));
-    $baskets_count = count(array_filter($transactions, fn($t) => $t['transaction_type'] === 'basket'));
-    $expenses_count = count(array_filter($transactions, fn($t) => $t['transaction_type'] === 'expense'));
-    $payments_count = count(array_filter($transactions, fn($t) => $t['transaction_type'] === 'payment'));
-    
-    $order_status_history_count = count(array_filter($transactions, fn($t) => $t['transaction_type'] === 'order_status_history' || $t['transaction_type'] === 'order_state_history'));
-
-    $reviewed_count = count(array_filter($transactions, fn($t) => $t['review_status'] === 'reviewed'));
-    $pending_count = count(array_filter($transactions, fn($t) => $t['review_status'] === 'pending'));
-
-    // Apply remaining filters after initial fetch and union
-    if ($filter !== 'all') {
-        if ($filter === 'order_history') {
-            $transactions = array_filter($transactions, fn($t) => $t['transaction_type'] === 'order_status_history' || $t['transaction_type'] === 'order_state_history');
-        } else {
-            $transactions = array_filter($transactions, fn($t) => $t['transaction_type'] === $filter);
-        }
-    }
-    
-    // فلترة مخصصة باستخدام PHP (تاريخ، مبلغ، بحث)
+    // Apply search/date/status/amount filters before tab counts so every tab respects the active filters.
     $transactions = array_filter($transactions, function ($t) use ($search_query, $status_filter, $date_from, $date_to, $amount_filter) {
         if ($status_filter !== '' && ($t['status'] ?? '') !== $status_filter) return false;
         
-        // تطبيق فلتر المبلغ (السعر)
         if ($amount_filter !== '') {
             if (floatval($t['amount']) != floatval($amount_filter)) return false;
         }
@@ -231,11 +223,37 @@ try {
             if (!empty($date_to) && $created_date > $date_to) return false;
         }
         if ($search_query !== '') {
-            $haystack = strtolower(($t['transaction_number'] ?? '') . ' ' . ($t['reference_number'] ?? '') . ' ' . ($t['customer_name'] ?? '') . ' ' . ($t['mobile_number'] ?? '') . ' ' . ($t['status'] ?? '')); // Added status to search
+            $haystack = strtolower(($t['transaction_number'] ?? '') . ' ' . ($t['reference_number'] ?? '') . ' ' . ($t['customer_name'] ?? '') . ' ' . ($t['mobile_number'] ?? '') . ' ' . ($t['status'] ?? ''));
             if (strpos($haystack, strtolower($search_query)) === false) return false;
         }
         return true;
     });
+
+    $filtered_transactions = array_values($transactions);
+    $modified_history_transactions = array_values(array_filter($filtered_transactions, 'isModifiedHistoryRecord'));
+    $main_transactions = array_values(array_filter($filtered_transactions, fn($t) => !isModifiedHistoryRecord($t)));
+    $main_transactions_count = count($main_transactions);
+
+    // Counts exclude modified history from the main history/all tabs and expose it in its own tab.
+    $orders_count = count(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'order'));
+    $baskets_count = count(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'basket'));
+    $expenses_count = count(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'expense'));
+    $payments_count = count(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'payment'));
+    $order_status_history_count = count(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'order_status_history' || $t['transaction_type'] === 'order_state_history'));
+    $modified_history_count = count($modified_history_transactions);
+
+    $reviewed_count = count(array_filter($main_transactions, fn($t) => $t['review_status'] === 'reviewed'));
+    $pending_count = count(array_filter($main_transactions, fn($t) => $t['review_status'] === 'pending'));
+
+    if ($filter === 'modified_history') {
+        $transactions = $modified_history_transactions;
+    } elseif ($filter === 'order_history') {
+        $transactions = array_values(array_filter($main_transactions, fn($t) => $t['transaction_type'] === 'order_status_history' || $t['transaction_type'] === 'order_state_history'));
+    } elseif ($filter !== 'all') {
+        $transactions = array_values(array_filter($main_transactions, fn($t) => $t['transaction_type'] === $filter));
+    } else {
+        $transactions = $main_transactions;
+    }
 } catch (PDOException $e) { die("Database Error: " . $e->getMessage()); }
 
 // Fetch bank accounts for the filter dropdown
@@ -288,7 +306,7 @@ include '../../includes/header.php';
 
     <!-- علامات التبويب مع تمرير فلتر المبلغ الجديد -->
     <div class="tabs-container">
-        <a href="?filter=all&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'all' ? 'active' : ''; ?>">الكل <span class="tab-badge"><?php echo count($transactions); ?></span></a>
+        <a href="?filter=all&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'all' ? 'active' : ''; ?>">الكل <span class="tab-badge"><?php echo $main_transactions_count; ?></span></a>
         
         <a href="?filter=order&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'order' ? 'active' : ''; ?>">طلبات العملاء <span class="tab-badge"><?php echo $orders_count; ?></span></a>
         
@@ -299,6 +317,8 @@ include '../../includes/header.php';
         <a href="?filter=payment&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'payment' ? 'active' : ''; ?>">الدفعات <span class="tab-badge"><?php echo $payments_count; ?></span></a>
         
         <a href="?filter=order_history&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'order_history' ? 'active' : ''; ?>">سجل حالات الطلبات <span class="tab-badge"><?php echo $order_status_history_count; ?></span></a>
+        
+        <a href="?filter=modified_history&q=<?php echo urlencode($search_query); ?>&amount=<?php echo urlencode($amount_filter); ?>&status=<?php echo urlencode($status_filter); ?>&review_status=<?php echo urlencode($review_status_filter); ?>&bank_account=<?php echo urlencode($bank_account_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>" class="tab-button <?php echo $filter === 'modified_history' ? 'active' : ''; ?>">Modified Status History <span class="tab-badge"><?php echo $modified_history_count; ?></span></a>
     </div>
 
     <div class="stats-grid">
@@ -306,6 +326,7 @@ include '../../includes/header.php';
         <div class="stat-card" style="border-color: #10b981;"><div class="text-2xl font-bold"><?php echo $reviewed_count; ?></div><div class="text-gray-500">تمت المراجعة</div></div>
         <div class="stat-card" style="border-color: #f59e0b;"><div class="text-2xl font-bold"><?php echo $pending_count; ?></div><div class="text-gray-500">قيد المراجعة</div></div>
         <div class="stat-card" style="border-color: #a855f7;"><div class="text-2xl font-bold"><?php echo $order_status_history_count; ?></div><div class="text-gray-500">سجل الحالات</div></div>
+        <div class="stat-card" style="border-color: #f97316;"><div class="text-2xl font-bold"><?php echo $modified_history_count; ?></div><div class="text-gray-500">Modified Status History</div></div>
     </div>
 
     <!-- فلاتر البحث -->

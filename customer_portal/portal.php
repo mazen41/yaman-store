@@ -76,6 +76,7 @@ $total_customer_orders = 0;
 $total_all_discounts = 0;
 
 $orders = [];
+$order_status_options = [];
 
 // Status Colors Helper
 function getStatusClass($status) {
@@ -100,11 +101,13 @@ try {
     // Main customer orders (طلباتي): keep simple legacy query — no coupon CASE, no order_approvals flags.
     $query = "SELECT 
                 co.*,
-                cos.status_name_ar,
+                COALESCE(NULLIF(co.status, ''), 'new') AS display_status_key,
+                COALESCE(NULLIF(cos.status_name_ar, ''), NULLIF(co.status, ''), 'جديد') AS display_status_label,
                 COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = co.id), 0) AS total_quantity,
                 (SELECT GROUP_CONCAT(invoice_number SEPARATOR ', ') FROM customer_invoices ci WHERE ci.order_id = co.id) AS invoice_numbers,
                 co.automatic_discount_percentage AS display_discount_percentage,
-                (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = co.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) AS first_product_link
+                (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = co.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) AS first_product_link,
+                EXISTS(SELECT 1 FROM order_approvals oa WHERE oa.final_order_id = co.id) AS is_self_order
             FROM customer_orders co
             LEFT JOIN customer_order_statuses cos ON co.status = cos.status_key
             WHERE co.customer_id = ? 
@@ -118,6 +121,10 @@ try {
     $total_customer_orders = count($orders);
 
     foreach ($orders as $order) {
+        $status_key = $order['display_status_key'] ?? ($order['status'] ?? '');
+        if ($status_key !== '') {
+            $order_status_options[$status_key] = $order['display_status_label'] ?? $status_key;
+        }
         $total_quantity += $order['total_quantity'];
         $total_subtotal += $order['subtotal_amount'];
         $total_discount += $order['discount_amount'];
@@ -350,6 +357,11 @@ if ($customer['enable_create_self_order'] === 'active') {
                         <i class="fas fa-store-alt ml-2"></i> المنتجات
                     </a>
                 <?php endif; ?>
+                <?php if ($customer['enable_create_self_order'] === 'active'): ?>
+                    <a href="create_order.php?token=<?php echo htmlspecialchars($token); ?>" class="block w-full text-center py-3 rounded-xl bg-green-600 hover:bg-green-700 font-bold text-white" onclick="document.getElementById('portalNavDrawer').classList.remove('is-open')">
+                        <i class="fas fa-plus-circle ml-2"></i> إنشاء طلب
+                    </a>
+                <?php endif; ?>
                 <p class="text-xs text-white/60 mt-4">بوابة العميل</p>
             </div>
         </div>
@@ -521,8 +533,17 @@ if ($customer['enable_create_self_order'] === 'active') {
         
         <!-- Orders Table (MY ORDERS) -->
         <div class="bg-white rounded-lg shadow-md overflow-hidden mt-8">
-            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <h2 class="text-xl font-bold text-gray-800"><i class="fas fa-list ml-2"></i> طلباتي</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto">
+                    <input type="text" id="ordersSearch" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="بحث في طلباتي...">
+                    <select id="ordersStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        <option value="">كل الحالات</option>
+                        <?php foreach ($order_status_options as $key => $label): ?>
+                            <option value="<?php echo htmlspecialchars($key); ?>"><?php echo htmlspecialchars($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
             
             <div class="overflow-x-auto">
@@ -546,7 +567,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                             <th class="px-4 py-3 whitespace-nowrap text-center text-xs font-medium text-gray-500 uppercase">الإجراءات</th>
                         </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
+                    <tbody id="ordersTableBody" class="bg-white divide-y divide-gray-200">
                         <?php if (empty($orders)): ?>
                             <tr>
                                 <td colspan="15" class="px-4 py-8 text-center text-gray-500">لا توجد طلبات مسجلة حتى الآن</td>
@@ -557,15 +578,11 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 $remaining = $order['final_amount'] - $order['paid_amount'];
                                 
                                 $display_discount_pct = floatval($order['display_discount_percentage'] ?? 0);
-                                if ($order['status'] === 'processing') {
-                                    $status_text = 'جديد';
-                                    $status_class = getStatusClass('new'); 
-                                } else {
-                                    $status_text = !empty($order['status_name_ar']) ? $order['status_name_ar'] : $order['status'];
-                                    $status_class = getStatusClass($order['status']);
-                                }
+                                $display_status_key = $order['display_status_key'] ?? ($order['status'] ?? 'new');
+                                $status_text = $order['display_status_label'] ?? $display_status_key;
+                                $status_class = getStatusClass($display_status_key);
                             ?>
-                            <tr class="hover:bg-gray-50 transition">
+                            <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($display_status_key); ?>">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <div class="flex items-center gap-2">
                                         <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a>
@@ -658,11 +675,19 @@ if ($customer['enable_create_self_order'] === 'active') {
 
             <!-- SUBMITTED ORDERS SECTION -->
             <div class="mt-12">
-                <div class="flex items-center justify-between mb-6 animate-fade-in delay-1">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in delay-1">
                     <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                         <span class="w-1 h-6 bg-red-500 rounded-full"></span>
                         طلباتي للمراجعة (قيد الانتظار/مرفوضة)
                     </h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto">
+                        <input type="text" id="approvalsSearch" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="بحث في طلبات المراجعة...">
+                        <select id="approvalsStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="">كل الحالات</option>
+                            <option value="pending">قيد المراجعة</option>
+                            <option value="rejected">مرفوض</option>
+                        </select>
+                    </div>
                 </div>
 
                 <?php if (empty($approvals)): ?>
@@ -701,7 +726,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                         <th class="px-4 py-3 whitespace-nowrap text-center text-xs font-bold text-red-800 uppercase">الإجراءات / ملاحظات</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-gray-100">
+                                <tbody id="approvalsTableBody" class="divide-y divide-gray-100">
                                     <?php foreach ($approvals as $approval): 
                                         $statusData = getSubmittedStatusDetails($approval['status']);
                                         $total_discount_amount = $approval['coupon_discount_amount'] + $approval['automatic_discount_amount'];
@@ -715,7 +740,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                         $total_payable_approval = $approval['total_after_discounts'] + $approval['shipping_cost'];
                                         $remaining_approval = $total_payable_approval - $approval['paid_amount'];
                                     ?>
-                                    <tr class="hover:bg-red-50 transition duration-150 group">
+                                    <tr class="hover:bg-red-50 transition duration-150 group" data-status="<?php echo htmlspecialchars($approval['status'] ?? ''); ?>">
                                         <!-- 1. رقم الطلب -->
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span class="font-bold text-gray-800 block">#<?php echo $approval['id']; ?></span>
@@ -738,15 +763,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                             <?php if (!empty($approval['display_additional_link'])): ?>
                                                 <a href="<?php echo htmlspecialchars($approval['display_additional_link']); ?>" target="_blank" class="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs rounded transition"><i class="fas fa-link ml-1"></i> رابط</a>
                                             <?php else: echo '-'; endif; ?>
-                                            <?php if (!empty($approval['payment_proof_path'])): ?>
-                                                <div class="mt-1">
-                                                    <button type="button" onclick="copyToClipboard(this, '<?php echo htmlspecialchars($approval['payment_proof_path']); ?>')"
-                                                            class="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs rounded transition whitespace-nowrap copy-btn"
-                                                            data-original-text="نسخ رابط الإثبات">
-                                                        <i class="fas fa-copy ml-1"></i> <span>نسخ إثبات الدفع</span>
-                                                    </button>
-                                                </div>
-                                            <?php endif; ?>
+
                                         </td>
                                         <!-- 6. الحالة -->
                                         <td class="px-4 py-3 whitespace-nowrap">
@@ -813,6 +830,27 @@ if ($customer['enable_create_self_order'] === 'active') {
     </div>
 
     <script>
+
+        function setupPortalTableFilter(searchId, statusId, tbodyId) {
+            const searchInput = document.getElementById(searchId);
+            const statusSelect = document.getElementById(statusId);
+            const tbody = document.getElementById(tbodyId);
+            if (!tbody) return;
+            const applyFilter = () => {
+                const term = (searchInput?.value || '').toLowerCase().trim();
+                const status = statusSelect?.value || '';
+                tbody.querySelectorAll('tr').forEach(row => {
+                    const matchesText = !term || row.textContent.toLowerCase().includes(term);
+                    const matchesStatus = !status || row.dataset.status === status;
+                    row.style.display = (matchesText && matchesStatus) ? '' : 'none';
+                });
+            };
+            searchInput?.addEventListener('input', applyFilter);
+            statusSelect?.addEventListener('change', applyFilter);
+        }
+        setupPortalTableFilter('ordersSearch', 'ordersStatusFilter', 'ordersTableBody');
+        setupPortalTableFilter('approvalsSearch', 'approvalsStatusFilter', 'approvalsTableBody');
+
         function copyToClipboard(button, textToCopy) {
             navigator.clipboard.writeText(textToCopy).then(() => {
                 const originalText = button.getAttribute('data-original-text');

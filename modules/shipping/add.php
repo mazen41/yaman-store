@@ -176,7 +176,6 @@ $customer_orders = $db->query("
           WHERE so.order_id = o.id AND so.order_source = 'customer'
       )
     ORDER BY o.created_at DESC
-    LIMIT 100
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // -------------------------------------------------------------------
@@ -204,7 +203,6 @@ $shop_orders = $db->query("
           WHERE so.order_id = o.id AND so.order_source = 'shop'
       )
     ORDER BY o.created_at DESC
-    LIMIT 100
 ")->fetchAll(PDO::FETCH_ASSOC);
 
 // Combine & sort (latest first)
