@@ -111,7 +111,7 @@ function sheinFindOrCreateProduct(PDO $db, array $product): int
 
 // =============================================================================
 // LEGACY STUB — kept so old call-sites don't break
-// Real lookup now happens in ajax_scan.php via serpapi_lookup.php
+// Real lookup now happens in ajax/fetch_shein_product.php via serpapi_lookup.php
 // =============================================================================
 
 function sheinExtractProductDataBySku(string $sku): array
