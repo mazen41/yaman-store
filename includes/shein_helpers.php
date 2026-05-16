@@ -228,10 +228,7 @@ function sheinResolveInputToSku(string $input): array
         throw new InvalidArgumentException('قيمة SKU غير صالحة');
     }
 
-    return [
-        'shein_sku' => $sku,
-        'name' => '',
-        'image' => '',
-        'link' => '',
-    ];
+    // ✅ Build the search URL from the SKU and fetch it
+    $searchUrl = 'https://us.shein.com/pdsearch/' . urlencode(strtolower($sku)) . '/';
+    return sheinExtractProductDataFromSearch($searchUrl, $sku);
 }

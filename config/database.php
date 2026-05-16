@@ -4,9 +4,9 @@ date_default_timezone_set('Asia/Aden');
 
 // Database configuration
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'u724930382_yamanstore');
-define('DB_USER', 'u724930382_yamanstore');
-define('DB_PASS', 'Yamanstore1234.');
+define('DB_NAME', 'yama');
+define('DB_USER', 'root');
+define('DB_PASS', '');
 
 class Database {
     private $host = DB_HOST;
