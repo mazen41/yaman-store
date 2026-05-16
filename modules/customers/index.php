@@ -402,83 +402,115 @@ include '../../includes/header.php';
     <div class="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
 
         <!-- Header -->
-        <div class="bg-white shadow rounded-lg mb-6">
-            <div
-                class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-900">إدارة العملاء</h1>
-                    <p class="text-gray-600 mt-1">فلترة، ترتيب، وإدارة بيانات العملاء.</p>
-                </div>
-                <div class="mt-4 sm:mt-0 flex flex-col lg:flex-row lg:items-center gap-3 w-full lg:w-auto">
-                    <div class="flex flex-wrap gap-2 justify-start lg:justify-end">
+        <div class="bg-white shadow rounded-lg mb-6 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">إدارة العملاء</h1>
+                        <p class="text-gray-600 mt-1">فلترة، ترتيب، وإدارة بيانات العملاء.</p>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:justify-end">
                         <!-- Toggle Filters Button -->
                         <button type="button" id="toggleAdvancedFiltersBtn"
-                            class="inline-flex items-center px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition duration-200 text-sm">
-                            <i class="fas fa-filter ml-2"></i> <span id="toggleText"><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
+                            class="inline-flex w-full sm:w-auto items-center justify-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition duration-200 text-sm font-semibold shadow-sm">
+                            <i class="fas fa-filter ml-2"></i>
+                            <span id="toggleText"><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
                         </button>
                         <?php if ($can_add): ?>
                             <a href="add.php"
-                                class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-sm font-semibold">
+                                class="inline-flex w-full sm:w-auto items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-sm font-semibold shadow-sm">
                                 <i class="fas fa-plus ml-2"></i> عميل جديد
                             </a>
                         <?php endif; ?>
                     </div>
+                </div>
 
-                    <?php if ($can_edit): ?>
-                        <div class="w-full lg:w-auto bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-                            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                                <span class="text-xs font-bold text-gray-500 whitespace-nowrap">تحكم جماعي</span>
-                                <div class="flex flex-wrap gap-2">
-                                    <a href="index.php?action=bulk_all_customer_features&state=enable" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                                        class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-xs sm:text-sm font-semibold">
-                                        <i class="fas fa-check-circle ml-1"></i> Enable All Customers
+                <?php if ($can_edit): ?>
+                    <div class="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                        <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h2 class="text-sm font-bold text-gray-800">التحكم الجماعي</h2>
+                                <p class="text-xs text-gray-500 mt-0.5">إجراءات سريعة ومنظمة لتحديث إعدادات العملاء دفعة واحدة.</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                            <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                                <div class="mb-3 flex items-center text-sm font-bold text-gray-800">
+                                    <i class="fas fa-users-cog text-blue-500 ml-2"></i>
+                                    حالة العملاء
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <a href="index.php?action=enable_all_customers" onclick="return confirm('تفعيل جميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-green-700">
+                                        <i class="fas fa-check-circle ml-1"></i> تفعيل الكل
                                     </a>
-                                    <a href="index.php?action=bulk_all_customer_features&state=disable" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
-                                        class="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200 text-xs sm:text-sm font-semibold">
-                                        <i class="fas fa-ban ml-1"></i> Disable All Customers
+                                    <a href="index.php?action=disable_all_customers" onclick="return confirm('تعطيل جميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-red-700">
+                                        <i class="fas fa-ban ml-1"></i> تعطيل الكل
                                     </a>
                                 </div>
                             </div>
-                            <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-xs font-semibold text-purple-700">الطلب الذاتي</span>
-                                    <a href="index.php?action=bulk_self_order&state=enable" onclick="return confirm('تفعيل الطلب الذاتي لجميع العملاء؟');" class="px-2.5 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 text-xs font-bold">Enable All</a>
-                                    <a href="index.php?action=bulk_self_order&state=disable" onclick="return confirm('تعطيل الطلب الذاتي لجميع العملاء؟');" class="px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-bold">Disable All</a>
+
+                            <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                                <div class="mb-3 flex items-center text-sm font-bold text-gray-800">
+                                    <i class="fas fa-sliders-h text-green-500 ml-2"></i>
+                                    كل الميزات
                                 </div>
-                                <form method="GET" class="flex flex-col sm:flex-row gap-2">
-                                    <input type="hidden" name="action" value="bulk_feature_toggle">
-                                    <select name="feature" class="px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <a href="index.php?action=bulk_all_customer_features&state=enable" onclick="return confirm('تفعيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-emerald-700">
+                                        <i class="fas fa-toggle-on ml-1"></i> تفعيل
+                                    </a>
+                                    <a href="index.php?action=bulk_all_customer_features&state=disable" onclick="return confirm('تعطيل الطلب الذاتي وبدون دفعة أولى وعرض المتجر لجميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-gray-700 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-gray-800">
+                                        <i class="fas fa-toggle-off ml-1"></i> تعطيل
+                                    </a>
+                                </div>
+                            </div>
+
+                            <div class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                                <div class="mb-3 flex items-center text-sm font-bold text-gray-800">
+                                    <i class="fas fa-user-edit text-purple-500 ml-2"></i>
+                                    الطلب الذاتي
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <a href="index.php?action=bulk_self_order&state=enable" onclick="return confirm('تفعيل الطلب الذاتي لجميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-purple-700">
+                                        <i class="fas fa-check ml-1"></i> تفعيل
+                                    </a>
+                                    <a href="index.php?action=bulk_self_order&state=disable" onclick="return confirm('تعطيل الطلب الذاتي لجميع العملاء؟');"
+                                        class="inline-flex items-center justify-center rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 transition duration-200 hover:bg-gray-200">
+                                        <i class="fas fa-times ml-1"></i> تعطيل
+                                    </a>
+                                </div>
+                            </div>
+
+                            <form method="GET" class="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                                <input type="hidden" name="action" value="bulk_feature_toggle">
+                                <label class="mb-3 flex items-center text-sm font-bold text-gray-800">
+                                    <i class="fas fa-tasks text-indigo-500 ml-2"></i>
+                                    ميزة محددة
+                                </label>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-2">
+                                    <select name="feature" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700 focus:border-blue-500 focus:ring-blue-500">
                                         <option value="no_deposit">بدون دفعة أولى</option>
                                         <option value="show_shop">عرض المتجر</option>
                                     </select>
-                                    <select name="state" class="px-3 py-2 border border-gray-300 rounded-lg text-xs sm:text-sm">
-                                        <option value="enable">Enable All</option>
-                                        <option value="disable">Disable All</option>
+                                    <select name="state" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-700 focus:border-blue-500 focus:ring-blue-500">
+                                        <option value="enable">تفعيل الكل</option>
+                                        <option value="disable">تعطيل الكل</option>
                                     </select>
-                                    <button type="submit" onclick="return confirm('تنفيذ الإجراء على جميع العملاء؟');" class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs sm:text-sm font-semibold">تطبيق</button>
-                                </form>
-                            </div>
+                                    <button type="submit" onclick="return confirm('تنفيذ الإجراء على جميع العملاء؟');"
+                                        class="inline-flex w-full items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition duration-200 hover:bg-blue-700">
+                                        <i class="fas fa-check ml-1"></i> تطبيق
+                                    </button>
+                                </div>
+                            </form>
                         </div>
-                        <a href="index.php?action=allow_self_order_all" onclick="return confirm('تفعيل الطلب الذاتي لجميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-user-edit ml-1"></i> السماح بالطلب الذاتي للكل
-                        </a>
-                        <a href="index.php?action=enable_all_customers" onclick="return confirm('تفعيل جميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-check-circle ml-1"></i> تفعيل كل العملاء
-                        </a>
-                        <a href="index.php?action=disable_all_customers" onclick="return confirm('تعطيل جميع العملاء؟');"
-                            class="inline-flex items-center px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition duration-200 text-sm font-semibold">
-                            <i class="fas fa-ban ml-1"></i> تعطيل كل العملاء
-                        </a>
-                    <?php endif; ?>
-                    <?php if ($can_add): ?>
-                        <a href="add.php"
-                            class="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition duration-200">
-                            <i class="fas fa-plus ml-2"></i> عميل جديد
-                        </a>
-                    <?php endif; ?>
-                </div>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- Filters and Sorting Form -->
