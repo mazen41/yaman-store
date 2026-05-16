@@ -238,6 +238,7 @@ require get_template_directory() . '/inc/frontend/builder.php';
  * Functions which add more to backend.
  */
 require get_template_directory() . '/inc/backend/admin-functions.php';
+require get_template_directory() . '/inc/backend/ocr-space-sku.php';
 
 /**
  * Custom metabox for this theme.
