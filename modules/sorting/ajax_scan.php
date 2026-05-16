@@ -110,7 +110,30 @@ function handle_scan(PDO $db): void
     }
 
     // ── Find order item ──────────────────────────────────────────────────────
-    $item = find_order_item($db, $sku);
+    $selectedItemId = (int) ($_POST['selected_item_id'] ?? 0);
+    $matches = find_order_items_by_sku($db, $sku);
+    if (count($matches) > 1 && $selectedItemId <= 0) {
+        $selectionList = array_map(static function ($it) {
+            return [
+                'item_id' => (int) $it['id'],
+                'order_id' => (int) $it['order_id'],
+                'order_number' => $it['order_number'] ?? ('#' . (int) $it['order_id']),
+                'customer_name' => $it['customer_name'] ?? '',
+                'customer_mobile' => $it['customer_mobile'] ?? '',
+                'status' => $it['status'] ?? '',
+                'order_status' => $it['order_status'] ?? '',
+            ];
+        }, $matches);
+        echo json_encode([
+            'success' => true,
+            'requires_selection' => true,
+            'sku' => $sku,
+            'message' => 'تم العثور على SKU في أكثر من طلب. اختر الطلب المطلوب للفرز.',
+            'matches' => $selectionList,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return;
+    }
+    $item = find_order_item($db, $sku, $selectedItemId);
 
     if (!$item) {
         $msg = $product
@@ -196,8 +219,31 @@ function handle_next_pending(PDO $db): void
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function find_order_item(PDO $db, string $sku): ?array
+function find_order_item(PDO $db, string $sku, int $selectedItemId = 0): ?array
 {
+    if ($selectedItemId > 0) {
+        $stmt = $db->prepare("
+            SELECT
+                oi.*,
+                co.order_number, co.id AS order_id,
+                co.customer_id, co.subtotal_amount, co.discount_amount,
+                co.total_amount, co.final_amount, co.shipping_cost,
+                co.status AS order_status, co.notes AS order_notes,
+                co.created_at AS order_date, co.currency, co.order_link,
+                co.purchase_group_id,
+                c.name AS customer_name,
+                c.mobile_number AS customer_mobile,
+                c.whatsapp_number AS customer_whatsapp
+            FROM order_items oi
+            JOIN customer_orders co ON co.id = oi.order_id
+            LEFT JOIN customers c ON c.id = co.customer_id
+            WHERE oi.id = ? AND oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+            LIMIT 1
+        ");
+        $stmt->execute([$selectedItemId, $sku]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+
     $stmt = $db->prepare("
         SELECT
             oi.*,
@@ -221,6 +267,22 @@ function find_order_item(PDO $db, string $sku): ?array
     ");
     $stmt->execute([$sku]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function find_order_items_by_sku(PDO $db, string $sku): array
+{
+    $stmt = $db->prepare("
+        SELECT
+            oi.id, oi.order_id, oi.status, co.order_number, co.status AS order_status,
+            c.name AS customer_name, c.mobile_number AS customer_mobile
+        FROM order_items oi
+        JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN customers c ON c.id = co.customer_id
+        WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+        ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
+    ");
+    $stmt->execute([$sku]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
 function get_order_counts(PDO $db, int $orderId): array
