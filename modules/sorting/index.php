@@ -170,6 +170,38 @@ include '../../includes/header.php';
 .sort-imgs a img:hover { transform: scale(1.03); border-color: var(--sort-accent); }
 .sort-view-link { color: var(--sort-accent2); font-size: .8rem; font-weight: 800; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; background: var(--sort-accent-soft); border: 1px solid #bfdbfe; border-radius: 999px; padding: 6px 11px; }
 .sort-view-link:hover { background: #dbeafe; }
+
+/* Mobile responsiveness improvements */
+@media (max-width: 640px) {
+  #sortApp { padding-bottom: 28px; }
+  .sort-header { gap: 10px; }
+  .sort-header h1 { width: 100%; font-size: 1.2rem; gap: 9px; }
+  .sort-header h1 .icon-box { width: 38px; height: 38px; border-radius: 12px; font-size: 1rem; }
+  .sort-stats { width: 100%; display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .sort-stat-pill { width: 100%; justify-content: center; text-align: center; }
+  .sort-layout { padding: 12px; gap: 12px; }
+  .s-card-head, .s-card-body { padding: 12px; }
+  .scan-input { font-size: .95rem; padding: 14px 42px 14px 12px; }
+  .scan-input-icon { left: 12px; font-size: 1rem; }
+  .cam-btns { flex-direction: column; }
+  .prod-hero { flex-direction: column; align-items: center; text-align: center; }
+  .prod-img { width: 96px; height: 96px; }
+  .prod-meta { width: 100%; }
+  .prod-meta h2 { font-size: .96rem; line-height: 1.5; }
+  .prod-sku { overflow-wrap: anywhere; word-break: break-word; text-align: center; }
+  .prod-actions { justify-content: center; }
+  .order-grid { grid-template-columns: 1fr; }
+  .item-row { padding: 10px 11px; gap: 9px; }
+  .item-row .nm p { white-space: normal; overflow: visible; text-overflow: initial; }
+  .next-preview { align-items: flex-start; }
+  .sort-imgs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .s-btn { padding: 9px 12px; font-size: .8rem; }
+  .s-btn-sm { font-size: .74rem; }
+  .sort-empty { padding: 44px 12px; }
+}
 </style>
 
 
