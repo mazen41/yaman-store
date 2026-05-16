@@ -15,8 +15,7 @@ if (!isset($_SESSION['user_id'])) {
 
 require_once '../../../config/database.php';
 require_once '../../../includes/shein_helpers.php';
-
-define('SERPAPI_SERVICE_URL', 'http://127.0.0.1:3579');
+require_once '../../../includes/serpapi_lookup.php';
 
 // ── Ensure schema + add updated_at if missing ─────────────────────────────────
 function ensureSchemaFixed(PDO $db): void
@@ -65,41 +64,22 @@ function getCachedProduct(PDO $db, string $sku): ?array
     ];
 }
 
-// ── Call local SerpAPI Node service ───────────────────────────────────────────
-function callSerpApiService(string $sku): array
+// ── Fetch product via PHP SerpAPI lookup (no Node.js dependency) ───────────────
+function fetchProductViaPhpSerpApi(string $sku): array
 {
-    $ch = curl_init(SERPAPI_SERVICE_URL . '/scrape');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => http_build_query(['sku' => $sku]),
-        CURLOPT_TIMEOUT        => 25,
-        CURLOPT_CONNECTTIMEOUT => 3,
-    ]);
-    $body    = curl_exec($ch);
-    $curlErr = curl_error($ch);
-    curl_close($ch);
-
-    if (!$body) {
-        throw new RuntimeException('خدمة البحث غير مشغّلة. شغّل start_serpapi.bat أولاً.' . ($curlErr ? " ($curlErr)" : ''));
-    }
-
-    $data = json_decode($body, true);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new RuntimeException('استجابة غير صالحة من خدمة البحث');
-    }
-    if (empty($data['success'])) {
-        throw new RuntimeException($data['error'] ?? 'تعذّر العثور على المنتج');
+    $result = serpapi_find_product($sku);
+    if (!$result) {
+        throw new RuntimeException('تعذّر العثور على المنتج عبر خدمة البحث (PHP SerpAPI)');
     }
 
     return [
-        'shein_sku' => $data['sku']     ?? $sku,
-        'sku'       => $data['sku']     ?? $sku,
-        'name'      => $data['title']   ?? ('SHEIN SKU ' . $sku),
-        'image'     => $data['image']   ?? '',
-        'link'      => $data['url']     ?? '',
-        'price'     => $data['price']   ?? '',
-        'snippet'   => $data['snippet'] ?? '',
+        'shein_sku' => $result['sku']     ?? $sku,
+        'sku'       => $result['sku']     ?? $sku,
+        'name'      => $result['title']   ?? ('SHEIN SKU ' . $sku),
+        'image'     => $result['image']   ?? '',
+        'link'      => $result['url']     ?? '',
+        'price'     => $result['price']   ?? '',
+        'snippet'   => $result['snippet'] ?? '',
     ];
 }
 
@@ -120,8 +100,8 @@ try {
         exit();
     }
 
-    // 2. Fetch from SerpAPI service
-    $product = callSerpApiService($sku);
+    // 2. Fetch from PHP SerpAPI lookup
+    $product = fetchProductViaPhpSerpApi($sku);
 
     // 3. Save to DB
     sheinFindOrCreateProduct($db, $product);
