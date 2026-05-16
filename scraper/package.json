@@ -1,0 +1,16 @@
+{
+  "name": "shein-playwright-scraper",
+  "version": "1.0.0",
+  "description": "Playwright-based SHEIN product scraper with local HTTP API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "install-browsers": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.44.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

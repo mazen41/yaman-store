@@ -982,92 +982,119 @@ include '../../includes/header.php';
         if (!quantityInput || !container) return;
 
         const count = Math.max(0, parseInt(quantityInput.value, 10) || 0);
+
+        // Preserve existing values before re-render
         const existing = {};
         container.querySelectorAll('[data-shein-index]').forEach(group => {
             const idx = group.dataset.sheinIndex;
             existing[idx] = {
-                sku: group.querySelector('.shein-sku')?.value || '',
-                name: group.querySelector('.shein-name')?.value || '',
+                sku:   group.querySelector('.shein-sku')?.value   || '',
+                name:  group.querySelector('.shein-name')?.value  || '',
                 image: group.querySelector('.shein-image')?.value || '',
-                message: group.querySelector('.shein-message')?.textContent || '',
-                messageClass: group.querySelector('.shein-message')?.className || 'shein-message text-xs mt-2 hidden',
             };
         });
 
         container.innerHTML = '';
         for (let i = 0; i < count; i++) {
             const data = existing[i] || {};
+            const fetched = data.name !== '';
+
             const group = document.createElement('div');
             group.className = 'border border-gray-200 rounded-lg p-3 bg-gray-50';
             group.dataset.sheinIndex = i;
             group.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <span class="font-semibold text-gray-700">منتج SHEIN #${i + 1}</span>
-                    <span class="shein-status text-xs text-gray-400">بانتظار SKU</span>
+                    <span class="shein-status text-xs ${fetched ? 'text-green-600' : 'text-gray-400'}">${fetched ? '&#10003; تم الجلب' : 'بانتظار الجلب'}</span>
                 </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">SKU</label>
-                    <input type="text" name="shein_items[${i}][sku]" value="${escapeHtml(data.sku || '')}" class="form-input shein-sku dir-ltr" placeholder="مثال: sk2410290496477028">
+                <div class="flex gap-2 items-end">
+                    <div class="flex-1">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">SKU</label>
+                        <input type="text" name="shein_items[${i}][sku]" value="${escapeHtml(data.sku || '')}"
+                               class="form-input shein-sku dir-ltr" placeholder="مثال: SK2410290496477028">
+                    </div>
+                    <button type="button"
+                            class="shein-fetch-btn flex-shrink-0 px-3 py-2 bg-purple-600 text-white text-xs font-bold rounded-lg hover:bg-purple-700 active:scale-95 transition-all"
+                            title="جلب بيانات المنتج">
+                        <i class="fas fa-search"></i> جلب
+                    </button>
                 </div>
-                <input type="hidden" name="shein_items[${i}][name]" value="${escapeHtml(data.name || '')}" class="shein-name">
+                <input type="hidden" name="shein_items[${i}][name]"  value="${escapeHtml(data.name  || '')}" class="shein-name">
                 <input type="hidden" name="shein_items[${i}][image]" value="${escapeHtml(data.image || '')}" class="shein-image">
-                <div class="${data.messageClass || 'shein-message text-xs mt-2 hidden'}">${escapeHtml(data.message || '')}</div>
+                <div class="shein-message text-xs mt-2 rounded p-2 ${fetched ? 'bg-green-100 text-green-800 border border-green-200' : 'hidden'}">
+                    ${fetched ? escapeHtml(data.name) : ''}
+                </div>
             `;
             container.appendChild(group);
         }
 
         if (badge) badge.textContent = `${count} منتج`;
-        bindSheinFetchers();
+        bindSheinFetchButtons();
     }
 
     function escapeHtml(value) {
-        return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+        return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     }
 
     function setSheinMessage(group, message, type) {
         const messageEl = group.querySelector('.shein-message');
-        const statusEl = group.querySelector('.shein-status');
-        const colors = type === 'success'
-            ? 'bg-green-100 text-green-800 border border-green-200'
-            : type === 'loading'
-                ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                : 'bg-red-100 text-red-800 border border-red-200';
+        const statusEl  = group.querySelector('.shein-status');
+        const colors = { success: 'bg-green-100 text-green-800 border border-green-200', loading: 'bg-blue-100 text-blue-800 border border-blue-200', error: 'bg-red-100 text-red-800 border border-red-200' }[type] || '';
         messageEl.textContent = message;
         messageEl.className = `shein-message text-xs mt-2 rounded p-2 ${colors}`;
-        statusEl.textContent = type === 'success' ? 'تم جلب SKU' : (type === 'loading' ? 'جاري الجلب...' : 'خطأ');
-        statusEl.className = type === 'success' ? 'shein-status text-xs text-green-600' : (type === 'loading' ? 'shein-status text-xs text-blue-600' : 'shein-status text-xs text-red-600');
+        statusEl.textContent = type === 'success' ? '\u2705 تم الجلب' : (type === 'loading' ? '\u23F3 جاري...' : '\u274C خطأ');
+        statusEl.className   = `shein-status text-xs ${type === 'success' ? 'text-green-600' : type === 'loading' ? 'text-blue-600' : 'text-red-600'}`;
     }
 
-    const fetchSheinProduct = debounce(async function(input) {
-        const group = input.closest('[data-shein-index]');
-        const sku = input.value.trim();
-        if (!group || !sku) return;
+    async function doFetchSheinProduct(group) {
+        const skuInput = group.querySelector('.shein-sku');
+        const btn      = group.querySelector('.shein-fetch-btn');
+        const sku      = (skuInput?.value || '').trim();
 
-        setSheinMessage(group, 'جاري جلب بيانات المنتج من SHEIN باستخدام SKU...', 'loading');
+        if (!sku) {
+            setSheinMessage(group, 'أدخل SKU أولاً ثم اضغط جلب', 'error');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جاري...';
+        setSheinMessage(group, 'جاري البحث عن المنتج...', 'loading');
+
         try {
             const response = await fetch('ajax/fetch_shein_product.php', {
-                method: 'POST',
+                method:  'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `sku=${encodeURIComponent(sku)}`
+                body:    `sku=${encodeURIComponent(sku)}`,
             });
             const data = await response.json();
             if (!data.success) throw new Error(data.message || 'تعذر جلب المنتج');
 
-            group.querySelector('.shein-sku').value = data.product.sku || data.product.shein_sku || '';
-            group.querySelector('.shein-name').value = data.product.name || '';
-            group.querySelector('.shein-image').value = data.product.image || '';
-            setSheinMessage(group, `تم جلب بيانات SKU: ${data.product.sku || data.product.shein_sku}`, 'success');
-        } catch (error) {
-            setSheinMessage(group, error.message + ' - تحقق من SKU وحاول مرة أخرى.', 'error');
+            const p = data.product;
+            skuInput.value = p.sku || p.shein_sku || sku;
+            group.querySelector('.shein-name').value  = p.name  || '';
+            group.querySelector('.shein-image').value = p.image || '';
+            setSheinMessage(group, (p.name || ('SKU: ' + skuInput.value)), 'success');
+        } catch (err) {
+            setSheinMessage(group, err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-search"></i> جلب';
         }
-    });
+    }
 
-    function bindSheinFetchers() {
+    function bindSheinFetchButtons() {
+        document.querySelectorAll('.shein-fetch-btn').forEach(btn => {
+            if (btn.dataset.bound === '1') return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', () => doFetchSheinProduct(btn.closest('[data-shein-index]')));
+        });
+        // Enter key in SKU field also triggers fetch
         document.querySelectorAll('.shein-sku').forEach(input => {
             if (input.dataset.bound === '1') return;
             input.dataset.bound = '1';
-            input.addEventListener('input', () => fetchSheinProduct(input));
-            input.addEventListener('blur', () => fetchSheinProduct(input));
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); doFetchSheinProduct(input.closest('[data-shein-index]')); }
+            });
         });
     }
 
