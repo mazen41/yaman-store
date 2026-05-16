@@ -30,6 +30,10 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../../config/database.php';
 require_once '../../includes/check_permissions.php';
 require_once '../../includes/status_helpers.php';
+require_once '../../includes/shein_helpers.php';
+require_once '../../includes/sorting_status_helpers.php';
+
+sheinEnsureSchema($db);
 
 // Determine permissions for current user
 $canEditOrder = hasPermission($_SESSION['user_id'], 'orders', 'edit');
@@ -74,10 +78,11 @@ try {
         exit();
     }
 
-    // 2. Fetch Order Items
+    // 2. Fetch Order Items and derive real, database-backed sorting status
     $items_stmt = $db->prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id");
     $items_stmt->execute([$order_id]);
     $items = $items_stmt->fetchAll(PDO::FETCH_ASSOC);
+    $sorting_summary = getOrderSortingSummaryFromItems($items);
 
     // 3. Fetch Order Images
     $images_stmt = $db->prepare("SELECT * FROM order_images WHERE order_id = ? ORDER BY display_order");
@@ -168,6 +173,12 @@ include '../../includes/header.php';
     .table-custom td { padding: 12px; border-bottom: 1px solid #e5e7eb; color: #4b5563; }
     .img-thumbnail { width: 100%; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; transition: transform 0.2s; }
     .img-thumbnail:hover { transform: scale(1.02); }
+
+    .sorting-badge { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
+    .sorting-badge-success { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .sorting-badge-pending { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+    .sorting-complete-alert { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border: 1px solid #a7f3d0; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; gap: 14px; margin-bottom: 24px; color: #047857; box-shadow: 0 2px 8px rgba(16, 185, 129, .08); }
+    .sorting-progress-alert { background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 14px 18px; display: flex; align-items: center; gap: 12px; margin-bottom: 24px; color: #92400e; }
 </style>
 
 <div class="min-h-screen bg-gray-50 py-8" dir="rtl">
@@ -195,6 +206,25 @@ include '../../includes/header.php';
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <!-- Right Column -->
             <div class="lg:col-span-2 space-y-6">
+
+                <!-- Sorting Status Banner -->
+                <?php if (!empty($sorting_summary['is_fully_sorted'])): ?>
+                    <div class="sorting-complete-alert">
+                        <span class="text-2xl"><i class="fas fa-check-circle"></i></span>
+                        <div>
+                            <strong class="block text-base">هذا الطلب تم الفرز بالكامل</strong>
+                            <span class="text-sm">تم فرز <?php echo (int) $sorting_summary['sorted']; ?> من أصل <?php echo (int) $sorting_summary['total']; ?> منتج.</span>
+                        </div>
+                    </div>
+                <?php elseif (($sorting_summary['total'] ?? 0) > 0): ?>
+                    <div class="sorting-progress-alert">
+                        <span class="text-xl"><i class="fas fa-hourglass-half"></i></span>
+                        <div>
+                            <strong class="block text-sm">قيد الفرز</strong>
+                            <span class="text-sm"><?php echo (int) $sorting_summary['sorted']; ?> / <?php echo (int) $sorting_summary['total']; ?> منتج مفروز.</span>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Order Info -->
                  <div class="card-box">
@@ -259,6 +289,7 @@ include '../../includes/header.php';
                                     <th class="text-center">الكمية</th>
                                     <th class="text-center">السعر</th>
                                     <th class="text-center">الإجمالي</th>
+                                    <th class="text-center">حالة الفرز</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -277,6 +308,7 @@ include '../../includes/header.php';
                                         <td class="text-center font-bold bg-gray-50"><?php echo $item['quantity']; ?></td>
                                         <td class="text-center dir-ltr text-gray-600"><?php echo number_format($item['unit_price'], 0, ',', '.'); ?></td>
                                         <td class="text-center dir-ltr font-bold text-indigo-600"><?php echo number_format($item['total_price'], 0, ',', '.'); ?></td>
+                                        <td class="text-center"><?php echo renderProductSortingBadge($item); ?></td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>

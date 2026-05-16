@@ -23,6 +23,7 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../../config/database.php';
 require_once '../../includes/check_permissions.php';
 require_once '../../includes/shein_helpers.php';
+require_once '../../includes/sorting_status_helpers.php';
 require_once '../../includes/serpapi_lookup.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -33,6 +34,8 @@ if (!hasPermission($user_id, 'orders', 'view') && !hasPermission($user_id, 'orde
     echo json_encode(['success' => false, 'message' => 'ليس لديك صلاحية']);
     exit();
 }
+
+sheinEnsureSchema($db);
 
 $action = trim($_POST['action'] ?? $_GET['action'] ?? '');
 
@@ -117,7 +120,7 @@ function handle_scan(PDO $db): void
     }
 
     // ── Update item status ───────────────────────────────────────────────────
-    $alreadyScanned = ($item['status'] ?? '') === 'scanned';
+    $alreadyScanned = isProductSorted($item);
     if (!$alreadyScanned) {
         $db->prepare("UPDATE order_items SET status = 'scanned', updated_at = NOW() WHERE id = ?")
            ->execute([$item['id']]);
@@ -227,7 +230,7 @@ function get_order_counts(PDO $db, int $orderId): array
             COUNT(*) AS total_items,
             SUM(CASE WHEN status = 'scanned' THEN 1 ELSE 0 END) AS scanned_items
         FROM order_items
-        WHERE order_id = ? AND shein_sku IS NOT NULL AND shein_sku <> ''
+        WHERE order_id = ?
     ");
     $stmt->execute([$orderId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);

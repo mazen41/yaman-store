@@ -45,6 +45,10 @@ if (!isset($_SESSION['user_id'])) {
 require_once '../../config/database.php';
 require_once '../../includes/check_permissions.php';
 require_once '../../includes/status_helpers.php';
+require_once '../../includes/shein_helpers.php';
+require_once '../../includes/sorting_status_helpers.php';
+
+sheinEnsureSchema($db);
 
 // --- 1. PERMISSIONS ---
 $user_id = $_SESSION['user_id'] ?? 0;
@@ -140,6 +144,8 @@ try {
                         COALESCE(o.final_amount, 0) as final_amount,
                         COALESCE(o.paid_amount, 0) as paid_amount,
                         COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = o.id), 0) as total_quantity,
+                        (SELECT COUNT(*) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) as sorting_total_items,
+                        (SELECT COUNT(*) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') as sorting_sorted_items,
                         (SELECT COALESCE(SUM(price), 0) FROM order_damaged_items odi WHERE odi.order_id = o.id) as damaged_amount,
                         (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = o.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) as first_product_link,
                         pg.group_name as purchase_group_name,
@@ -382,6 +388,11 @@ include '../../includes/header.php';
         vertical-align: middle;
     }
 
+    .sorting-badge { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
+    .sorting-badge small { font-size: 11px; opacity: .8; margin-right: 2px; }
+    .sorting-badge-success { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .sorting-badge-pending { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+
     .status-dropdown {
         padding: 6px 10px;
         border: 1px solid #e5e7eb;
@@ -576,6 +587,7 @@ include '../../includes/header.php';
                         <th>رابط الطلب</th>
                         <th>رابط إضافي</th>
                         <th>الحالة</th>
+                        <th>حالة الفرز</th>
                         <th>ملاحظات المدير</th>
                         <th>العملة</th>
                         <th>المبلغ الأصلي</th> <!-- This is your Gross Total -->
@@ -593,13 +605,14 @@ include '../../includes/header.php';
                 <tbody id="orders-table-body">
                     <?php if (empty($orders)): ?>
                         <tr>
-                            <td colspan="19" style="text-align: center; padding: 40px; color: #6b7280;">لا توجد طلبات تطابق معايير البحث</td>
+                            <td colspan="20" style="text-align: center; padding: 40px; color: #6b7280;">لا توجد طلبات تطابق معايير البحث</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($orders as $order):
                             $remaining_amount = $order['final_amount'] - $order['paid_amount'];
                             // Determine if manual: if source_approval_id is empty, it's manual
                             $is_manual_order = empty($order['source_approval_id']);
+                            $order_sorting_summary = getOrderSortingSummaryFromRow($order);
                         ?>
                             <tr>
                                 <!-- Icon logic updated to use $is_manual_order -->
@@ -635,6 +648,7 @@ include '../../includes/header.php';
                                         <span><?php echo htmlspecialchars($order['status_name_ar'] ?? $order['status']); ?></span>
                                     <?php endif; ?>
                                 </td>
+                                <td><?php echo renderOrderSortingBadge($order_sorting_summary); ?></td>
                                 <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<?php echo htmlspecialchars($order['manager_notes']); ?>">
                                     <?php echo !empty($order['manager_notes']) ? htmlspecialchars($order['manager_notes']) : '<span style="color: #9ca3af;">-</span>'; ?>
                                 </td>
@@ -702,7 +716,7 @@ include '../../includes/header.php';
                         <tr style="font-weight: bold; font-size: 14px;">
                             <td colspan="3" style="text-align: right; padding: 12px;"><i class="fas fa-calculator"></i> إجمالي الصفحة (<?php echo $page_totals['total_count']; ?>)</td>
                             <td><?php echo number_format($page_totals['total_quantity_sum'], 0); ?></td>
-                            <td colspan="5"></td>
+                            <td colspan="6"></td>
                             <td style="color: #3b82f6;"><?php echo number_format($page_totals['total_subtotal_sum'], 0); ?></td>
                             <td style="color: #f59e0b;"><?php echo number_format($page_totals['total_discount_sum'], 0); ?></td>
                             <td></td>
