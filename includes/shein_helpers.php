@@ -55,12 +55,21 @@ function sheinEnsureSchema(PDO $db): void
         $db->exec("ALTER TABLE shein_products ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     } catch (PDOException $e) { /* already exists */ }
 
-    // Ensure order_items has status + updated_at columns for sorting workflow
+    // Ensure order_items has the persisted fields used by the sorting workflow.
     try {
-        $db->exec("ALTER TABLE order_items ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
+        $db->exec("ALTER TABLE order_items ADD COLUMN shein_sku VARCHAR(100) DEFAULT NULL AFTER product_name");
+    } catch (PDOException $e) { /* already exists */ }
+    try {
+        $db->exec("ALTER TABLE order_items ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending' AFTER shein_sku");
     } catch (PDOException $e) { /* already exists */ }
     try {
         $db->exec("ALTER TABLE order_items ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+    } catch (PDOException $e) { /* already exists */ }
+    try {
+        $db->exec("CREATE INDEX idx_order_items_shein_sku ON order_items (shein_sku)");
+    } catch (PDOException $e) { /* already exists */ }
+    try {
+        $db->exec("CREATE INDEX idx_order_items_status ON order_items (status)");
     } catch (PDOException $e) { /* already exists */ }
 }
 
