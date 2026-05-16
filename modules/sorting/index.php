@@ -399,6 +399,7 @@ include '../../includes/header.php';
   </div><!-- /sort-layout -->
 </div><!-- /sortApp -->
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════════════════════════
 // STATE
@@ -413,6 +414,7 @@ const state = {
   lastScanAt    : 0,
   camStream     : null,
   camTimer      : null,
+  camOcrBusy    : false,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -698,28 +700,58 @@ async function doUnscan() {
 // ══════════════════════════════════════════════════════════════════════════════
 // CAMERA SCANNER
 // ══════════════════════════════════════════════════════════════════════════════
+function extractSkuFromText(text) {
+  const normalized = String(text || '').replace(/\s+/g, '').toLowerCase();
+  const match = normalized.match(/sk\d{8,}/i);
+  return match ? match[0].toLowerCase() : '';
+}
+
+async function recognizeSkuFromVideo(video) {
+  if (!window.Tesseract || video.videoWidth < 20 || video.videoHeight < 20) return '';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const { data } = await Tesseract.recognize(canvas, 'eng', {
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+  });
+
+  return extractSkuFromText(data?.text || '');
+}
+
 async function startCamera() {
-  if (!('BarcodeDetector' in window)) {
-    showMsg('المتصفح لا يدعم الماسح المباشر — جرب Chrome/Edge أو أدخل SKU يدوياً', 'warning');
+  if (!window.Tesseract) {
+    showMsg('تعذر تحميل OCR — تحقق من الاتصال ثم أعد المحاولة', 'error');
     return;
   }
+
   try {
     state.camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const video = $('scannerVideo');
     video.srcObject = state.camStream;
     await video.play();
-    const detector = new BarcodeDetector({ formats: ['qr_code','code_128','code_39','ean_13','ean_8','data_matrix'] });
+
     state.camTimer = setInterval(async () => {
+      if (state.camOcrBusy || state.scanLock) return;
+      state.camOcrBusy = true;
       try {
-        const codes = await detector.detect(video);
-        if (codes.length > 0 && codes[0].rawValue) doScan(codes[0].rawValue);
-      } catch(e) {}
-    }, 700);
-    showMsg('✅ الكاميرا تعمل — وجّهها نحو الرمز', 'success');
+        const sku = await recognizeSkuFromVideo(video);
+        if (sku) doScan(sku);
+      } catch(e) {
+      } finally {
+        state.camOcrBusy = false;
+      }
+    }, 1200);
+
+    showMsg('✅ الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
   } catch(err) { showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error'); }
 }
 function stopCamera() {
   if (state.camTimer)  { clearInterval(state.camTimer);  state.camTimer  = null; }
+  state.camOcrBusy = false;
   if (state.camStream) { state.camStream.getTracks().forEach(t => t.stop()); state.camStream = null; }
   $('scannerVideo').srcObject = null;
   showMsg('تم إيقاف الكاميرا', 'warning');
