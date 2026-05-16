@@ -13,7 +13,7 @@ define('MODULES_PATH', ROOT_PATH . '/modules');
 define('CONFIG_PATH', ROOT_PATH . '/config');
 
 // URL Configuration (adjust based on your setup)
-define('BASE_URL', 'https://taksroide.com');
+define('BASE_URL', '');
 define('ASSETS_URL', BASE_URL . 'assets/');
 
 // Date and Time (set to Yemen time / Aden timezone)

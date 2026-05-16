@@ -267,4 +267,7 @@ function sheinResolveInputToSku(string $input): array
     }
 
     return sheinExtractProductDataBySku($sku);
+    // ✅ Build the search URL from the SKU and fetch it
+    $searchUrl = 'https://us.shein.com/pdsearch/' . urlencode(strtolower($sku)) . '/';
+    return sheinExtractProductDataFromSearch($searchUrl, $sku);
 }
