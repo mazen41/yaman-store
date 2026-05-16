@@ -89,7 +89,7 @@ function handle_scan(PDO $db): void
 
     // ── Lookup or create product in DB ───────────────────────────────────────
     sheinEnsureSchema($db);
-    $productStmt = $db->prepare("SELECT * FROM shein_products WHERE shein_sku = ? LIMIT 1");
+    $productStmt = $db->prepare("SELECT * FROM shein_products WHERE shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci LIMIT 1");
     $productStmt->execute([$sku]);
     $product = $productStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -213,7 +213,7 @@ function find_order_item(PDO $db, string $sku): ?array
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN customers c ON c.id = co.customer_id
-        WHERE oi.shein_sku = ?
+        WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
         ORDER BY
             CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END,
             oi.id ASC
@@ -265,7 +265,7 @@ function get_all_items(PDO $db, int $orderId): array
                oi.unit_price, oi.total_price, oi.status, oi.product_link,
                sp.name AS sp_name, sp.image AS sp_image
         FROM order_items oi
-        LEFT JOIN shein_products sp ON sp.shein_sku = oi.shein_sku
+        LEFT JOIN shein_products sp ON sp.shein_sku COLLATE utf8mb4_unicode_ci = oi.shein_sku COLLATE utf8mb4_unicode_ci
         WHERE oi.order_id = ?
         ORDER BY oi.id ASC
     ");
@@ -288,7 +288,7 @@ function get_next_pending(PDO $db, int $orderId, int $skipItemId): ?array
         SELECT oi.id, oi.shein_sku, oi.product_name, oi.status,
                sp.name AS sp_name, sp.image AS sp_image
         FROM order_items oi
-        LEFT JOIN shein_products sp ON sp.shein_sku = oi.shein_sku
+        LEFT JOIN shein_products sp ON sp.shein_sku COLLATE utf8mb4_unicode_ci = oi.shein_sku COLLATE utf8mb4_unicode_ci
         WHERE oi.order_id = ?
           AND oi.status != 'scanned'
           AND oi.shein_sku IS NOT NULL
