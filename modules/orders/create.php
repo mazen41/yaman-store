@@ -110,11 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $clean_shein_items = [];
     if (is_array($shein_items)) {
         foreach ($shein_items as $shein_item) {
-            $shein_link = trim($shein_item['link'] ?? '');
             $shein_sku = sheinNormalizeSku($shein_item['sku'] ?? '');
-            if ($shein_link !== '' || $shein_sku !== '') {
+            if ($shein_sku !== '') {
                 $clean_shein_items[] = [
-                    'link' => $shein_link,
                     'sku' => $shein_sku,
                     'name' => trim($shein_item['name'] ?? ''),
                     'image' => trim($shein_item['image'] ?? ''),
@@ -352,20 +350,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 ");
 
                 foreach ($shein_items as $index => $shein_item) {
-                    $product_data = [
-                        'shein_sku' => $shein_item['sku'],
-                        'name' => $shein_item['name'],
-                        'image' => $shein_item['image'],
-                        'link' => $shein_item['link'],
-                    ];
-
-                    if ($product_data['shein_sku'] === '' && $product_data['link'] !== '') {
-                        $product_data = sheinExtractProductData($product_data['link']);
+                    $sku = sheinNormalizeSku($shein_item['sku'] ?? '');
+                    if ($sku === '') {
+                        throw new Exception('يرجى إدخال SKU لمنتج SHEIN رقم ' . ($index + 1));
                     }
 
-                    $product_data['shein_sku'] = sheinNormalizeSku($product_data['shein_sku'] ?? '');
-                    if ($product_data['shein_sku'] === '') {
-                        throw new Exception('يرجى إدخال SKU لمنتج SHEIN رقم ' . ($index + 1));
+                    $product_data = sheinExtractProductDataBySku($sku);
+
+                    if (trim($shein_item['name'] ?? '') !== '') {
+                        $product_data['name'] = trim($shein_item['name']);
+                    }
+                    if (trim($shein_item['image'] ?? '') !== '') {
+                        $product_data['image'] = trim($shein_item['image']);
                     }
 
                     $shein_product_id = sheinFindOrCreateProduct($db, $product_data);
@@ -729,10 +725,10 @@ include '../../includes/header.php';
                                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                                     <div>
                                         <h4 class="font-bold text-purple-800 flex items-center gap-2">
-                                            <i class="fas fa-link"></i>
-                                            ربط منتجات SHEIN حسب القطع
+                                            <i class="fas fa-barcode"></i>
+                                            ربط منتجات SHEIN حسب SKU
                                         </h4>
-                                        <p class="text-xs text-gray-500 mt-1">يتم إنشاء حقول المنتجات تلقائياً حسب عدد القطع، ويتم حفظ SKU محلياً لاستخدامه في الفرز.</p>
+                                        <p class="text-xs text-gray-500 mt-1">يتم إنشاء حقول SKU تلقائياً حسب عدد القطع، ويتم جلب بيانات المنتج من SHEIN باستخدام SKU فقط.</p>
                                     </div>
                                     <span id="sheinGroupsCount" class="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full">0 منتج</span>
                                 </div>
@@ -990,7 +986,6 @@ include '../../includes/header.php';
         container.querySelectorAll('[data-shein-index]').forEach(group => {
             const idx = group.dataset.sheinIndex;
             existing[idx] = {
-                link: group.querySelector('.shein-link')?.value || '',
                 sku: group.querySelector('.shein-sku')?.value || '',
                 name: group.querySelector('.shein-name')?.value || '',
                 image: group.querySelector('.shein-image')?.value || '',
@@ -1008,17 +1003,11 @@ include '../../includes/header.php';
             group.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <span class="font-semibold text-gray-700">منتج SHEIN #${i + 1}</span>
-                    <span class="shein-status text-xs text-gray-400">بانتظار الرابط</span>
+                    <span class="shein-status text-xs text-gray-400">بانتظار SKU</span>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">رابط المنتج</label>
-                        <input type="url" name="shein_items[${i}][link]" value="${escapeHtml(data.link || '')}" class="form-input shein-link" placeholder="https://www.shein.com/...">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-600 mb-1">SKU</label>
-                        <input type="text" name="shein_items[${i}][sku]" value="${escapeHtml(data.sku || '')}" class="form-input shein-sku dir-ltr" placeholder="يتم تعبئته تلقائياً أو يدوياً">
-                    </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">SKU</label>
+                    <input type="text" name="shein_items[${i}][sku]" value="${escapeHtml(data.sku || '')}" class="form-input shein-sku dir-ltr" placeholder="مثال: sk2410290496477028">
                 </div>
                 <input type="hidden" name="shein_items[${i}][name]" value="${escapeHtml(data.name || '')}" class="shein-name">
                 <input type="hidden" name="shein_items[${i}][image]" value="${escapeHtml(data.image || '')}" class="shein-image">
@@ -1051,30 +1040,30 @@ include '../../includes/header.php';
 
     const fetchSheinProduct = debounce(async function(input) {
         const group = input.closest('[data-shein-index]');
-        const link = input.value.trim();
-        if (!group || !link) return;
+        const sku = input.value.trim();
+        if (!group || !sku) return;
 
-        setSheinMessage(group, 'جاري جلب بيانات المنتج من SHEIN...', 'loading');
+        setSheinMessage(group, 'جاري جلب بيانات المنتج من SHEIN باستخدام SKU...', 'loading');
         try {
             const response = await fetch('ajax/fetch_shein_product.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `link=${encodeURIComponent(link)}`
+                body: `sku=${encodeURIComponent(sku)}`
             });
             const data = await response.json();
             if (!data.success) throw new Error(data.message || 'تعذر جلب المنتج');
 
-            group.querySelector('.shein-sku').value = data.product.shein_sku || '';
+            group.querySelector('.shein-sku').value = data.product.sku || data.product.shein_sku || '';
             group.querySelector('.shein-name').value = data.product.name || '';
             group.querySelector('.shein-image').value = data.product.image || '';
-            setSheinMessage(group, `تم جلب SKU: ${data.product.shein_sku}`, 'success');
+            setSheinMessage(group, `تم جلب بيانات SKU: ${data.product.sku || data.product.shein_sku}`, 'success');
         } catch (error) {
-            setSheinMessage(group, error.message + ' - يمكنك إدخال SKU يدوياً.', 'error');
+            setSheinMessage(group, error.message + ' - تحقق من SKU وحاول مرة أخرى.', 'error');
         }
     });
 
     function bindSheinFetchers() {
-        document.querySelectorAll('.shein-link').forEach(input => {
+        document.querySelectorAll('.shein-sku').forEach(input => {
             if (input.dataset.bound === '1') return;
             input.dataset.bound = '1';
             input.addEventListener('input', () => fetchSheinProduct(input));
