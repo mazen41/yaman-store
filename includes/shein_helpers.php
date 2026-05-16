@@ -155,22 +155,69 @@ function sheinExtractSkuFromHtml(string $html): string
     return '';
 }
 
-function sheinExtractProductData(string $link): array
+function sheinBuildAbsoluteUrl(string $href, string $baseUrl = 'https://us.shein.com'): string
 {
-    $html = sheinFetchUrl($link);
-    $sku = sheinExtractSkuFromHtml($html);
-    $name = sheinExtractMeta($html, 'og:title') ?: sheinExtractMeta($html, 'twitter:title') ?: 'SHEIN Product';
-    $image = sheinExtractMeta($html, 'og:image') ?: sheinExtractMeta($html, 'twitter:image') ?: '';
-
-    if ($sku === '') {
-        throw new RuntimeException('تعذر استخراج SKU من النص الظاهر/بيانات صفحة المنتج. يرجى إدخاله يدوياً.');
+    $href = trim(html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    if ($href === '') {
+        return '';
     }
 
+    if (substr($href, 0, 2) === '//') {
+        return 'https:' . $href;
+    }
+
+    if (preg_match('/^https?:\/\//i', $href)) {
+        return $href;
+    }
+
+    if ($href[0] === '/') {
+        return rtrim($baseUrl, '/') . $href;
+    }
+
+    return rtrim($baseUrl, '/') . '/' . ltrim($href, '/');
+}
+
+function sheinExtractFirstProductLink(string $html): string
+{
+    $patterns = [
+        '/<a\b[^>]*\bhref=["\']([^"\']*\/p\/[^"\']*)["\'][^>]*>/iu',
+        '/\bhref=["\']([^"\']*\/p\/[^"\']*)["\']/iu',
+    ];
+
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $html, $matches)) {
+            $link = sheinBuildAbsoluteUrl($matches[1]);
+            if ($link !== '') {
+                return $link;
+            }
+        }
+    }
+
+    throw new RuntimeException('تعذر العثور على رابط منتج SHEIN لهذا SKU');
+}
+
+function sheinExtractProductDataBySku(string $sku): array
+{
+    $sku = sheinNormalizeSku($sku);
+    if ($sku === '') {
+        throw new InvalidArgumentException('يرجى إدخال SKU صالح لمنتج SHEIN');
+    }
+
+    $searchSku = strtolower($sku);
+    $searchUrl = 'https://us.shein.com/pdsearch/' . rawurlencode($searchSku) . '/';
+    $searchHtml = sheinFetchUrl($searchUrl);
+    $productLink = sheinExtractFirstProductLink($searchHtml);
+
+    $productHtml = sheinFetchUrl($productLink);
+    $name = sheinExtractMeta($productHtml, 'og:title') ?: sheinExtractMeta($productHtml, 'twitter:title') ?: 'SHEIN Product';
+    $image = sheinExtractMeta($productHtml, 'og:image') ?: sheinExtractMeta($productHtml, 'twitter:image') ?: '';
+
     return [
+        'sku' => $sku,
         'shein_sku' => $sku,
         'name' => trim($name),
         'image' => trim($image),
-        'link' => trim($link),
+        'link' => trim($productLink),
     ];
 }
 
@@ -214,20 +261,12 @@ function sheinFindOrCreateProduct(PDO $db, array $data): int
 
 function sheinResolveInputToSku(string $input): array
 {
-    $input = trim($input);
-    if ($input === '') {
-        throw new InvalidArgumentException('يرجى إدخال رابط أو SKU');
-    }
-
-    if (sheinLooksLikeUrl($input)) {
-        return sheinExtractProductData($input);
-    }
-
     $sku = sheinNormalizeSku($input);
     if ($sku === '') {
-        throw new InvalidArgumentException('قيمة SKU غير صالحة');
+        throw new InvalidArgumentException('يرجى إدخال SKU صالح');
     }
 
+    return sheinExtractProductDataBySku($sku);
     // ✅ Build the search URL from the SKU and fetch it
     $searchUrl = 'https://us.shein.com/pdsearch/' . urlencode(strtolower($sku)) . '/';
     return sheinExtractProductDataFromSearch($searchUrl, $sku);

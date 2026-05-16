@@ -13,17 +13,22 @@ require_once '../../../includes/shein_helpers.php';
 
 try {
     sheinEnsureSchema($db);
-    $link = trim($_POST['link'] ?? $_GET['link'] ?? '');
-    if ($link === '') {
-        throw new InvalidArgumentException('يرجى إدخال رابط منتج SHEIN');
+    $sku = trim($_POST['sku'] ?? $_GET['sku'] ?? '');
+    if ($sku === '') {
+        throw new InvalidArgumentException('يرجى إدخال SKU منتج SHEIN');
     }
 
-    $product = sheinExtractProductData($link);
+    $product = sheinExtractProductDataBySku($sku);
     sheinFindOrCreateProduct($db, $product);
 
     echo json_encode([
         'success' => true,
-        'product' => $product,
+        'product' => [
+            'sku' => $product['sku'],
+            'name' => $product['name'],
+            'image' => $product['image'],
+            'link' => $product['link'],
+        ],
         'message' => 'تم جلب بيانات المنتج بنجاح',
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

@@ -121,12 +121,12 @@ include '../../includes/header.php';
                     <button type="button" id="startScanner" class="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-2 font-semibold">تشغيل</button>
                     <button type="button" id="stopScanner" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white rounded-lg px-4 py-2 font-semibold">إيقاف</button>
                 </div>
-                <p class="text-xs text-gray-500 mt-2">إذا كان QR يحتوي على رابط، سيجلب النظام صفحة المنتج ويستخرج SKU من بيانات المنتج النصية وليس من قيمة الباركود وحدها.</p>
+                <p class="text-xs text-gray-500 mt-2">امسح أو أدخل SKU المنتج ليجلب النظام بيانات SHEIN ويحدث حالة الفرز.</p>
             </div>
 
             <form id="manualScanForm" class="bg-white rounded-2xl shadow p-5 border border-gray-100">
-                <label for="scanInput" class="block font-bold text-gray-800 mb-2">إدخال يدوي / رابط المنتج</label>
-                <input id="scanInput" name="scan_input" type="text" class="form-input w-full dir-ltr" placeholder="SKU أو رابط SHEIN">
+                <label for="scanInput" class="block font-bold text-gray-800 mb-2">إدخال SKU يدوي</label>
+                <input id="scanInput" name="scan_input" type="text" class="form-input w-full dir-ltr" placeholder="SKU SHEIN">
                 <button type="submit" class="w-full mt-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg px-4 py-2 font-semibold">بحث وتحديث الفرز</button>
             </form>
         </div>
