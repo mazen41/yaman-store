@@ -765,27 +765,61 @@ async function doUnscan() {
 // CAMERA SCANNER
 // ══════════════════════════════════════════════════════════════════════════════
 function extractSkuFromText(text) {
-  const normalized = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const patterns = [/(SK\d{8,})/g, /(S\d{9,})/g, /([A-Z]{2,4}\d{6,})/g];
-  for (const re of patterns) {
-    const match = re.exec(normalized);
-    if (match && match[1]) return match[1];
+  const raw = String(text || '').toUpperCase();
+
+  // Strict SKU policy: only SK + digits is accepted.
+  // This prevents fallback to random numeric chunks (especially from barcode-like patterns).
+  const compact = raw.replace(/[^A-Z0-9]/g, '');
+  const strictMatches = compact.match(/SK\d{10,24}/g) || [];
+  if (strictMatches.length) {
+    strictMatches.sort((a, b) => b.length - a.length);
+    return strictMatches[0];
   }
+
   return '';
+}
+
+function prepareSkuOcrRegion(video) {
+  const fullW = video.videoWidth;
+  const fullH = video.videoHeight;
+
+  // Ignore lower strip where barcodes are usually printed.
+  const cropX = Math.floor(fullW * 0.06);
+  const cropY = Math.floor(fullH * 0.10);
+  const cropW = Math.floor(fullW * 0.88);
+  const cropH = Math.floor(fullH * 0.52);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = cropW;
+  canvas.height = cropH;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const img = ctx.getImageData(0, 0, cropW, cropH);
+  const px = img.data;
+
+  // Lightweight grayscale + adaptive-ish binarization for SK text clarity.
+  for (let i = 0; i < px.length; i += 4) {
+    const gray = (px[i] * 0.299) + (px[i + 1] * 0.587) + (px[i + 2] * 0.114);
+    const bw = gray > 145 ? 255 : 0;
+    px[i] = bw;
+    px[i + 1] = bw;
+    px[i + 2] = bw;
+  }
+  ctx.putImageData(img, 0, 0);
+
+  return canvas;
 }
 
 async function recognizeSkuFromVideo(video) {
   if (!window.Tesseract || video.videoWidth < 20 || video.videoHeight < 20) return '';
 
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const ocrCanvas = prepareSkuOcrRegion(video);
 
-  const { data } = await Tesseract.recognize(canvas, 'eng', {
+  const { data } = await Tesseract.recognize(ocrCanvas, 'eng', {
     tessedit_pageseg_mode: '6',
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+    tessedit_char_whitelist: 'SK0123456789',
+    preserve_interword_spaces: '0',
   });
 
   return extractSkuFromText(data?.text || '');
