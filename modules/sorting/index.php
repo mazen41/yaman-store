@@ -440,7 +440,6 @@ include '../../includes/header.php';
   </div><!-- /sort-layout -->
 </div><!-- /sortApp -->
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════════════════════════
 // STATE
@@ -456,6 +455,7 @@ const state = {
   camStream     : null,
   camTimer      : null,
   camOcrBusy    : false,
+  lastOcrNotice : 0,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -766,17 +766,9 @@ async function doUnscan() {
 // ══════════════════════════════════════════════════════════════════════════════
 function extractSkuFromText(text) {
   const raw = String(text || '').toUpperCase();
-
-  // Strict SKU policy: only SK + digits is accepted.
-  // This prevents fallback to random numeric chunks (especially from barcode-like patterns).
   const compact = raw.replace(/[^A-Z0-9]/g, '');
-  const strictMatches = compact.match(/SK\d{10,24}/g) || [];
-  if (strictMatches.length) {
-    strictMatches.sort((a, b) => b.length - a.length);
-    return strictMatches[0];
-  }
-
-  return '';
+  const strictMatches = compact.match(/SK\d{10,}/g) || [];
+  return Array.from(new Set(strictMatches));
 }
 
 function prepareSkuOcrRegion(video) {
@@ -811,26 +803,46 @@ function prepareSkuOcrRegion(video) {
   return canvas;
 }
 
+async function canvasToJpegBlob(canvas, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+      if (blob) resolve(blob);
+      else reject(new Error('تعذر تجهيز الصورة للإرسال'));
+    }, 'image/jpeg', quality);
+  });
+}
+
 async function recognizeSkuFromVideo(video) {
-  if (!window.Tesseract || video.videoWidth < 20 || video.videoHeight < 20) return '';
+  if (video.videoWidth < 20 || video.videoHeight < 20) return null;
 
   const ocrCanvas = prepareSkuOcrRegion(video);
+  const imageBlob = await canvasToJpegBlob(ocrCanvas, 0.82);
+  const formData = new FormData();
+  formData.append('apikey', 'K88393251788957');
+  formData.append('language', 'eng');
+  formData.append('OCREngine', '2');
+  formData.append('isTable', 'false');
+  formData.append('scale', 'true');
+  formData.append('file', imageBlob, 'sorting-sku.jpg');
 
-  const { data } = await Tesseract.recognize(ocrCanvas, 'eng', {
-    tessedit_pageseg_mode: '6',
-    tessedit_char_whitelist: 'SK0123456789',
-    preserve_interword_spaces: '0',
+  const res = await fetch('https://api.ocr.space/parse/image', {
+    method: 'POST',
+    body: formData
   });
 
-  return extractSkuFromText(data?.text || '');
+  if (!res.ok) throw new Error('فشل الاتصال بخدمة OCR.Space');
+
+  const data = await res.json();
+  const parsedText = (data?.ParsedResults || []).map(r => r?.ParsedText || '').join('\n');
+  const skus = extractSkuFromText(parsedText);
+
+  if (skus.length === 1) return skus[0];
+  if (skus.length === 0) return null;
+
+  throw new Error(`تم اكتشاف أكثر من SKU (${skus.length}) — يرجى تثبيت الكاميرا على ملصق SKU واحد`);
 }
 
 async function startCamera() {
-  if (!window.Tesseract) {
-    showMsg('تعذر تحميل OCR — تحقق من الاتصال ثم أعد المحاولة', 'error');
-    return;
-  }
-
   try {
     state.camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const video = $('scannerVideo');
@@ -842,12 +854,22 @@ async function startCamera() {
       state.camOcrBusy = true;
       try {
         const sku = await recognizeSkuFromVideo(video);
-        if (sku) doScan(sku);
+        if (sku) {
+          state.lastOcrNotice = 0;
+          doScan(sku);
+        } else {
+          const now = Date.now();
+          if (!state.lastOcrNotice || (now - state.lastOcrNotice) > 2000) {
+            showMsg('لم يتم العثور على SKU صالح (الصيغة المطلوبة: SK متبوع بأرقام فقط)', 'warning');
+            state.lastOcrNotice = now;
+          }
+        }
       } catch(e) {
+        showMsg(e.message || 'تعذر استخراج SKU عبر OCR.Space', 'error');
       } finally {
         state.camOcrBusy = false;
       }
-    }, 550);
+    }, 450);
 
     showMsg('✅ الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
   } catch(err) { showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error'); }
