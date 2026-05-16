@@ -23,6 +23,9 @@ $is_super_admin = isset($_SESSION['is_admin']) && $_SESSION['is_admin'] == 1;
 
 require_once '../../includes/auto_generate_helpers.php'; // Ensure this file is included for createInvoiceForOrder and generateOrderNumber
 require_once 'discount_functions.php';
+require_once '../../includes/shein_helpers.php';
+
+sheinEnsureSchema($db);
 
 $page_title = 'إنشاء طلب جديد';
 $error_message = '';
@@ -65,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $additional_link = trim($_POST['additional_link'] ?? '');
     $notification_method = $_POST['notification_method'] ?? [];
     $coupon_code = trim($_POST['coupon_code'] ?? '');
+    $shein_items = $_POST['shein_items'] ?? [];
     
     // START: New field for editable discount
     $automatic_discount_percentage = floatval($_POST['automatic_discount_percentage'] ?? 0);
@@ -102,6 +106,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($items) || !is_array($items) || count($items) === 0) {
         $errors[] = 'يرجى إضافة منتج واحد على الأقل';
     }
+
+    $clean_shein_items = [];
+    if (is_array($shein_items)) {
+        foreach ($shein_items as $shein_item) {
+            $shein_link = trim($shein_item['link'] ?? '');
+            $shein_sku = sheinNormalizeSku($shein_item['sku'] ?? '');
+            if ($shein_link !== '' || $shein_sku !== '') {
+                $clean_shein_items[] = [
+                    'link' => $shein_link,
+                    'sku' => $shein_sku,
+                    'name' => trim($shein_item['name'] ?? ''),
+                    'image' => trim($shein_item['image'] ?? ''),
+                ];
+            }
+        }
+    }
+    $shein_items = $clean_shein_items;
 
     if (!empty($errors)) {
         $error_message = implode(' • ', $errors);
@@ -321,31 +342,71 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $db->prepare("UPDATE coupons SET used_count = used_count + 1 WHERE id = ?")->execute([$coupon_id]);
             }
 
-            // Insert Items
-            $item_stmt = $db->prepare("
-                INSERT INTO order_items (
-                    order_id, product_name, quantity, unit_price, total_price, notes, product_link, product_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ");
+            // Insert Items. If individual SHEIN products were entered, each product
+            // becomes a sortable order item linked by the extracted/manual SHEIN SKU.
+            if (!empty($shein_items)) {
+                $shein_item_stmt = $db->prepare("
+                    INSERT INTO order_items (
+                        order_id, product_name, shein_product_id, shein_sku, status, quantity, unit_price, total_price, notes, product_link, product_status
+                    ) VALUES (?, ?, ?, ?, 'pending', 1, 0, 0, ?, ?, ?)
+                ");
 
-            $item_counter = 1;
-            foreach ($items as $item) {
-                $product_name = trim($item['name'] ?? '');
-                // Default name logic only applies if user didn't provide one
-                if (empty($product_name)) {
-                    $product_name = 'منتج ' . (count($items) > 1 ? '#' . $item_counter : '');
+                foreach ($shein_items as $index => $shein_item) {
+                    $product_data = [
+                        'shein_sku' => $shein_item['sku'],
+                        'name' => $shein_item['name'],
+                        'image' => $shein_item['image'],
+                        'link' => $shein_item['link'],
+                    ];
+
+                    if ($product_data['shein_sku'] === '' && $product_data['link'] !== '') {
+                        $product_data = sheinExtractProductData($product_data['link']);
+                    }
+
+                    $product_data['shein_sku'] = sheinNormalizeSku($product_data['shein_sku'] ?? '');
+                    if ($product_data['shein_sku'] === '') {
+                        throw new Exception('يرجى إدخال SKU لمنتج SHEIN رقم ' . ($index + 1));
+                    }
+
+                    $shein_product_id = sheinFindOrCreateProduct($db, $product_data);
+                    $product_name = $product_data['name'] !== '' ? $product_data['name'] : 'SHEIN SKU ' . $product_data['shein_sku'];
+
+                    $shein_item_stmt->execute([
+                        $order_id,
+                        $product_name,
+                        $shein_product_id,
+                        $product_data['shein_sku'],
+                        $notes,
+                        $product_data['link'],
+                        'available',
+                    ]);
                 }
-                $item_counter++;
+            } else {
+                $item_stmt = $db->prepare("
+                    INSERT INTO order_items (
+                        order_id, product_name, quantity, unit_price, total_price, notes, product_link, product_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
 
-                $quantity = intval($item['item_count'] ?? $item['quantity'] ?? 1);
-                $unit_price = floatval($item['price'] ?? 0);
-                $total_price = floatval($item['total'] ?? 0);
-                $product_link = trim($item['product_link'] ?? $item['link'] ?? '');
-                $item_notes = trim($item['notes'] ?? '');
+                $item_counter = 1;
+                foreach ($items as $item) {
+                    $product_name = trim($item['name'] ?? '');
+                    // Default name logic only applies if user didn't provide one
+                    if (empty($product_name)) {
+                        $product_name = 'منتج ' . (count($items) > 1 ? '#' . $item_counter : '');
+                    }
+                    $item_counter++;
 
-                $item_stmt->execute([
-                    $order_id, $product_name, $quantity, $unit_price, $total_price, $item_notes, $product_link, 'available'
-                ]);
+                    $quantity = intval($item['item_count'] ?? $item['quantity'] ?? 1);
+                    $unit_price = floatval($item['price'] ?? 0);
+                    $total_price = floatval($item['total'] ?? 0);
+                    $product_link = trim($item['product_link'] ?? $item['link'] ?? '');
+                    $item_notes = trim($item['notes'] ?? '');
+
+                    $item_stmt->execute([
+                        $order_id, $product_name, $quantity, $unit_price, $total_price, $item_notes, $product_link, 'available'
+                    ]);
+                }
             }
 
             // Status History
@@ -663,6 +724,20 @@ include '../../includes/header.php';
                                 <label class="block text-sm font-medium text-gray-700 mb-2">ملاحظات</label>
                                 <textarea name="items[0][notes]" class="form-input" rows="2" placeholder="أضف ملاحظات..."></textarea>
                             </div>
+
+                            <div class="bg-white border border-purple-200 rounded-xl p-4">
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                                    <div>
+                                        <h4 class="font-bold text-purple-800 flex items-center gap-2">
+                                            <i class="fas fa-link"></i>
+                                            ربط منتجات SHEIN حسب القطع
+                                        </h4>
+                                        <p class="text-xs text-gray-500 mt-1">يتم إنشاء حقول المنتجات تلقائياً حسب عدد القطع، ويتم حفظ SKU محلياً لاستخدامه في الفرز.</p>
+                                    </div>
+                                    <span id="sheinGroupsCount" class="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full">0 منتج</span>
+                                </div>
+                                <div id="sheinProductGroups" class="space-y-3"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -896,6 +971,117 @@ include '../../includes/header.php';
         });
     }
 
+    function debounce(fn, delay = 700) {
+        let timer;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
+    function renderSheinProductGroups() {
+        const quantityInput = document.querySelector('input[name="items[0][item_count]"]');
+        const container = document.getElementById('sheinProductGroups');
+        const badge = document.getElementById('sheinGroupsCount');
+        if (!quantityInput || !container) return;
+
+        const count = Math.max(0, parseInt(quantityInput.value, 10) || 0);
+        const existing = {};
+        container.querySelectorAll('[data-shein-index]').forEach(group => {
+            const idx = group.dataset.sheinIndex;
+            existing[idx] = {
+                link: group.querySelector('.shein-link')?.value || '',
+                sku: group.querySelector('.shein-sku')?.value || '',
+                name: group.querySelector('.shein-name')?.value || '',
+                image: group.querySelector('.shein-image')?.value || '',
+                message: group.querySelector('.shein-message')?.textContent || '',
+                messageClass: group.querySelector('.shein-message')?.className || 'shein-message text-xs mt-2 hidden',
+            };
+        });
+
+        container.innerHTML = '';
+        for (let i = 0; i < count; i++) {
+            const data = existing[i] || {};
+            const group = document.createElement('div');
+            group.className = 'border border-gray-200 rounded-lg p-3 bg-gray-50';
+            group.dataset.sheinIndex = i;
+            group.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-semibold text-gray-700">منتج SHEIN #${i + 1}</span>
+                    <span class="shein-status text-xs text-gray-400">بانتظار الرابط</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">رابط المنتج</label>
+                        <input type="url" name="shein_items[${i}][link]" value="${escapeHtml(data.link || '')}" class="form-input shein-link" placeholder="https://www.shein.com/...">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">SKU</label>
+                        <input type="text" name="shein_items[${i}][sku]" value="${escapeHtml(data.sku || '')}" class="form-input shein-sku dir-ltr" placeholder="يتم تعبئته تلقائياً أو يدوياً">
+                    </div>
+                </div>
+                <input type="hidden" name="shein_items[${i}][name]" value="${escapeHtml(data.name || '')}" class="shein-name">
+                <input type="hidden" name="shein_items[${i}][image]" value="${escapeHtml(data.image || '')}" class="shein-image">
+                <div class="${data.messageClass || 'shein-message text-xs mt-2 hidden'}">${escapeHtml(data.message || '')}</div>
+            `;
+            container.appendChild(group);
+        }
+
+        if (badge) badge.textContent = `${count} منتج`;
+        bindSheinFetchers();
+    }
+
+    function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    }
+
+    function setSheinMessage(group, message, type) {
+        const messageEl = group.querySelector('.shein-message');
+        const statusEl = group.querySelector('.shein-status');
+        const colors = type === 'success'
+            ? 'bg-green-100 text-green-800 border border-green-200'
+            : type === 'loading'
+                ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                : 'bg-red-100 text-red-800 border border-red-200';
+        messageEl.textContent = message;
+        messageEl.className = `shein-message text-xs mt-2 rounded p-2 ${colors}`;
+        statusEl.textContent = type === 'success' ? 'تم جلب SKU' : (type === 'loading' ? 'جاري الجلب...' : 'خطأ');
+        statusEl.className = type === 'success' ? 'shein-status text-xs text-green-600' : (type === 'loading' ? 'shein-status text-xs text-blue-600' : 'shein-status text-xs text-red-600');
+    }
+
+    const fetchSheinProduct = debounce(async function(input) {
+        const group = input.closest('[data-shein-index]');
+        const link = input.value.trim();
+        if (!group || !link) return;
+
+        setSheinMessage(group, 'جاري جلب بيانات المنتج من SHEIN...', 'loading');
+        try {
+            const response = await fetch('ajax/fetch_shein_product.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `link=${encodeURIComponent(link)}`
+            });
+            const data = await response.json();
+            if (!data.success) throw new Error(data.message || 'تعذر جلب المنتج');
+
+            group.querySelector('.shein-sku').value = data.product.shein_sku || '';
+            group.querySelector('.shein-name').value = data.product.name || '';
+            group.querySelector('.shein-image').value = data.product.image || '';
+            setSheinMessage(group, `تم جلب SKU: ${data.product.shein_sku}`, 'success');
+        } catch (error) {
+            setSheinMessage(group, error.message + ' - يمكنك إدخال SKU يدوياً.', 'error');
+        }
+    });
+
+    function bindSheinFetchers() {
+        document.querySelectorAll('.shein-link').forEach(input => {
+            if (input.dataset.bound === '1') return;
+            input.dataset.bound = '1';
+            input.addEventListener('input', () => fetchSheinProduct(input));
+            input.addEventListener('blur', () => fetchSheinProduct(input));
+        });
+    }
+
     async function updateTotals() {
         let subtotal = 0;
         let totalQuantity = 0;
@@ -1033,6 +1219,7 @@ include '../../includes/header.php';
         document.getElementById('coupon_code').value = '';
         document.getElementById('couponDetails').classList.add('hidden');
         document.getElementById('couponMessage').classList.add('hidden');
+        renderSheinProductGroups();
         updateTotals();
     });
 
@@ -1068,11 +1255,16 @@ include '../../includes/header.php';
 
     document.addEventListener('DOMContentLoaded', function() {
         const discountInput = document.getElementById('automaticDiscountPercentage');
+        const sheinQuantityInput = document.querySelector('input[name="items[0][item_count]"]');
+        if (sheinQuantityInput) {
+            sheinQuantityInput.addEventListener('input', renderSheinProductGroups);
+        }
         if (discountInput) {
             discountInput.addEventListener('focus', () => { isDiscountInputFocused = true; });
             discountInput.addEventListener('blur', () => { isDiscountInputFocused = false; });
             discountInput.addEventListener('input', updateTotals);
         }
+        renderSheinProductGroups();
         updateTotals();
     });
 

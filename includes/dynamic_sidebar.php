@@ -20,6 +20,7 @@ $all_sidebar_modules = [
     ['name' => 'أنواع العملاء', 'route' => '/modules/customers/customer_types.php', 'icon' => 'fas fa-users-cog', 'key' => 'customer_types', 'section' => 'modules'],
     ['name' => 'المدن', 'route' => '/modules/customers/cities.php', 'icon' => 'fas fa-city', 'key' => 'cities', 'section' => 'modules'],
     ['name' => 'طلبات العملاء', 'route' => '/modules/orders/index.php', 'icon' => 'fas fa-shopping-bag', 'key' => 'orders', 'section' => 'modules'],
+    ['name' => 'إدارة الفرز', 'route' => '/modules/sorting/index.php', 'icon' => 'fas fa-qrcode', 'key' => 'orders', 'section' => 'modules'],
     [
     'name' => 'بطاقات العملاء',
     'route' => '/modules/customers/customer_cards.php',
