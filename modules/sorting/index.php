@@ -88,6 +88,9 @@ include '../../includes/header.php';
 .scan-input:focus { border-color: var(--sort-accent); box-shadow: var(--sort-focus); background: #fff; }
 .scan-input::placeholder { color: #9ca3af; letter-spacing: 0; font-family: 'Tajawal', sans-serif; direction: rtl; }
 .scan-input-icon { position: absolute; left: 17px; top: 50%; transform: translateY(-50%); color: var(--sort-accent); font-size: 1.15rem; pointer-events: none; }
+.sku-pick-list { margin-top:10px; display:grid; gap:8px; }
+.sku-pick-btn { width:100%; text-align:right; border:1px solid var(--sort-border); background:#fff; border-radius:10px; padding:10px; cursor:pointer; }
+.sku-pick-btn:hover { border-color:#60a5fa; background:#eff6ff; }
 
 .sort-spinner { display: none; align-items: center; gap: 10px; font-size: .86rem; color: var(--sort-accent2); padding: 8px 0; }
 .sort-spinner .ring { width: 20px; height: 20px; border: 2px solid #bfdbfe; border-top-color: var(--sort-accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
@@ -256,6 +259,12 @@ include '../../includes/header.php';
           <div id="sortSpinner" class="sort-spinner">
             <div class="ring"></div>
             <span>جاري البحث عن المنتج...</span>
+          </div>
+          <div id="skuPickWrap" style="display:none;">
+            <div style="margin-top:2px;padding:10px;border:1px solid var(--sort-border);border-radius:12px;background:#f9fafb;">
+              <strong>SKU موجود في عدة طلبات</strong>
+              <div id="skuPickList" class="sku-pick-list"></div>
+            </div>
           </div>
 
           <div id="sortMsg" style="display:none"></div>
@@ -491,7 +500,7 @@ function hideMsg() { msgEl.style.display = 'none'; }
 // ══════════════════════════════════════════════════════════════════════════════
 // CORE SCAN FUNCTION
 // ══════════════════════════════════════════════════════════════════════════════
-async function doScan(value) {
+async function doScan(value, selectedItemId = 0) {
   value = (value || '').trim();
   if (!value) { showMsg('يرجى إدخال SKU أو رابط صالح', 'error'); return; }
 
@@ -515,11 +524,18 @@ async function doScan(value) {
     const res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    `action=scan&scan_input=${encodeURIComponent(value)}`,
+      body:    `action=scan&scan_input=${encodeURIComponent(value)}&selected_item_id=${selectedItemId}`,
     });
     const data = await res.json();
 
     if (!data.success) throw new Error(data.message || 'فشل البحث');
+    if (data.requires_selection) {
+      renderSkuSelection(data);
+      showMsg(data.message || 'اختر الطلب المطلوب', 'warning');
+      beep('warning');
+      return;
+    }
+    $('skuPickWrap').style.display = 'none';
 
     renderResult(data);
     showMsg(data.message, data.already_scanned ? 'warning' : 'success');
@@ -548,6 +564,22 @@ async function doScan(value) {
     scanInput.focus();
     state.scanLock = false;
   }
+}
+
+function renderSkuSelection(data) {
+  const list = $('skuPickList');
+  const matches = Array.isArray(data.matches) ? data.matches : [];
+  list.innerHTML = '';
+  $('skuPickWrap').style.display = matches.length ? 'block' : 'none';
+  matches.forEach(m => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sku-pick-btn';
+    btn.innerHTML = `<strong>${escH(m.order_number || ('#' + m.order_id))}</strong>
+      <div style="font-size:.82rem;color:var(--sort-muted);margin-top:4px;">${escH(m.customer_name || 'عميل غير محدد')} — ${escH(m.customer_mobile || '—')}</div>`;
+    btn.addEventListener('click', () => doScan(data.sku || scanInput.value, parseInt(m.item_id || 0, 10)));
+    list.appendChild(btn);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -733,9 +765,13 @@ async function doUnscan() {
 // CAMERA SCANNER
 // ══════════════════════════════════════════════════════════════════════════════
 function extractSkuFromText(text) {
-  const normalized = String(text || '').replace(/\s+/g, '').toLowerCase();
-  const match = normalized.match(/sk\d{8,}/i);
-  return match ? match[0].toLowerCase() : '';
+  const normalized = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const patterns = [/(SK\d{8,})/g, /(S\d{9,})/g, /([A-Z]{2,4}\d{6,})/g];
+  for (const re of patterns) {
+    const match = re.exec(normalized);
+    if (match && match[1]) return match[1];
+  }
+  return '';
 }
 
 async function recognizeSkuFromVideo(video) {
@@ -748,7 +784,8 @@ async function recognizeSkuFromVideo(video) {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   const { data } = await Tesseract.recognize(canvas, 'eng', {
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+    tessedit_pageseg_mode: '6',
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
   });
 
   return extractSkuFromText(data?.text || '');
@@ -776,7 +813,7 @@ async function startCamera() {
       } finally {
         state.camOcrBusy = false;
       }
-    }, 1200);
+    }, 550);
 
     showMsg('✅ الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
   } catch(err) { showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error'); }

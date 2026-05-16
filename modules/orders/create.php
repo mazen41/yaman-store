@@ -108,17 +108,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 
     $clean_shein_items = [];
-    $seen_shein_skus = [];
     if (is_array($shein_items)) {
         foreach ($shein_items as $index => $shein_item) {
             $shein_sku = sheinNormalizeSku($shein_item['sku'] ?? '');
             if ($shein_sku !== '') {
-                if (isset($seen_shein_skus[$shein_sku])) {
-                    $errors[] = 'لا يمكن إضافة نفس SKU أكثر من مرة في نفس الطلب: ' . $shein_sku;
-                    continue;
-                }
-
-                $seen_shein_skus[$shein_sku] = true;
                 $clean_shein_items[] = [
                     'sku' => $shein_sku,
                     'name' => trim($shein_item['name'] ?? ''),
