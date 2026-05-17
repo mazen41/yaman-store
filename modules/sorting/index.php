@@ -764,82 +764,165 @@ async function doUnscan() {
 // ══════════════════════════════════════════════════════════════════════════════
 // CAMERA SCANNER
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// SKU OCR PIPELINE  –  crop → resize → enhance → OCR.Space → extract
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Extract all valid SKU strings from raw OCR text.
+ * Pattern: SK (case-insensitive) followed by 10+ digits.
+ * Strips non-alphanumeric noise and normalises to uppercase.
+ */
 function extractSkuFromText(text) {
-  const raw = String(text || '').toUpperCase();
-  const compact = raw.replace(/[^A-Z0-9]/g, '');
-  const strictMatches = compact.match(/SK\d{10,}/g) || [];
-  return Array.from(new Set(strictMatches));
+  const upper   = String(text || '').toUpperCase();
+  // Remove every character that can't belong to "SK<digits>"
+  const cleaned = upper.replace(/[^A-Z0-9\n]/g, ' ');
+  const matches = cleaned.match(/SK\d{10,}/g) || [];
+  return Array.from(new Set(matches)); // deduplicate
 }
 
+/**
+ * Build a pre-processed canvas from the live video frame.
+ *
+ * Steps:
+ *  1. Crop   – keep only the BOTTOM 25-30% of the frame where the printed SKU
+ *              label sits, excluding the barcode strip at the very bottom (~5%).
+ *  2. Resize – scale width down to <= 800 px to reduce payload size.
+ *  3. Grayscale – standard luminance weights (ITU-R BT.601).
+ *  4. Contrast boost – percentile-stretch histogram so faint print becomes crisp.
+ *  5. Sharpen – 3x3 unsharp-mask kernel to recover edge detail after resize.
+ */
 function prepareSkuOcrRegion(video) {
-  const fullW = video.videoWidth;
-  const fullH = video.videoHeight;
+  const VW = video.videoWidth;
+  const VH = video.videoHeight;
+  if (VW < 20 || VH < 20) return null;
 
-  // Ignore lower strip where barcodes are usually printed.
-  const cropX = Math.floor(fullW * 0.06);
-  const cropY = Math.floor(fullH * 0.10);
-  const cropW = Math.floor(fullW * 0.88);
-  const cropH = Math.floor(fullH * 0.52);
+  /* ── 1. Crop ─────────────────────────────────────────────────────── */
+  // Bottom 25-30% of the frame.  Barcode is typically the lowest 8%; exclude it.
+  // We take the band from 68% to 93% of the frame height.
+  const srcY = Math.floor(VH * 0.68);
+  const srcH = Math.floor(VH * 0.25);
+  const srcX = Math.floor(VW * 0.04);   // trim ~4% from each side
+  const srcW = Math.floor(VW * 0.92);
+
+  /* ── 2. Resize to <= 800 px wide ─────────────────────────────────── */
+  const MAX_W = 800;
+  const scale = srcW > MAX_W ? MAX_W / srcW : 1;
+  const dstW  = Math.round(srcW * scale);
+  const dstH  = Math.round(srcH * scale);
 
   const canvas = document.createElement('canvas');
-  canvas.width = cropW;
-  canvas.height = cropH;
+  canvas.width  = dstW;
+  canvas.height = dstH;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, dstW, dstH);
 
-  const img = ctx.getImageData(0, 0, cropW, cropH);
-  const px = img.data;
-
-  // Lightweight grayscale + adaptive-ish binarization for SK text clarity.
-  for (let i = 0; i < px.length; i += 4) {
-    const gray = (px[i] * 0.299) + (px[i + 1] * 0.587) + (px[i + 2] * 0.114);
-    const bw = gray > 145 ? 255 : 0;
-    px[i] = bw;
-    px[i + 1] = bw;
-    px[i + 2] = bw;
+  /* ── 3. Grayscale ────────────────────────────────────────────────── */
+  const imgData = ctx.getImageData(0, 0, dstW, dstH);
+  const px = imgData.data;
+  const len = dstW * dstH;
+  const gray = new Uint8ClampedArray(len);
+  for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
+    gray[gi] = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) | 0;
   }
-  ctx.putImageData(img, 0, 0);
 
+  /* ── 4. Contrast boost (5th-95th percentile stretch) ─────────────── */
+  const hist = new Int32Array(256);
+  for (let i = 0; i < len; i++) hist[gray[i]]++;
+  let p5 = 0, p95 = 255, cum = 0;
+  for (let v = 0;   v < 256; v++) { cum += hist[v]; if (cum / len < 0.05) p5  = v; }
+  cum = 0;
+  for (let v = 255; v >= 0;  v--) { cum += hist[v]; if (cum / len < 0.05) p95 = v; }
+  const range = (p95 - p5) || 1;
+  for (let i = 0; i < len; i++) {
+    gray[i] = Math.min(255, Math.max(0, ((gray[i] - p5) / range * 255) | 0));
+  }
+
+  /* ── 5. Sharpen (unsharp-mask, kernel: centre x9 minus 8 neighbours) ─ */
+  const sharpened = new Uint8ClampedArray(len);
+  const W = dstW, H = dstH;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = y * W + x;
+      if (x === 0 || x === W - 1 || y === 0 || y === H - 1) {
+        sharpened[idx] = gray[idx]; continue; // border: pass-through
+      }
+      const v =
+          gray[idx] * 9
+        - gray[(y-1)*W+(x-1)] - gray[(y-1)*W+x] - gray[(y-1)*W+(x+1)]
+        - gray[ y   *W+(x-1)]                    - gray[ y   *W+(x+1)]
+        - gray[(y+1)*W+(x-1)] - gray[(y+1)*W+x] - gray[(y+1)*W+(x+1)];
+      sharpened[idx] = Math.min(255, Math.max(0, v));
+    }
+  }
+
+  /* ── Write back as grayscale RGBA ────────────────────────────────── */
+  for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
+    px[i] = px[i+1] = px[i+2] = sharpened[gi];
+    px[i+3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
   return canvas;
 }
 
-async function canvasToJpegBlob(canvas, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(blob => {
-      if (blob) resolve(blob);
-      else reject(new Error('تعذر تجهيز الصورة للإرسال'));
-    }, 'image/jpeg', quality);
+/** Convert a canvas to a JPEG Blob at the given quality (0-1). */
+function canvasToJpegBlob(canvas, quality) {
+  quality = quality || 0.88;
+  return new Promise(function(resolve, reject) {
+    canvas.toBlob(
+      function(blob) { blob ? resolve(blob) : reject(new Error('تعذر تجهيز الصورة للإرسال')); },
+      'image/jpeg',
+      quality
+    );
   });
 }
 
+/**
+ * Full OCR pipeline for a single video frame.
+ * Returns the matched SKU string, or null if nothing found.
+ * Throws on hard errors (API failure, multiple conflicting SKUs).
+ */
 async function recognizeSkuFromVideo(video) {
-  if (video.videoWidth < 20 || video.videoHeight < 20) return null;
+  if (!video || video.videoWidth < 20 || video.videoHeight < 20) return null;
 
+  // ── 1. Pre-process the frame ──────────────────────────────────────
   const ocrCanvas = prepareSkuOcrRegion(video);
-  const imageBlob = await canvasToJpegBlob(ocrCanvas, 0.82);
-  const formData = new FormData();
-  formData.append('apikey', 'K88393251788957');
-  formData.append('language', 'eng');
-  formData.append('OCREngine', '2');
-  formData.append('isTable', 'false');
-  formData.append('scale', 'true');
-  formData.append('file', imageBlob, 'sorting-sku.jpg');
+  if (!ocrCanvas) return null;
 
+  // ── 2. Build minimal form-data payload ───────────────────────────
+  const imageBlob = await canvasToJpegBlob(ocrCanvas, 0.88);
+  const formData  = new FormData();
+  formData.append('apikey',    'K88393251788957');
+  formData.append('language',  'eng');
+  formData.append('OCREngine', '2');       // Engine 2 handles dense alphanumeric better
+  formData.append('isTable',   'false');
+  formData.append('scale',     'true');
+  formData.append('file',      imageBlob, 'sku-crop.jpg');
+
+  // ── 3. Send to OCR.Space ─────────────────────────────────────────
   const res = await fetch('https://api.ocr.space/parse/image', {
     method: 'POST',
-    body: formData
+    body:   formData,
   });
+  if (!res.ok) throw new Error('OCR.Space: خطأ HTTP ' + res.status);
 
-  if (!res.ok) throw new Error('فشل الاتصال بخدمة OCR.Space');
+  const json = await res.json();
+  if (json.IsErroredOnProcessing) {
+    const msg = (json.ErrorMessage || []).join(' / ') || 'خطأ غير محدد';
+    throw new Error('OCR.Space: ' + msg);
+  }
 
-  const data = await res.json();
-  const parsedText = (data?.ParsedResults || []).map(r => r?.ParsedText || '').join('\n');
+  // ── 4. Parse ParsedText → extract SKU ────────────────────────────
+  const parsedText = (json.ParsedResults || []).map(function(r) { return r && r.ParsedText ? r.ParsedText : ''; }).join('\n');
   const skus = extractSkuFromText(parsedText);
 
-  if (skus.length === 1) return skus[0];
-  if (skus.length === 0) return null;
+  if (skus.length === 0) return null;           // nothing found — keep scanning
+  if (skus.length === 1) return skus[0];        // single clean match
 
-  throw new Error(`تم اكتشاف أكثر من SKU (${skus.length}) — يرجى تثبيت الكاميرا على ملصق SKU واحد`);
+  // Multiple distinct SKUs in a single frame → operator needs to re-aim
+  throw new Error('تم اكتشاف ' + skus.length + ' SKU في الإطار — وجّه الكاميرا على ملصق واحد فقط');
 }
 
 async function startCamera() {
@@ -871,7 +954,7 @@ async function startCamera() {
       }
     }, 450);
 
-    showMsg('✅ الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
+    showMsg('الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
   } catch(err) { showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error'); }
 }
 function stopCamera() {
