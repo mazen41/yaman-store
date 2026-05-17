@@ -214,7 +214,7 @@ include '../../includes/header.php';
 
 <div id="sortApp">
 
-  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <!-- Header -->
   <div class="sort-header">
     <h1>
       <span class="icon-box"><i class="fas fa-qrcode"></i></span>
@@ -236,10 +236,10 @@ include '../../includes/header.php';
     </div>
   </div>
 
-  <!-- ── Main Layout ────────────────────────────────────────────────── -->
+  <!-- Main Layout -->
   <div class="sort-layout">
 
-    <!-- LEFT PANEL: Scanner + Input ──────────────────────────────── -->
+    <!-- LEFT PANEL -->
     <div style="display:flex;flex-direction:column;gap:16px;">
 
       <!-- SKU Input card -->
@@ -284,9 +284,12 @@ include '../../includes/header.php';
       <div class="s-card">
         <div class="s-card-head">
           <h3><i class="fas fa-camera" style="color:#22c55e"></i> الماسح بالكاميرا</h3>
+          <span id="camStatus" class="s-badge other" style="font-size:.7rem">متوقف</span>
         </div>
         <div class="s-card-body" style="display:flex;flex-direction:column;gap:10px;">
           <video id="scannerVideo" playsinline muted></video>
+
+          <!-- Start / Stop row -->
           <div class="cam-btns">
             <button id="btnCamStart" type="button" class="s-btn s-btn-green" style="flex:1;font-size:.82rem;">
               <i class="fas fa-play"></i> تشغيل الكاميرا
@@ -295,7 +298,15 @@ include '../../includes/header.php';
               <i class="fas fa-stop"></i> إيقاف
             </button>
           </div>
-          <p style="font-size:.72rem;color:var(--sort-muted);text-align:center;margin:0;">وجّه الكاميرا نحو رمز QR أو الباركود</p>
+
+          <!-- Manual OCR capture — only fires ONE request on click -->
+          <button id="btnCamScan" type="button" class="s-btn s-btn-primary s-btn-full" style="display:none;">
+            <i class="fas fa-camera"></i> مسح SKU الآن
+          </button>
+
+          <p style="font-size:.72rem;color:var(--sort-muted);text-align:center;margin:0;">
+            وجّه الكاميرا على ملصق SKU ثم اضغط «مسح SKU الآن»
+          </p>
         </div>
       </div>
 
@@ -320,7 +331,7 @@ include '../../includes/header.php';
 
     </div>
 
-    <!-- RIGHT PANEL: Result ──────────────────────────────────────── -->
+    <!-- RIGHT PANEL -->
     <div style="display:flex;flex-direction:column;gap:16px;">
 
       <!-- Empty state -->
@@ -334,7 +345,7 @@ include '../../includes/header.php';
         </div>
       </div>
 
-      <!-- Result panels (hidden until scan) -->
+      <!-- Result panels -->
       <div id="resultArea" style="display:none;flex-direction:column;gap:16px;">
 
         <!-- All-done banner -->
@@ -344,7 +355,7 @@ include '../../includes/header.php';
           <p>جميع منتجات هذا الطلب مفروزة</p>
         </div>
 
-        <!-- ① Product card -->
+        <!-- Product card -->
         <div class="s-card">
           <div class="s-card-head">
             <h3>🛍️ المنتج الممسوح</h3>
@@ -369,7 +380,7 @@ include '../../includes/header.php';
           </div>
         </div>
 
-        <!-- ② Order card -->
+        <!-- Order card -->
         <div class="s-card">
           <div class="s-card-head">
             <h3>📦 تفاصيل الطلب</h3>
@@ -379,7 +390,6 @@ include '../../includes/header.php';
           </div>
           <div class="s-card-body" style="display:flex;flex-direction:column;gap:12px;">
 
-            <!-- Group banner -->
             <div id="groupBanner" style="display:none" class="group-banner">
               <span class="icon">📁</span>
               <div class="info">
@@ -388,7 +398,6 @@ include '../../includes/header.php';
               </div>
             </div>
 
-            <!-- Progress -->
             <div>
               <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
                 <span style="font-size:.78rem;color:var(--sort-muted);">تقدم الفرز</span>
@@ -399,7 +408,6 @@ include '../../includes/header.php';
               </div>
             </div>
 
-            <!-- Order grid -->
             <div class="order-grid">
               <div class="o-cell accent"><span class="lbl">رقم الطلب</span><span class="val" id="oNumber" style="direction:ltr;"></span></div>
               <div class="o-cell"><span class="lbl">العميل</span><span class="val" id="oCustomer"></span></div>
@@ -411,14 +419,13 @@ include '../../includes/header.php';
               <div class="o-cell yellow"><span class="lbl">مفروز / الكل</span><span class="val" id="oCounts"></span></div>
             </div>
 
-            <!-- Order notes -->
             <div id="oNotesWrap" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 12px;font-size:.82rem;color:#92400e;">
               <i class="fas fa-sticky-note" style="margin-left:6px;"></i><span id="oNotes"></span>
             </div>
           </div>
         </div>
 
-        <!-- ③ All items -->
+        <!-- All items -->
         <div class="s-card">
           <div class="s-card-head">
             <h3>📋 منتجات الطلب</h3>
@@ -426,7 +433,7 @@ include '../../includes/header.php';
           <div id="itemsList" class="items-list"></div>
         </div>
 
-        <!-- ④ Order images -->
+        <!-- Order images -->
         <div id="imagesCard" style="display:none" class="s-card">
           <div class="s-card-head"><h3>🖼️ صور الطلب</h3></div>
           <div class="s-card-body">
@@ -449,28 +456,22 @@ const state = {
   currentOrderId: null,
   sessionScanned: 0,
   sessionPending: 0,
-  scanLock      : false,   // debounce rapid scans
+  scanLock      : false,
   lastScanVal   : '',
   lastScanAt    : 0,
-  camStream     : null,
-  camTimer      : null,
-  camOcrBusy    : false,
-  lastOcrNotice : 0,
+  camStream     : null,   // active MediaStream (no auto-interval)
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-// DOM refs
-// ══════════════════════════════════════════════════════════════════════════════
 const $ = id => document.getElementById(id);
-const scanInput     = $('scanInput');
-const spinner       = $('sortSpinner');
-const msgEl         = $('sortMsg');
-const inputStatus   = $('inputStatus');
-const emptyState    = $('emptyState');
-const resultArea    = $('resultArea');
+const scanInput   = $('scanInput');
+const spinner     = $('sortSpinner');
+const msgEl       = $('sortMsg');
+const inputStatus = $('inputStatus');
+const emptyState  = $('emptyState');
+const resultArea  = $('resultArea');
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SOUND FEEDBACK
+// SOUND
 // ══════════════════════════════════════════════════════════════════════════════
 function beep(type) {
   try {
@@ -489,46 +490,47 @@ function beep(type) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MESSAGE BANNER
 // ══════════════════════════════════════════════════════════════════════════════
-function showMsg(text, type = 'success') {
-  msgEl.className = `sort-msg ${type}`;
+function showMsg(text, type) {
+  type = type || 'success';
+  msgEl.className = 'sort-msg ' + type;
   const icons = { success: 'check-circle', warning: 'exclamation-triangle', error: 'times-circle' };
-  msgEl.innerHTML = `<i class="fas fa-${icons[type]||'info-circle'}"></i><span>${escH(text)}</span>`;
+  msgEl.innerHTML = '<i class="fas fa-' + (icons[type] || 'info-circle') + '"></i><span>' + escH(text) + '</span>';
   msgEl.style.display = 'flex';
 }
 function hideMsg() { msgEl.style.display = 'none'; }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CORE SCAN FUNCTION
+// CORE SCAN
 // ══════════════════════════════════════════════════════════════════════════════
-async function doScan(value, selectedItemId = 0) {
+async function doScan(value, selectedItemId) {
+  selectedItemId = selectedItemId || 0;
   value = (value || '').trim();
   if (!value) { showMsg('يرجى إدخال SKU أو رابط صالح', 'error'); return; }
 
-  // Debounce: prevent double-fire within 2.5s for same value
   const now = Date.now();
   if (value === state.lastScanVal && now - state.lastScanAt < 2500) return;
   if (state.scanLock) return;
 
-  state.scanLock = true;
+  state.scanLock    = true;
   state.lastScanVal = value;
   state.lastScanAt  = now;
 
-  // UI: busy
-  spinner.style.display = 'flex';
+  spinner.style.display   = 'flex';
   hideMsg();
   inputStatus.textContent = '⏳ بحث...';
   inputStatus.className   = 's-badge warning';
-  scanInput.disabled = true;
+  scanInput.disabled      = true;
 
   try {
     const res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    `action=scan&scan_input=${encodeURIComponent(value)}&selected_item_id=${selectedItemId}`,
+      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId,
     });
     const data = await res.json();
 
     if (!data.success) throw new Error(data.message || 'فشل البحث');
+
     if (data.requires_selection) {
       renderSkuSelection(data);
       showMsg(data.message || 'اختر الطلب المطلوب', 'warning');
@@ -541,11 +543,9 @@ async function doScan(value, selectedItemId = 0) {
     showMsg(data.message, data.already_scanned ? 'warning' : 'success');
     beep(data.already_scanned ? 'warning' : 'success');
 
-    // Update header stats
     state.sessionScanned++;
     $('hdrScanned').textContent = state.sessionScanned;
 
-    // Auto-next flow
     if (!data.already_scanned && data.next_item) {
       setNextPreview(data.next_item);
     } else if (data.all_done) {
@@ -567,17 +567,20 @@ async function doScan(value, selectedItemId = 0) {
 }
 
 function renderSkuSelection(data) {
-  const list = $('skuPickList');
+  const list    = $('skuPickList');
   const matches = Array.isArray(data.matches) ? data.matches : [];
   list.innerHTML = '';
   $('skuPickWrap').style.display = matches.length ? 'block' : 'none';
-  matches.forEach(m => {
+  matches.forEach(function(m) {
     const btn = document.createElement('button');
-    btn.type = 'button';
+    btn.type      = 'button';
     btn.className = 'sku-pick-btn';
-    btn.innerHTML = `<strong>${escH(m.order_number || ('#' + m.order_id))}</strong>
-      <div style="font-size:.82rem;color:var(--sort-muted);margin-top:4px;">${escH(m.customer_name || 'عميل غير محدد')} — ${escH(m.customer_mobile || '—')}</div>`;
-    btn.addEventListener('click', () => doScan(data.sku || scanInput.value, parseInt(m.item_id || 0, 10)));
+    btn.innerHTML = '<strong>' + escH(m.order_number || ('#' + m.order_id)) + '</strong>' +
+      '<div style="font-size:.82rem;color:var(--sort-muted);margin-top:4px;">' +
+      escH(m.customer_name || 'عميل غير محدد') + ' — ' + escH(m.customer_mobile || '—') + '</div>';
+    btn.addEventListener('click', function() {
+      doScan(data.sku || scanInput.value, parseInt(m.item_id || 0, 10));
+    });
     list.appendChild(btn);
   });
 }
@@ -591,47 +594,42 @@ const STATUS_LABELS = {
   cancelled:'ملغى', returned:'مُرتجع', available:'متاح',
 };
 function statusLabel(s) { return STATUS_LABELS[s] || s || '—'; }
-
-function currency(n, cur) {
-  return (parseFloat(n)||0).toLocaleString('ar-YE') + ' ' + (cur || 'ريال');
-}
+function currency(n, cur) { return (parseFloat(n)||0).toLocaleString('ar-YE') + ' ' + (cur || 'ريال'); }
 function fmtDate(d) {
   if (!d) return '—';
   try { return new Date(d).toLocaleDateString('ar-EG', { year:'numeric', month:'short', day:'numeric' }); }
-  catch { return d; }
+  catch(e) { return d; }
 }
 function escH(s) {
-  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  return String(s||'').replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c];
+  });
 }
 
 function renderResult(data) {
-  const product = data.product    || {};
-  const item    = data.item       || {};
-  const counts  = data.counts     || {};
+  const product = data.product      || {};
+  const item    = data.item         || {};
+  const counts  = data.counts       || {};
   const imgs    = data.order_images || [];
   const group   = data.group_info;
-  const cur     = item.currency   || 'ريال';
+  const cur     = item.currency     || 'ريال';
 
   state.currentItemId  = item.id;
   state.currentOrderId = item.order_id;
 
-  emptyState.style.display  = 'none';
-  resultArea.style.display  = 'flex';
+  emptyState.style.display = 'none';
+  resultArea.style.display = 'flex';
 
-  // All-done banner
   const allDone = data.all_done || (counts.total_items > 0 && counts.scanned_items >= counts.total_items);
   $('allDoneBanner').style.display = allDone ? 'block' : 'none';
 
-  // ① Product
-  const imgSrc = product.image || '';
-  const imgEl  = $('prodImg');
-  imgEl.src = imgSrc || 'data:image/svg+xml,' + encodeURIComponent(
+  const imgEl = $('prodImg');
+  imgEl.src = product.image || 'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">' +
     '<rect width="100%" height="100%" fill="#f3f4f6"/>' +
     '<text x="50%" y="50%" fill="#9ca3af" text-anchor="middle" dominant-baseline="middle" font-size="14">No Image</text></svg>'
   );
-  const name = product.name || item.product_name || ('SKU: ' + (product.shein_sku || item.shein_sku || ''));
-  $('prodName').textContent = name;
+  $('prodName').textContent = product.name || item.product_name || ('SKU: ' + (product.shein_sku || item.shein_sku || ''));
   $('prodSku').textContent  = product.shein_sku || item.shein_sku || '';
 
   const linkEl = $('prodLink');
@@ -639,40 +637,33 @@ function renderResult(data) {
   else              { linkEl.style.display = 'none'; }
 
   const badge = $('itemBadge');
-  if (data.already_scanned) {
-    badge.textContent = '⚠️ مفروز مسبقاً'; badge.className = 's-badge warning';
-  } else {
-    badge.textContent = '✅ تم الفرز'; badge.className = 's-badge scanned';
-  }
+  if (data.already_scanned) { badge.textContent = '⚠️ مفروز مسبقاً'; badge.className = 's-badge warning'; }
+  else                      { badge.textContent = '✅ تم الفرز';       badge.className = 's-badge scanned'; }
 
   inputStatus.textContent = '✅ تم';
   inputStatus.className   = 's-badge scanned';
 
-  // ② Order
   const orderId = item.order_id || '';
-  $('orderViewLink').href = `../../modules/orders/view.php?id=${orderId}`;
-  $('oNumber').textContent  = item.order_number || ('#' + orderId);
+  $('orderViewLink').href    = '../../modules/orders/view.php?id=' + orderId;
+  $('oNumber').textContent   = item.order_number    || ('#' + orderId);
   $('oCustomer').textContent = item.customer_name   || '—';
   $('oMobile').textContent   = item.customer_mobile || '—';
   $('oStatus').textContent   = statusLabel(item.order_status);
   $('oShipping').textContent = currency(item.shipping_cost, cur);
   $('oTotal').textContent    = currency(item.final_amount,  cur);
   $('oDate').textContent     = fmtDate(item.order_date);
-  $('oCounts').textContent   = `${counts.scanned_items} / ${counts.total_items}`;
+  $('oCounts').textContent   = counts.scanned_items + ' / ' + counts.total_items;
 
-  // Progress bar
   const pct = counts.total_items > 0 ? Math.round(counts.scanned_items / counts.total_items * 100) : 0;
-  $('progressBar').style.width = pct + '%';
-  $('progressText').textContent = pct + '%';
+  $('progressBar').style.width    = pct + '%';
+  $('progressText').textContent   = pct + '%';
 
-  // Notes
   const nw = $('oNotesWrap');
   if (item.order_notes && item.order_notes.trim()) {
     $('oNotes').textContent = item.order_notes;
     nw.style.display = 'block';
   } else { nw.style.display = 'none'; }
 
-  // Group banner
   const gb = $('groupBanner');
   if (group && group.id) {
     $('groupName').textContent   = group.group_name   || ('مجموعة #' + group.id);
@@ -680,46 +671,39 @@ function renderResult(data) {
     gb.style.display = 'flex';
   } else { gb.style.display = 'none'; }
 
-  // ③ All items
-  const listEl = $('itemsList');
+  const listEl     = $('itemsList');
   listEl.innerHTML = '';
-  const allItems = data.all_items || [];
+  const allItems   = data.all_items || [];
   const currentSku = product.shein_sku || item.shein_sku || '';
   if (!allItems.length) {
     listEl.innerHTML = '<p style="padding:20px;text-align:center;color:var(--sort-muted);font-size:.83rem;">لا توجد منتجات</p>';
   } else {
-    allItems.forEach(it => {
+    allItems.forEach(function(it) {
       const isCur = it.shein_sku && it.shein_sku === currentSku;
       const sc    = it.status === 'scanned';
       const div   = document.createElement('div');
       div.className = 'item-row' + (isCur ? ' current' : '');
-      div.innerHTML = `
-        <img class="th" src="${escH(it.sp_image||'')}"
-             onerror="this.style.visibility='hidden'" alt="">
-        <div class="nm">
-          <p>${escH(it.sp_name || it.product_name || ('SKU ' + (it.shein_sku||'')))}</p>
-          <small>${escH(it.shein_sku||'—')}</small>
-        </div>
-        <span class="s-badge ${sc ? 'scanned' : 'pending'}">${statusLabel(it.status)}</span>
-      `;
+      div.innerHTML =
+        '<img class="th" src="' + escH(it.sp_image||'') + '" onerror="this.style.visibility=\'hidden\'" alt="">' +
+        '<div class="nm"><p>' + escH(it.sp_name || it.product_name || ('SKU ' + (it.shein_sku||''))) + '</p>' +
+        '<small>' + escH(it.shein_sku||'—') + '</small></div>' +
+        '<span class="s-badge ' + (sc ? 'scanned' : 'pending') + '">' + statusLabel(it.status) + '</span>';
       listEl.appendChild(div);
     });
   }
 
-  // ④ Images
   const ic = $('imagesCard'), ig = $('imagesGrid');
   ig.innerHTML = '';
   if (imgs.length) {
     ic.style.display = 'block';
-    imgs.forEach(img => {
+    imgs.forEach(function(img) {
       const src = '/uploads/' + (img.image_path || '').replace(/^\/?(?:uploads\/)?/, '');
       const a   = document.createElement('a'); a.href = src; a.target = '_blank';
-      a.innerHTML = `<img src="${escH(src)}" alt="${escH(img.image_name||'')}" loading="lazy">`;
+      a.innerHTML = '<img src="' + escH(src) + '" alt="' + escH(img.image_name||'') + '" loading="lazy">';
       ig.appendChild(a);
     });
   } else { ic.style.display = 'none'; }
 
-  // Update header
   $('hdrPending').textContent = Math.max(0, (counts.total_items||0) - (counts.scanned_items||0));
 }
 
@@ -729,9 +713,9 @@ function renderResult(data) {
 function setNextPreview(next) {
   if (!next) { $('nextPreviewWrap').style.display = 'none'; return; }
   $('nextPreviewWrap').style.display = 'block';
-  $('nextImg').src  = next.sp_image || '';
-  $('nextName').textContent = next.sp_name || next.product_name || ('SKU ' + (next.shein_sku||''));
-  $('nextSku').textContent  = next.shein_sku || '';
+  $('nextImg').src              = next.sp_image || '';
+  $('nextName').textContent     = next.sp_name || next.product_name || ('SKU ' + (next.shein_sku||''));
+  $('nextSku').textContent      = next.shein_sku || '';
   $('btnAutoScanNext').dataset.sku = next.shein_sku || '';
 }
 
@@ -744,7 +728,7 @@ async function doUnscan() {
     const res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    `action=unscan&item_id=${state.currentItemId}`,
+      body:    'action=unscan&item_id=' + state.currentItemId,
     });
     const data = await res.json();
     if (data.success) {
@@ -753,59 +737,45 @@ async function doUnscan() {
       $('itemBadge').textContent = '⏳ قيد الانتظار';
       $('itemBadge').className   = 's-badge pending';
       const c = data.counts || {};
-      $('oCounts').textContent = `${c.scanned_items} / ${c.total_items}`;
+      $('oCounts').textContent = c.scanned_items + ' / ' + c.total_items;
       const pct = c.total_items > 0 ? Math.round(c.scanned_items / c.total_items * 100) : 0;
-      $('progressBar').style.width = pct + '%';
-      $('progressText').textContent = pct + '%';
+      $('progressBar').style.width    = pct + '%';
+      $('progressText').textContent   = pct + '%';
     }
   } catch(e) { showMsg(e.message, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CAMERA SCANNER
-// ══════════════════════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════════════════════
 // SKU OCR PIPELINE  –  crop → resize → enhance → OCR.Space → extract
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Extract all valid SKU strings from raw OCR text.
+ * Extract all valid SKUs from raw OCR text.
  * Pattern: SK (case-insensitive) followed by 10+ digits.
- * Strips non-alphanumeric noise and normalises to uppercase.
  */
 function extractSkuFromText(text) {
   const upper   = String(text || '').toUpperCase();
-  // Remove every character that can't belong to "SK<digits>"
   const cleaned = upper.replace(/[^A-Z0-9\n]/g, ' ');
   const matches = cleaned.match(/SK\d{10,}/g) || [];
-  return Array.from(new Set(matches)); // deduplicate
+  return Array.from(new Set(matches));
 }
 
 /**
- * Build a pre-processed canvas from the live video frame.
- *
- * Steps:
- *  1. Crop   – keep only the BOTTOM 25-30% of the frame where the printed SKU
- *              label sits, excluding the barcode strip at the very bottom (~5%).
- *  2. Resize – scale width down to <= 800 px to reduce payload size.
- *  3. Grayscale – standard luminance weights (ITU-R BT.601).
- *  4. Contrast boost – percentile-stretch histogram so faint print becomes crisp.
- *  5. Sharpen – 3x3 unsharp-mask kernel to recover edge detail after resize.
+ * Crop the bottom 25-30% of the video frame (where SKU label sits),
+ * resize to <=800px, apply grayscale + contrast stretch + sharpen.
  */
 function prepareSkuOcrRegion(video) {
   const VW = video.videoWidth;
   const VH = video.videoHeight;
   if (VW < 20 || VH < 20) return null;
 
-  /* ── 1. Crop ─────────────────────────────────────────────────────── */
-  // Bottom 25-30% of the frame.  Barcode is typically the lowest 8%; exclude it.
-  // We take the band from 68% to 93% of the frame height.
+  // 1. Crop: bottom 25% band (68%->93%), exclude barcode strip at very bottom
   const srcY = Math.floor(VH * 0.68);
   const srcH = Math.floor(VH * 0.25);
-  const srcX = Math.floor(VW * 0.04);   // trim ~4% from each side
+  const srcX = Math.floor(VW * 0.04);
   const srcW = Math.floor(VW * 0.92);
 
-  /* ── 2. Resize to <= 800 px wide ─────────────────────────────────── */
+  // 2. Resize to <=800px wide
   const MAX_W = 800;
   const scale = srcW > MAX_W ? MAX_W / srcW : 1;
   const dstW  = Math.round(srcW * scale);
@@ -819,16 +789,16 @@ function prepareSkuOcrRegion(video) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, dstW, dstH);
 
-  /* ── 3. Grayscale ────────────────────────────────────────────────── */
+  // 3. Grayscale (ITU-R BT.601)
   const imgData = ctx.getImageData(0, 0, dstW, dstH);
-  const px = imgData.data;
+  const px  = imgData.data;
   const len = dstW * dstH;
   const gray = new Uint8ClampedArray(len);
   for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
-    gray[gi] = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) | 0;
+    gray[gi] = (px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114) | 0;
   }
 
-  /* ── 4. Contrast boost (5th-95th percentile stretch) ─────────────── */
+  // 4. Contrast boost: 5th-95th percentile stretch
   const hist = new Int32Array(256);
   for (let i = 0; i < len; i++) hist[gray[i]]++;
   let p5 = 0, p95 = 255, cum = 0;
@@ -840,161 +810,174 @@ function prepareSkuOcrRegion(video) {
     gray[i] = Math.min(255, Math.max(0, ((gray[i] - p5) / range * 255) | 0));
   }
 
-  /* ── 5. Sharpen (unsharp-mask, kernel: centre x9 minus 8 neighbours) ─ */
-  const sharpened = new Uint8ClampedArray(len);
+  // 5. Sharpen: 3x3 unsharp-mask (centre x9 minus 8 neighbours)
+  const sharp = new Uint8ClampedArray(len);
   const W = dstW, H = dstH;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const idx = y * W + x;
-      if (x === 0 || x === W - 1 || y === 0 || y === H - 1) {
-        sharpened[idx] = gray[idx]; continue; // border: pass-through
-      }
-      const v =
-          gray[idx] * 9
+      if (x === 0 || x === W-1 || y === 0 || y === H-1) { sharp[idx] = gray[idx]; continue; }
+      const v = gray[idx]*9
         - gray[(y-1)*W+(x-1)] - gray[(y-1)*W+x] - gray[(y-1)*W+(x+1)]
         - gray[ y   *W+(x-1)]                    - gray[ y   *W+(x+1)]
         - gray[(y+1)*W+(x-1)] - gray[(y+1)*W+x] - gray[(y+1)*W+(x+1)];
-      sharpened[idx] = Math.min(255, Math.max(0, v));
+      sharp[idx] = Math.min(255, Math.max(0, v));
     }
   }
 
-  /* ── Write back as grayscale RGBA ────────────────────────────────── */
   for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
-    px[i] = px[i+1] = px[i+2] = sharpened[gi];
-    px[i+3] = 255;
+    px[i] = px[i+1] = px[i+2] = sharp[gi]; px[i+3] = 255;
   }
   ctx.putImageData(imgData, 0, 0);
   return canvas;
 }
 
-/** Convert a canvas to a JPEG Blob at the given quality (0-1). */
 function canvasToJpegBlob(canvas, quality) {
   quality = quality || 0.88;
   return new Promise(function(resolve, reject) {
     canvas.toBlob(
       function(blob) { blob ? resolve(blob) : reject(new Error('تعذر تجهيز الصورة للإرسال')); },
-      'image/jpeg',
-      quality
+      'image/jpeg', quality
     );
   });
 }
 
-/**
- * Full OCR pipeline for a single video frame.
- * Returns the matched SKU string, or null if nothing found.
- * Throws on hard errors (API failure, multiple conflicting SKUs).
- */
+/** Single-frame OCR. Returns matched SKU string or null. */
 async function recognizeSkuFromVideo(video) {
   if (!video || video.videoWidth < 20 || video.videoHeight < 20) return null;
 
-  // ── 1. Pre-process the frame ──────────────────────────────────────
   const ocrCanvas = prepareSkuOcrRegion(video);
   if (!ocrCanvas) return null;
 
-  // ── 2. Build minimal form-data payload ───────────────────────────
   const imageBlob = await canvasToJpegBlob(ocrCanvas, 0.88);
   const formData  = new FormData();
   formData.append('apikey',    'K88393251788957');
   formData.append('language',  'eng');
-  formData.append('OCREngine', '2');       // Engine 2 handles dense alphanumeric better
+  formData.append('OCREngine', '2');
   formData.append('isTable',   'false');
   formData.append('scale',     'true');
   formData.append('file',      imageBlob, 'sku-crop.jpg');
 
-  // ── 3. Send to OCR.Space ─────────────────────────────────────────
-  const res = await fetch('https://api.ocr.space/parse/image', {
-    method: 'POST',
-    body:   formData,
-  });
+  const res = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: formData });
   if (!res.ok) throw new Error('OCR.Space: خطأ HTTP ' + res.status);
 
   const json = await res.json();
   if (json.IsErroredOnProcessing) {
-    const msg = (json.ErrorMessage || []).join(' / ') || 'خطأ غير محدد';
-    throw new Error('OCR.Space: ' + msg);
+    throw new Error('OCR.Space: ' + ((json.ErrorMessage || []).join(' / ') || 'خطأ غير محدد'));
   }
 
-  // ── 4. Parse ParsedText → extract SKU ────────────────────────────
-  const parsedText = (json.ParsedResults || []).map(function(r) { return r && r.ParsedText ? r.ParsedText : ''; }).join('\n');
+  const parsedText = (json.ParsedResults || []).map(function(r) {
+    return r && r.ParsedText ? r.ParsedText : '';
+  }).join('\n');
+
   const skus = extractSkuFromText(parsedText);
-
-  if (skus.length === 0) return null;           // nothing found — keep scanning
-  if (skus.length === 1) return skus[0];        // single clean match
-
-  // Multiple distinct SKUs in a single frame → operator needs to re-aim
+  if (skus.length === 0) return null;
+  if (skus.length === 1) return skus[0];
   throw new Error('تم اكتشاف ' + skus.length + ' SKU في الإطار — وجّه الكاميرا على ملصق واحد فقط');
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CAMERA — manual-only, NO auto-interval to avoid 429 rate-limit errors
+// ══════════════════════════════════════════════════════════════════════════════
+
 async function startCamera() {
   try {
-    state.camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    state.camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' }
+    });
     const video = $('scannerVideo');
     video.srcObject = state.camStream;
     await video.play();
 
-    state.camTimer = setInterval(async () => {
-      if (state.camOcrBusy || state.scanLock) return;
-      state.camOcrBusy = true;
-      try {
-        const sku = await recognizeSkuFromVideo(video);
-        if (sku) {
-          state.lastOcrNotice = 0;
-          doScan(sku);
-        } else {
-          const now = Date.now();
-          if (!state.lastOcrNotice || (now - state.lastOcrNotice) > 2000) {
-            showMsg('لم يتم العثور على SKU صالح (الصيغة المطلوبة: SK متبوع بأرقام فقط)', 'warning');
-            state.lastOcrNotice = now;
-          }
-        }
-      } catch(e) {
-        showMsg(e.message || 'تعذر استخراج SKU عبر OCR.Space', 'error');
-      } finally {
-        state.camOcrBusy = false;
-      }
-    }, 450);
-
-    showMsg('الكاميرا تعمل — يتم استخراج SKU من نص الملصق (OCR)', 'success');
-  } catch(err) { showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error'); }
+    $('btnCamScan').style.display = 'block';
+    $('camStatus').textContent    = '🟢 يعمل';
+    $('camStatus').className      = 's-badge scanned';
+    showMsg('الكاميرا تعمل — اضغط «مسح SKU الآن» عند جهوز الملصق', 'success');
+  } catch(err) {
+    showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error');
+  }
 }
+
 function stopCamera() {
-  if (state.camTimer)  { clearInterval(state.camTimer);  state.camTimer  = null; }
-  state.camOcrBusy = false;
-  if (state.camStream) { state.camStream.getTracks().forEach(t => t.stop()); state.camStream = null; }
-  $('scannerVideo').srcObject = null;
+  if (state.camStream) {
+    state.camStream.getTracks().forEach(function(t) { t.stop(); });
+    state.camStream = null;
+  }
+  $('scannerVideo').srcObject   = null;
+  $('btnCamScan').style.display = 'none';
+  $('camStatus').textContent    = 'متوقف';
+  $('camStatus').className      = 's-badge other';
   showMsg('تم إيقاف الكاميرا', 'warning');
+}
+
+/**
+ * Called ONCE per button press.
+ * Takes ONE frame → sends ONE request to OCR.Space → auto-fills SKU → runs doScan.
+ * No interval. No automatic firing. One click = one API call.
+ */
+async function doOcrCapture() {
+  const video = $('scannerVideo');
+  if (!state.camStream || !video || video.videoWidth < 20) {
+    showMsg('الكاميرا غير نشطة — شغّلها أولاً', 'error');
+    return;
+  }
+
+  const btn = $('btnCamScan');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ المسح...';
+  hideMsg();
+
+  try {
+    const sku = await recognizeSkuFromVideo(video);
+
+    if (!sku) {
+      showMsg('لم يُعثر على SKU — تأكد من وضوح الملصق وحاول مجدداً', 'warning');
+      return;
+    }
+
+    // Auto-fill + trigger normal scan flow
+    scanInput.value = sku;
+    showMsg('SKU تم استخراجه: ' + sku + ' — جارٍ الفرز...', 'success');
+    await doScan(sku);
+
+  } catch(err) {
+    showMsg(err.message || 'فشل استخراج SKU', 'error');
+  } finally {
+    btn.disabled  = false;
+    btn.innerHTML = '<i class="fas fa-camera"></i> مسح SKU الآن';
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // EVENT BINDINGS
 // ══════════════════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
   scanInput.focus();
 
-  // Scan on Enter
-  scanInput.addEventListener('keydown', e => {
+  scanInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); doScan(scanInput.value); }
   });
 
-  // Auto-scan on paste (scanner guns often paste + Enter; handle paste alone too)
-  scanInput.addEventListener('paste', () => {
-    setTimeout(() => { if (scanInput.value.length >= 6) doScan(scanInput.value); }, 80);
+  scanInput.addEventListener('paste', function() {
+    setTimeout(function() { if (scanInput.value.length >= 6) doScan(scanInput.value); }, 80);
   });
 
-  $('btnScan').addEventListener('click', () => doScan(scanInput.value));
-  $('btnClear').addEventListener('click', () => { scanInput.value = ''; hideMsg(); scanInput.focus(); inputStatus.textContent = 'جاهز'; inputStatus.className = 's-badge other'; });
+  $('btnScan').addEventListener('click', function() { doScan(scanInput.value); });
+  $('btnClear').addEventListener('click', function() {
+    scanInput.value = ''; hideMsg(); scanInput.focus();
+    inputStatus.textContent = 'جاهز'; inputStatus.className = 's-badge other';
+  });
   $('btnUnscan').addEventListener('click', doUnscan);
   $('btnCamStart').addEventListener('click', startCamera);
   $('btnCamStop').addEventListener('click', stopCamera);
+  $('btnCamScan').addEventListener('click', doOcrCapture);
 
-  // Auto-scan next
   $('btnAutoScanNext').addEventListener('click', function() {
     const sku = this.dataset.sku;
     if (sku) { scanInput.value = sku; doScan(sku); }
   });
 
-  // Keep focus on scan input when clicking anywhere on page
-  document.addEventListener('click', e => {
+  document.addEventListener('click', function(e) {
     if (!e.target.closest('button,a,select,input:not(#scanInput),video')) {
       scanInput.focus();
     }
