@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.yaman.scanner.BuildConfig
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -32,10 +33,7 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
 
-    // Toggle between local and production here.
-    private val useLocalUrl = true
-    private val localUrl = "http://10.0.2.2/yaman/modules/sorting/index.php"
-    private val productionUrl = "https://yamanstore.org/modules/sorting/index.php"
+    private val scannerUrl = "https://yamanstore.org/modules/sorting/index.php"
 
     private val requiredPermissions: Array<String>
         get() {
@@ -158,7 +156,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadScannerPage() {
-        webView.loadUrl(if (useLocalUrl) localUrl else productionUrl)
+        webView.loadUrl(scannerUrl)
     }
 
     override fun onBackPressed() {
