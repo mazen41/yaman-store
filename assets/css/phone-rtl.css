@@ -1,0 +1,139 @@
+/**
+ * Phone Number RTL Support
+ * Ensures phone numbers display correctly in RTL (Arabic) interfaces
+ */
+
+/* Phone number containers */
+.phone-number,
+[class*="phone"],
+[class*="mobile"],
+[class*="whatsapp"],
+[class*="tel"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    display: inline-block;
+    text-align: left;
+}
+
+/* Table cells with phone numbers */
+td.phone,
+td.mobile,
+td.whatsapp,
+td[data-phone],
+th.phone,
+th.mobile {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left !important;
+}
+
+/* Input fields for phone numbers */
+input[type="tel"],
+input[name*="phone"],
+input[name*="mobile"],
+input[name*="whatsapp"],
+input[placeholder*="+967"],
+input[placeholder*="967"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left;
+}
+
+/* Phone links */
+a[href^="tel:"],
+a[href^="https://wa.me/"],
+a[href*="whatsapp"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    display: inline-block;
+}
+
+/* Specific class for phone display */
+.phone-display {
+    direction: ltr !important;
+    unicode-bidi: plaintext !important;
+    display: inline-block;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.5px;
+}
+
+/* Yemen phone format */
+.yemen-phone {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    display: inline-block;
+    white-space: nowrap;
+}
+
+/* RTL container with LTR phone */
+[dir="rtl"] .phone-number,
+[dir="rtl"] .phone-display,
+[dir="rtl"] .yemen-phone {
+    direction: ltr;
+    unicode-bidi: plaintext;
+}
+
+/* Form groups with phone inputs */
+.form-group input[type="tel"],
+.form-control[type="tel"] {
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: plaintext;
+}
+
+/* DataTables phone columns */
+.dataTables_wrapper td.phone-col,
+.dataTables_wrapper td[data-order*="967"] {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left !important;
+}
+
+/* Bootstrap table phone cells */
+.table td.phone,
+.table td.mobile,
+.table td.whatsapp {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    text-align: left !important;
+}
+
+/* Contact info sections */
+.contact-info .phone,
+.customer-info .phone,
+.supplier-info .phone {
+    direction: ltr;
+    unicode-bidi: plaintext;
+    display: inline-block;
+}
+
+/* Phone number with icon */
+.phone-with-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.phone-with-icon .phone-number {
+    direction: ltr;
+    unicode-bidi: plaintext;
+}
+
+/* Responsive phone display */
+@media (max-width: 768px) {
+    .phone-number,
+    .phone-display,
+    .yemen-phone {
+        font-size: 14px;
+    }
+}
+
+/* Print styles */
+@media print {
+    .phone-number,
+    .phone-display,
+    .yemen-phone {
+        direction: ltr;
+        unicode-bidi: plaintext;
+    }
+}

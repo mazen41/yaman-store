@@ -858,19 +858,19 @@ include '../../includes/header.php';
                                     <td class="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                         <?php echo date('Y/m/d', strtotime($customer['created_at'])); ?></td>
                                     <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-center">
-                                        <div class="flex justify-center items-center space-x-2 space-x-reverse">
+                                        <div style="display:flex;justify-content:center;align-items:center;gap:4px;flex-wrap:wrap;">
                                             <a href="view_enhanced.php?id=<?php echo $customer['id']; ?>"
-                                                class="text-blue-600 hover:text-blue-900" title="عرض"><i
-                                                    class="fas fa-eye"></i></a>
+                                                style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:600;text-decoration:none;"
+                                                title="عرض"><i class="fas fa-eye"></i> عرض</a>
                                             <?php if ($can_edit): ?>
                                                 <a href="edit.php?id=<?php echo $customer['id']; ?>"
-                                                    class="text-green-600 hover:text-green-900" title="تعديل"><i
-                                                        class="fas fa-edit"></i></a>
+                                                    style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:12px;font-weight:600;text-decoration:none;"
+                                                    title="تعديل"><i class="fas fa-edit"></i> تعديل</a>
                                                 <a href="?action=toggle_active&id=<?php echo $customer['id']; ?>&status=<?php echo $customer['is_active'] . '&' . http_build_query(array_filter($_GET, fn($k) => $k != 'action' && $k != 'id' && $k != 'status', ARRAY_FILTER_USE_KEY)); ?>"
-                                                    class="<?php echo $customer['is_active'] ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'; ?>"
+                                                    style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;<?php echo $customer['is_active'] ? 'background:#fee2e2;color:#b91c1c;' : 'background:#dcfce7;color:#15803d;'; ?>"
                                                     title="<?php echo $customer['is_active'] ? 'تعطيل' : 'تفعيل'; ?>"
                                                     onclick="return confirm('<?php echo $customer['is_active'] ? 'هل أنت متأكد من تعطيل هذا العميل؟' : 'هل أنت متأكد من تفعيل هذا العميل؟'; ?>')">
-                                                    <i class="fas fa-power-off"></i>
+                                                    <i class="fas fa-power-off"></i> <?php echo $customer['is_active'] ? 'تعطيل' : 'تفعيل'; ?>
                                                 </a>
                                             <?php endif; ?>
                                         </div>

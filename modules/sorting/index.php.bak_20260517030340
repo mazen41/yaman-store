@@ -211,8 +211,6 @@ include '../../includes/header.php';
 <!-- Load Tajawal font -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;600;700;800&display=swap" rel="stylesheet">
-<!-- Tesseract.js — browser-side OCR, no API key, no rate limits -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <div id="sortApp">
 
@@ -834,39 +832,77 @@ function prepareSkuOcrRegion(video) {
   return canvas;
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TESSERACT.JS OCR — 100% client-side, no API key, no rate limits
-// Works on any shared hosting (Hostinger cPanel, etc.) because nothing
-// is installed on the server; everything runs in the user's browser.
-// ══════════════════════════════════════════════════════════════════════════════
-
-/** Lazy-initialised Tesseract worker (English, reused across calls). */
-let _tesseractWorker = null;
-
-async function getTesseractWorker() {
-  if (_tesseractWorker) return _tesseractWorker;
-  // Tesseract.js v5 API
-  _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-    // Restrict character whitelist to what an SK code can contain
-    // (SK + digits). This alone dramatically improves accuracy.
-    tessedit_char_whitelist: 'SKsk0123456789',
-    // Page-segmentation mode 7 = treat image as a single text line.
-    // Our cropped strip is essentially one line of text.
-    tessedit_pageseg_mode: '7',
+function canvasToJpegBlob(canvas, quality) {
+  quality = quality || 0.88;
+  return new Promise(function(resolve, reject) {
+    canvas.toBlob(
+      function(blob) { blob ? resolve(blob) : reject(new Error('تعذر تجهيز الصورة للإرسال')); },
+      'image/jpeg', quality
+    );
   });
-  return _tesseractWorker;
+}
+
+// ── OCR API Keys (primary → secondary fallback, one attempt each) ──────────
+const OCR_KEYS = [
+  'K88393251788957',   // primary
+  'K81836933288957',   // secondary (fallback)
+];
+
+/**
+ * Error codes / substrings that indicate a rate-limit or transient failure
+ * and should trigger fallback to the next API key.
+ */
+const OCR_RETRYABLE = ['E553', 'rate limit', 'timeout', 'timed out', '429', '503'];
+
+function isRetryableOcrError(msg) {
+  const lower = String(msg || '').toLowerCase();
+  return OCR_RETRYABLE.some(function(tok) { return lower.indexOf(tok.toLowerCase()) !== -1; });
 }
 
 /**
- * Single-frame OCR using Tesseract.js.
+ * Send a single OCR request using `apiKey`.
+ * Resolves with parsed text string, or rejects with an Error.
+ * The rejection message is checked by the caller to decide if fallback applies.
+ */
+async function ocrSpaceRequest(imageBlob, apiKey) {
+  const formData = new FormData();
+  formData.append('apikey',    apiKey);
+  formData.append('language',  'eng');
+  formData.append('OCREngine', '2');   // higher accuracy engine
+  formData.append('isTable',   'false');
+  formData.append('scale',     'true');
+  formData.append('file',      imageBlob, 'sku-crop.jpg');
+
+  const res = await fetch('https://api.ocr.space/parse/image', { method: 'POST', body: formData });
+
+  if (!res.ok) {
+    throw new Error('OCR.Space HTTP ' + res.status);
+  }
+
+  const json = await res.json();
+
+  // API-level error — surface the code/message so the caller can check retryability
+  if (json.IsErroredOnProcessing) {
+    const msgs = (json.ErrorMessage || []).join(' / ') || 'خطأ غير محدد';
+    throw new Error('OCR.Space: ' + msgs);
+  }
+
+  return (json.ParsedResults || []).map(function(r) {
+    return r && r.ParsedText ? r.ParsedText : '';
+  }).join('\n');
+}
+
+/**
+ * Single-frame OCR with automatic key fallback.
  *
  * Flow:
- *  1. Preprocess the video frame (crop → resize → grayscale → contrast → sharpen).
- *  2. Run Tesseract on the preprocessed canvas.
- *  3. Extract SK code via regex.
+ *  1. Preprocess frame (crop → resize → grayscale → contrast → sharpen).
+ *  2. Try primary key. If it fails with a retryable error → try secondary key.
+ *  3. No more than ONE attempt per key. Both fail → reject with clear message.
+ *  4. Extract SKU using strict regex from the returned text.
  *
- * Returns the matched SKU string (e.g. "SK1234567890"), or null if none found.
- * Throws on ambiguous multi-SKU frames or fatal errors.
+ * Returns the matched SKU string, or null if none found.
+ * Throws on fatal errors or ambiguous multi-SKU frames.
  */
 async function recognizeSkuFromVideo(video) {
   if (!video || video.videoWidth < 20 || video.videoHeight < 20) return null;
@@ -874,29 +910,46 @@ async function recognizeSkuFromVideo(video) {
   const ocrCanvas = prepareSkuOcrRegion(video);
   if (!ocrCanvas) return null;
 
-  let worker;
-  try {
-    worker = await getTesseractWorker();
-  } catch (initErr) {
-    throw new Error('تعذّر تهيئة محرك OCR: ' + (initErr.message || initErr));
+  const imageBlob = await canvasToJpegBlob(ocrCanvas, 0.88);
+
+  let parsedText = null;
+  let lastError  = null;
+
+  for (let ki = 0; ki < OCR_KEYS.length; ki++) {
+    const apiKey   = OCR_KEYS[ki];
+    const keyLabel = ki === 0 ? 'المفتاح الأساسي' : 'المفتاح الاحتياطي';
+    try {
+      parsedText = await ocrSpaceRequest(imageBlob, apiKey);
+      lastError  = null;
+      break; // success — stop trying more keys
+    } catch (err) {
+      lastError = err;
+      const shouldFallback = ki < OCR_KEYS.length - 1 && isRetryableOcrError(err.message);
+      if (shouldFallback) {
+        // Non-blocking status update so the user knows what's happening
+        showMsg('⚠️ ' + keyLabel + ' وصل للحد — جارٍ الانتقال للمفتاح الاحتياطي...', 'warning');
+        continue; // try next key
+      }
+      // Non-retryable error, or we're already on the last key → give up
+      throw new Error(
+        (ki === OCR_KEYS.length - 1 && OCR_KEYS.length > 1
+          ? 'فشل كلا المفتاحين — '
+          : '') + (err.message || 'خطأ OCR غير محدد')
+      );
+    }
   }
 
-  let result;
-  try {
-    result = await worker.recognize(ocrCanvas);
-  } catch (ocrErr) {
-    // Worker may be in a bad state — discard it so next call recreates it
-    _tesseractWorker = null;
-    try { worker.terminate(); } catch(_) {}
-    throw new Error('فشل OCR: ' + (ocrErr.message || ocrErr));
+  // Both keys exhausted without a usable response
+  if (parsedText === null) {
+    throw new Error(
+      'فشل كلا مفتاحَي OCR — ' + (lastError ? lastError.message : 'لا استجابة')
+    );
   }
 
-  const rawText = result && result.data ? (result.data.text || '') : '';
-
-  // Extract SK code using strict regex: SK (case-insensitive) + ≥10 digits
-  const skus = extractSkuFromText(rawText);
-  if (skus.length === 0) return null;
-  if (skus.length === 1) return skus[0];
+  // Extract SKU using strict regex: SK/sk followed by ≥10 digits
+  const skus = extractSkuFromText(parsedText);
+  if (skus.length === 0)  return null;
+  if (skus.length === 1)  return skus[0];
   throw new Error('تم اكتشاف ' + skus.length + ' SKU في الإطار — وجّه الكاميرا على ملصق واحد فقط');
 }
 
@@ -955,24 +1008,24 @@ async function doOcrCapture() {
     const sku = await recognizeSkuFromVideo(video);
 
     if (!sku) {
-      // warning + raw OCR text already shown inside recognizeSkuFromVideo
-      scanInput.focus();
+      showMsg('لم يُعثر على SKU — تأكد من وضوح الملصق وحاول مجدداً', 'warning');
       return;
     }
 
     // Auto-fill + trigger normal scan flow
     scanInput.value = sku;
-    showMsg('\u2705 SKU \u062a\u0645 \u0627\u0633\u062a\u062e\u0631\u0627\u062c\u0647: ' + sku + ' \u2014 \u062c\u0627\u0631\u064d \u0627\u0644\u0641\u0631\u0632...', 'success');
+    showMsg('SKU تم استخراجه: ' + sku + ' — جارٍ الفرز...', 'success');
     await doScan(sku);
 
   } catch(err) {
-    showMsg('\u274c ' + (err.message || '\u0641\u0634\u0644 \u0627\u0633\u062a\u062e\u0631\u0627\u062c SKU'), 'error');
-    console.error('[doOcrCapture]', err);
+    showMsg(err.message || 'فشل استخراج SKU', 'error');
   } finally {
     btn.disabled  = false;
-    btn.innerHTML = '<i class="fas fa-camera"><\/i> \u0645\u0633\u062d SKU \u0627\u0644\u0622\u0646';
+    btn.innerHTML = '<i class="fas fa-camera"></i> مسح SKU الآن';
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
 // EVENT BINDINGS
 // ══════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
