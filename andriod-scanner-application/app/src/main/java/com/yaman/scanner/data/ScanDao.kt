@@ -12,6 +12,6 @@ interface ScanDao {
     @Query("SELECT * FROM scan_records WHERE synced = 0 ORDER BY timestamp ASC")
     suspend fun unsynced(): List<ScanRecord>
 
-    @Query("UPDATE scan_records SET synced = 1 WHERE id IN (:ids)")
-    suspend fun markSynced(ids: List<Long>)
+    @Query("UPDATE scan_records SET synced = 1 WHERE id = :id")
+    suspend fun markSynced(id: Long)
 }
