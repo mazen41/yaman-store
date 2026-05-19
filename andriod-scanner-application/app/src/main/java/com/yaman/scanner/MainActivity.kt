@@ -1,165 +1,134 @@
 package com.yaman.scanner
 
 import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
-import android.webkit.CookieManager
-import android.webkit.PermissionRequest
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-import com.yaman.scanner.BuildConfig
-import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import androidx.lifecycle.lifecycleScope
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.yaman.scanner.data.ScanRecord
+import com.yaman.scanner.databinding.ActivityMainBinding
+import com.yaman.scanner.sync.SyncWorker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityMainBinding
+    private val app by lazy { application as ScannerApp }
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var locked = false
 
-    private lateinit var webView: WebView
-    private var filePathCallback: ValueCallback<Array<Uri>>? = null
-    private var cameraImageUri: Uri? = null
-
-    private val scannerUrl = "https://yamanstore.org/modules/sorting/index.php"
-
-    private val requiredPermissions: Array<String>
-        get() {
-            val permissions = mutableListOf(Manifest.permission.CAMERA)
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            } else {
-                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
-            }
-            return permissions.toTypedArray()
-        }
-
-    private val permissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            loadScannerPage()
-        }
-
-    private val fileChooserLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val results: Array<Uri>? = when {
-                result.resultCode == RESULT_OK -> {
-                    val dataUri = result.data?.data
-                    when {
-                        dataUri != null -> arrayOf(dataUri)
-                        cameraImageUri != null -> arrayOf(cameraImageUri!!)
-                        else -> null
-                    }
-                }
-                else -> null
-            }
-            filePathCallback?.onReceiveValue(results)
-            filePathCallback = null
-        }
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startCamera() else binding.txtStatus.text = "Camera permission denied"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        webView = findViewById(R.id.webView)
-        setupWebView()
-
-        if (hasAllRequiredPermissions()) {
-            loadScannerPage()
-        } else {
-            permissionLauncher.launch(requiredPermissions)
+        binding.btnSubmit.setOnClickListener {
+            val value = binding.manualInput.text?.toString()?.trim().orEmpty()
+            if (value.isNotEmpty()) persistScan(value)
         }
+
+        binding.btnSync.setOnClickListener {
+            WorkManager.getInstance(this).enqueue(OneTimeWorkRequestBuilder<SyncWorker>().build())
+            binding.txtStatus.text = "Sync scheduled"
+        }
+
+        scheduleBackgroundSync()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startCamera()
+        } else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun setupWebView() {
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+            val preview = Preview.Builder().build().also { it.surfaceProvider = binding.previewView.surfaceProvider }
 
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            mediaPlaybackRequiresUserGesture = false
-            javaScriptCanOpenWindowsAutomatically = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            setSupportMultipleWindows(false)
-            builtInZoomControls = false
-            displayZoomControls = false
-        }
+            val barcodeScanner = BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder().setBarcodeFormats(
+                    com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS
+                ).build()
+            )
+            val textScanner = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
-        }
-
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onPermissionRequest(request: PermissionRequest) {
-                request.grant(request.resources)
-            }
-
-            override fun onShowFileChooser(
-                webView: WebView?,
-                filePathCallback: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
-            ): Boolean {
-                this@MainActivity.filePathCallback?.onReceiveValue(null)
-                this@MainActivity.filePathCallback = filePathCallback
-
-                val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-                val photoFile = createImageFile()
-                cameraImageUri = FileProvider.getUriForFile(
-                    this@MainActivity,
-                    "${BuildConfig.APPLICATION_ID}.provider",
-                    photoFile
-                )
-                captureIntent.putExtra(MediaStore.EXTRA_OUTPUT, cameraImageUri)
-
-                val pickIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "image/*"
+            val analysis = ImageAnalysis.Builder().build().also {
+                it.setAnalyzer(cameraExecutor) { imageProxy ->
+                    val mediaImage = imageProxy.image
+                    if (mediaImage == null || locked) {
+                        imageProxy.close(); return@setAnalyzer
+                    }
+                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                    barcodeScanner.process(image)
+                        .addOnSuccessListener { codes ->
+                            val raw = codes.firstOrNull()?.rawValue
+                            if (!raw.isNullOrBlank()) onScanned(raw)
+                            else {
+                                textScanner.process(image)
+                                    .addOnSuccessListener { text ->
+                                        val sku = Regex("(?i)S\\s*K\\W*(\\d{10,})").find(text.text)?.groupValues?.getOrNull(1)
+                                        if (!sku.isNullOrBlank()) onScanned("SK$sku")
+                                    }
+                                    .addOnCompleteListener { imageProxy.close() }
+                            }
+                        }
+                        .addOnFailureListener { imageProxy.close() }
+                        .addOnCompleteListener { if (imageProxy.image != null) imageProxy.close() }
                 }
-
-                val chooser = Intent(Intent.ACTION_CHOOSER).apply {
-                    putExtra(Intent.EXTRA_INTENT, pickIntent)
-                    putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(captureIntent))
-                    putExtra(Intent.EXTRA_TITLE, "Select or capture image")
-                }
-
-                fileChooserLauncher.launch(chooser)
-                return true
             }
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+            binding.txtStatus.text = "Scanner ready"
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun onScanned(value: String) {
+        if (locked) return
+        locked = true
+        runOnUiThread {
+            binding.manualInput.setText(value)
+            persistScan(value)
+        }
+        binding.previewView.postDelayed({ locked = false }, 1200)
+    }
+
+    private fun persistScan(value: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            app.db.scanDao().insert(ScanRecord(scannedData = value, timestamp = System.currentTimeMillis()))
+            runOnUiThread { binding.txtStatus.text = "Saved locally: $value" }
         }
     }
 
-    private fun createImageFile(): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val storageDir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: filesDir
-        return File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
-    }
-
-    private fun hasAllRequiredPermissions(): Boolean {
-        return requiredPermissions.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
-    private fun loadScannerPage() {
-        webView.loadUrl(scannerUrl)
-    }
-
-    override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    private fun scheduleBackgroundSync() {
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        WorkManager.getInstance(this)
+            .enqueueUniquePeriodicWork("scanner-sync", ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 }
