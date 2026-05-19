@@ -748,260 +748,131 @@ async function doUnscan() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SKU OCR PIPELINE — targets "sk" text printed BELOW the barcode on SHEIN labels
-// Label format: barcode number on top, barcode stripes, then "sk2601..." text below
+// SKU OCR PIPELINE  –  crop → resize → enhance → OCR.Space → extract
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Normalise raw OCR text: fix common misreads for sk-prefixed SHEIN SKUs.
- * The 's' is almost never misread; 'k' can be mistaken as 'K','x','X','k'.
- * Digits: '0' vs 'O','o'; '1' vs 'l','I','|'; '5' vs 'S' (not 's' — 's' is the prefix!).
- */
-function normalizeOcrText(text) {
-  return String(text || '')
-    .replace(/[Oo]/g, '0')       // O → 0
-    .replace(/[lI|]/g, '1')      // l/I/| → 1
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(ch) {   // full-width → ASCII
-      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
-    });
-}
-
-/**
- * Extract SHEIN SKU from OCR text.
- * SHEIN label SKUs always start with "sk" (lower or upper case) followed by
- * at least 15 digits (real ones are ~21 chars total, e.g. sk260113163135433919550).
- * We deliberately IGNORE plain digit strings (barcode numbers like "27674337")
- * so the barcode number printed above the stripes is never returned.
+ * Extract all valid SKUs from raw OCR text.
+ * Pattern: SK (case-insensitive) followed by 10+ digits.
  */
 function extractSkuFromText(text) {
-  if (!text) return [];
-
-  // 1. Normalise common OCR glyphs
-  const norm = normalizeOcrText(text);
-
-  // 2. Collapse all whitespace/separators inside what looks like an sk-code.
-  //    OCR may insert spaces or newlines between chunks: "sk 2601 131631 35433919550"
-  //    Strategy: find every run that starts with sk/SK/5k/sK then grab following digit-like chars.
-  const candidates = new Set();
-
-  // Pass A – simple regex on normalised text (handles clean reads)
-  const reA = /[sS5][kKxX]\s*[\d\s]{15,35}/gi;
-  let m;
-  while ((m = reA.exec(norm)) !== null) {
-    const digits = m[0].slice(2).replace(/\D/g, '');
-    if (digits.length >= 15) candidates.add('sk' + digits);
-  }
-
-  // Pass B – compact (strip all non-alnum first), catches fragmented reads
-  const compact = norm.replace(/[^a-zA-Z0-9]/g, '');
-  const reB = /[sS5][kKxX]\d{15,30}/g;
-  while ((m = reB.exec(compact)) !== null) {
-    const digits = m[0].slice(2).replace(/\D/g, '');
-    if (digits.length >= 15) candidates.add('sk' + digits);
-  }
-
-  // Pass C – lines that are mostly digits and long enough to be the bottom text line.
-  //    OCR may drop the 'sk' prefix entirely on a worn label; only accept if 18+ digits.
-  norm.split(/\n/).forEach(function(line) {
-    const stripped = line.replace(/\s/g, '');
-    // Only promote to SKU if it starts with sk-like prefix
-    if (/^[sS5][kKxX]/i.test(stripped)) {
-      const digits = stripped.slice(2).replace(/\D/g, '');
-      if (digits.length >= 15) candidates.add('sk' + digits);
-    }
-  });
-
-  // Validate: sk followed by 15–25 digits; reject anything that looks like just a barcode
-  return Array.from(candidates).filter(function(sku) {
-    return /^sk\d{15,25}$/.test(sku);
-  });
-}
-
-function clampNumber(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+  const upper   = String(text || '').toUpperCase();
+  const cleaned = upper.replace(/[^A-Z0-9\n]/g, ' ');
+  const matches = cleaned.match(/SK\d{10,}/g) || [];
+  return Array.from(new Set(matches));
 }
 
 /**
- * Upscale a video region onto a canvas, targeting maxWidth px wide.
- * Larger = better OCR accuracy for small text.
+ * Crop the bottom 25-30% of the video frame (where SKU label sits),
+ * resize to <=800px, apply grayscale + contrast stretch + sharpen.
  */
-function drawVideoCropToCanvas(video, crop, maxWidth) {
-  const scale = crop.sw < maxWidth ? maxWidth / crop.sw : 1;  // upscale small crops
-  const dstW  = Math.max(1, Math.round(crop.sw * scale));
-  const dstH  = Math.max(1, Math.round(crop.sh * scale));
+function prepareSkuOcrRegion(video) {
+  const VW = video.videoWidth;
+  const VH = video.videoHeight;
+  if (VW < 20 || VH < 20) return null;
+
+  // 1. Crop: bottom 25% band (68%->93%), exclude barcode strip at very bottom
+  const srcY = Math.floor(VH * 0.68);
+  const srcH = Math.floor(VH * 0.25);
+  const srcX = Math.floor(VW * 0.04);
+  const srcW = Math.floor(VW * 0.92);
+
+  // 2. Resize to <=800px wide
+  const MAX_W = 800;
+  const scale = srcW > MAX_W ? MAX_W / srcW : 1;
+  const dstW  = Math.round(srcW * scale);
+  const dstH  = Math.round(srcH * scale);
+
   const canvas = document.createElement('canvas');
   canvas.width  = dstW;
   canvas.height = dstH;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, dstW, dstH);
-  return canvas;
-}
+  ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, dstW, dstH);
 
-/**
- * Convert canvas to grayscale + contrast-stretch + optional binarize.
- * Returns a NEW canvas (does not mutate source).
- */
-function enhanceCanvasForSku(sourceCanvas, options) {
-  const opts = Object.assign({ threshold: 0, invert: false }, options || {});
-  const canvas = document.createElement('canvas');
-  canvas.width  = sourceCanvas.width;
-  canvas.height = sourceCanvas.height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(sourceCanvas, 0, 0);
-
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  // 3. Grayscale (ITU-R BT.601)
+  const imgData = ctx.getImageData(0, 0, dstW, dstH);
   const px  = imgData.data;
-  const len = canvas.width * canvas.height;
+  const len = dstW * dstH;
   const gray = new Uint8ClampedArray(len);
-
   for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
     gray[gi] = (px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114) | 0;
   }
 
-  // Percentile-based contrast stretch (2nd–98th)
+  // 4. Contrast boost: 5th-95th percentile stretch
   const hist = new Int32Array(256);
   for (let i = 0; i < len; i++) hist[gray[i]]++;
-  let pLow = 0, pHigh = 255, cum = 0;
-  const lowT = len * 0.02, highT = len * 0.98;
-  for (let v = 0; v < 256; v++) { cum += hist[v]; if (cum >= lowT)  { pLow  = v; break; } }
+  let p5 = 0, p95 = 255, cum = 0;
+  for (let v = 0;   v < 256; v++) { cum += hist[v]; if (cum / len < 0.05) p5  = v; }
   cum = 0;
-  for (let v = 0; v < 256; v++) { cum += hist[v]; if (cum >= highT) { pHigh = v; break; } }
-  const range = Math.max(1, pHigh - pLow);
-
+  for (let v = 255; v >= 0;  v--) { cum += hist[v]; if (cum / len < 0.05) p95 = v; }
+  const range = (p95 - p5) || 1;
   for (let i = 0; i < len; i++) {
-    let v = clampNumber(((gray[i] - pLow) / range * 255) | 0, 0, 255);
-    // Slight contrast boost
-    v = clampNumber(((v - 128) * 1.4 + 128) | 0, 0, 255);
-    if (opts.threshold) v = v >= opts.threshold ? 255 : 0;
-    if (opts.invert) v = 255 - v;
-    gray[i] = v;
+    gray[i] = Math.min(255, Math.max(0, ((gray[i] - p5) / range * 255) | 0));
+  }
+
+  // 5. Sharpen: 3x3 unsharp-mask (centre x9 minus 8 neighbours)
+  const sharp = new Uint8ClampedArray(len);
+  const W = dstW, H = dstH;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = y * W + x;
+      if (x === 0 || x === W-1 || y === 0 || y === H-1) { sharp[idx] = gray[idx]; continue; }
+      const v = gray[idx]*9
+        - gray[(y-1)*W+(x-1)] - gray[(y-1)*W+x] - gray[(y-1)*W+(x+1)]
+        - gray[ y   *W+(x-1)]                    - gray[ y   *W+(x+1)]
+        - gray[(y+1)*W+(x-1)] - gray[(y+1)*W+x] - gray[(y+1)*W+(x+1)];
+      sharp[idx] = Math.min(255, Math.max(0, v));
+    }
   }
 
   for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
-    px[i] = px[i+1] = px[i+2] = gray[gi];
-    px[i+3] = 255;
+    px[i] = px[i+1] = px[i+2] = sharp[gi]; px[i+3] = 255;
   }
   ctx.putImageData(imgData, 0, 0);
   return canvas;
 }
 
-/**
- * Produce the crop regions to OCR.
- *
- * SHEIN label anatomy (when phone is pointing at label):
- *   top ~20%  : product code + "MADE IN CHINA"
- *   mid ~50%  : barcode stripes
- *   bottom ~30%: "sk260113163135433919550" + size code
- *
- * We generate dedicated crops for the BOTTOM text row, plus fallback wider crops.
- * Each crop gets two enhancement variants (contrast + binary).
- */
-function prepareSkuOcrRegions(video) {
-  const VW = video.videoWidth;
-  const VH = video.videoHeight;
-  if (VW < 20 || VH < 20) return [];
-
-  // Crop specs as fractions of video dimensions.
-  // Priority order: narrow bottom strip first (most likely to hold the sk text),
-  // then progressively wider crops as fallbacks.
-  const cropSpecs = [
-    // ── PRIMARY: bottom text row only (below barcode stripes)
-    { name: 'bottom-strip',   x: 0.02, y: 0.68, w: 0.96, h: 0.22 },
-    // ── SECONDARY: slightly taller bottom region
-    { name: 'bottom-tall',    x: 0.02, y: 0.60, w: 0.96, h: 0.32 },
-    // ── TERTIARY: lower half of frame (handles tilted phone)
-    { name: 'lower-half',     x: 0.02, y: 0.45, w: 0.96, h: 0.50 },
-    // ── QUATERNARY: middle band (label centred in frame)
-    { name: 'middle-band',    x: 0.04, y: 0.30, w: 0.92, h: 0.50 },
-    // ── FALLBACK: full frame (expensive but catches everything)
-    { name: 'full-frame',     x: 0.00, y: 0.00, w: 1.00, h: 1.00 },
-  ];
-
-  const variants = [
-    { name: 'contrast',  threshold: 0,   invert: false },
-    { name: 'binary140', threshold: 140, invert: false },
-    { name: 'binary180', threshold: 180, invert: false },
-  ];
-
-  const canvases = [];
-  cropSpecs.forEach(function(spec) {
-    const sx = Math.floor(VW * spec.x);
-    const sy = Math.floor(VH * spec.y);
-    const sw = Math.floor(VW * spec.w);
-    const sh = Math.floor(VH * spec.h);
-    if (sw < 20 || sh < 10) return;
-    const base = drawVideoCropToCanvas(video, { sx, sy, sw, sh }, 1400);  // upscale to 1400px wide
-    variants.forEach(function(variant) {
-      const c = enhanceCanvasForSku(base, variant);
-      c._ocrLabel = spec.name + ':' + variant.name;
-      canvases.push(c);
-    });
-  });
-  return canvases;
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
-// TESSERACT.JS OCR — 100% client-side, no API key needed
+// TESSERACT.JS OCR — 100% client-side, no API key, no rate limits
+// Works on any shared hosting (Hostinger cPanel, etc.) because nothing
+// is installed on the server; everything runs in the user's browser.
 // ══════════════════════════════════════════════════════════════════════════════
 
+/** Lazy-initialised Tesseract worker (English, reused across calls). */
 let _tesseractWorker = null;
 
 async function getTesseractWorker() {
   if (_tesseractWorker) return _tesseractWorker;
-  if (typeof Tesseract === 'undefined') {
-    throw new Error('مكتبة OCR لم يتم تحميلها. تحقق من اتصال الإنترنت.');
-  }
-
+  // Tesseract.js v5 API
   _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-    logger: function(m) {
-      if (m && m.status === 'recognizing text' && typeof m.progress === 'number') {
-        const pct = Math.round(m.progress * 100);
-        const btn = $('btnCamScan');
-        if (btn && btn.disabled) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> OCR ' + pct + '%';
-      }
-    }
+    // Restrict character whitelist to what an SK code can contain
+    // (SK + digits). This alone dramatically improves accuracy.
+    tessedit_char_whitelist: 'SKsk0123456789',
+    // Page-segmentation mode 7 = treat image as a single text line.
+    // Our cropped strip is essentially one line of text.
+    tessedit_pageseg_mode: '7',
   });
-
-  if (_tesseractWorker.setParameters) {
-    await _tesseractWorker.setParameters({
-      // Whitelist: lowercase sk prefix + digits + a few likely OCR noise chars
-      // Intentionally keep digits broad; extraction logic filters later.
-      tessedit_char_whitelist: 'skSK0123456789 \n',
-      // PSM 6 = Uniform block of text (best for label text rows)
-      // PSM 7 = Single text line (try for narrow strips)
-      tessedit_pageseg_mode: '6',
-      preserve_interword_spaces: '1',
-      user_defined_dpi: '300',
-    });
-  }
   return _tesseractWorker;
 }
 
 /**
- * Score a candidate SKU: longer + more times seen = better.
- * Prefer exact sk\d{18-22} lengths that match known SHEIN format.
- */
-function rankSkuCandidate(sku, text) {
-  let score = sku.length;  // longer generally better
-  const normT = normalizeOcrText(text).replace(/\s/g, '');
-  if (normT.toLowerCase().indexOf(sku) !== -1) score += 40;
-  // Bonus for matching typical SHEIN length (sk + 19–21 digits)
-  if (/^sk\d{19,21}$/.test(sku)) score += 20;
-  return score;
-}
-
-/**
- * Single-frame multi-region OCR.
- * Prioritises bottom crops; returns as soon as a confident SKU is found.
- * Never returns a plain barcode number.
+ * Single-frame OCR using Tesseract.js.
+ *
+ * Flow:
+ *  1. Preprocess the video frame (crop → resize → grayscale → contrast → sharpen).
+ *  2. Run Tesseract on the preprocessed canvas.
+ *  3. Extract SK code via regex.
+ *
+ * Returns the matched SKU string (e.g. "SK1234567890"), or null if none found.
+ * Throws on ambiguous multi-SKU frames or fatal errors.
  */
 async function recognizeSkuFromVideo(video) {
   if (!video || video.videoWidth < 20 || video.videoHeight < 20) return null;
 
-  const ocrCanvases = prepareSkuOcrRegions(video);
-  if (!ocrCanvases.length) return null;
+  const ocrCanvas = prepareSkuOcrRegion(video);
+  if (!ocrCanvas) return null;
 
   let worker;
   try {
@@ -1010,77 +881,33 @@ async function recognizeSkuFromVideo(video) {
     throw new Error('تعذّر تهيئة محرك OCR: ' + (initErr.message || initErr));
   }
 
-  const found = new Map();
-  const rawTexts = [];
-
-  for (let i = 0; i < ocrCanvases.length; i++) {
-    let result;
-    try {
-      result = await worker.recognize(ocrCanvases[i]);
-    } catch (ocrErr) {
-      _tesseractWorker = null;
-      try { worker.terminate(); } catch(_) {}
-      throw new Error('فشل OCR: ' + (ocrErr.message || ocrErr));
-    }
-
-    const rawText = (result && result.data && result.data.text) ? result.data.text : '';
-    const conf    = (result && result.data && result.data.confidence) ? result.data.confidence : 0;
-    rawTexts.push('[' + (ocrCanvases[i]._ocrLabel || i) + ' conf=' + conf + '] ' + rawText);
-
-    const skus = extractSkuFromText(rawText);
-
-    // High-confidence single match → return immediately
-    if (skus.length === 1 && conf >= 60) {
-      console.debug('[OCR] Fast match:', skus[0], 'conf=' + conf);
-      return skus[0];
-    }
-
-    skus.forEach(function(sku) {
-      const prev = found.get(sku) || { sku: sku, count: 0, score: 0 };
-      prev.count++;
-      prev.score += rankSkuCandidate(sku, rawText);
-      found.set(sku, prev);
-    });
-
-    // Trust a SKU that appears in 2+ independent crops
-    const strong = Array.from(found.values()).find(function(it) { return it.count >= 2; });
-    if (strong) {
-      console.debug('[OCR] Confirmed match:', strong.sku);
-      return strong.sku;
-    }
+  let result;
+  try {
+    result = await worker.recognize(ocrCanvas);
+  } catch (ocrErr) {
+    // Worker may be in a bad state — discard it so next call recreates it
+    _tesseractWorker = null;
+    try { worker.terminate(); } catch(_) {}
+    throw new Error('فشل OCR: ' + (ocrErr.message || ocrErr));
   }
 
-  const all = Array.from(found.values()).sort(function(a, b) {
-    return (b.count - a.count) || (b.score - a.score) || (b.sku.length - a.sku.length);
-  });
+  const rawText = result && result.data ? (result.data.text || '') : '';
 
-  console.debug('[OCR] Raw texts:\n', rawTexts.join('\n'));
-
-  if (all.length === 0) return null;
-  if (all.length === 1) return all[0].sku;
-  // Only return top candidate if it's clearly better than second
-  if (all[0].score >= all[1].score + 15) return all[0].sku;
-
-  // Tie-break: prefer the one whose length is closer to typical SHEIN SKU (21 chars)
-  all.sort(function(a, b) {
-    return Math.abs(a.sku.length - 21) - Math.abs(b.sku.length - 21);
-  });
-  return all[0].sku;
+  // Extract SK code using strict regex: SK (case-insensitive) + ≥10 digits
+  const skus = extractSkuFromText(rawText);
+  if (skus.length === 0) return null;
+  if (skus.length === 1) return skus[0];
+  throw new Error('تم اكتشاف ' + skus.length + ' SKU في الإطار — وجّه الكاميرا على ملصق واحد فقط');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CAMERA — manual-only OCR capture; no auto-interval or repeated requests
+// CAMERA — manual-only, NO auto-interval to avoid 429 rate-limit errors
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function startCamera() {
   try {
     state.camStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-        focusMode: { ideal: 'continuous' }
-      }
+      video: { facingMode: 'environment' }
     });
     const video = $('scannerVideo');
     video.srcObject = state.camStream;
@@ -1109,8 +936,8 @@ function stopCamera() {
 
 /**
  * Called ONCE per button press.
- * Takes ONE frame → runs local Tesseract OCR → auto-fills SKU → runs doScan.
- * No interval. No automatic firing. One click = one OCR attempt.
+ * Takes ONE frame → sends ONE request to OCR.Space → auto-fills SKU → runs doScan.
+ * No interval. No automatic firing. One click = one API call.
  */
 async function doOcrCapture() {
   const video = $('scannerVideo');
@@ -1128,7 +955,7 @@ async function doOcrCapture() {
     const sku = await recognizeSkuFromVideo(video);
 
     if (!sku) {
-      showMsg('لم يتم العثور على SKU بوضوح. قرّب الكاميرا، ثبّت الملصق داخل الإطار، وتأكد من الإضاءة ثم حاول مرة أخرى.', 'warning');
+      // warning + raw OCR text already shown inside recognizeSkuFromVideo
       scanInput.focus();
       return;
     }
