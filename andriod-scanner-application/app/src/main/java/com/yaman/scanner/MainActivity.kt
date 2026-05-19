@@ -2,7 +2,11 @@ package com.yaman.scanner
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -11,19 +15,10 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import androidx.work.*
 import com.yaman.scanner.data.ScanRecord
 import com.yaman.scanner.databinding.ActivityMainBinding
+import com.yaman.scanner.scan.SkuFrameAnalyzer
 import com.yaman.scanner.sync.SyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,9 +31,7 @@ class MainActivity : AppCompatActivity() {
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var locked = false
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startCamera() else binding.txtStatus.text = "Camera permission denied"
     }
 
@@ -47,21 +40,14 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        binding.btnSubmit.setOnClickListener {
-            val value = binding.manualInput.text?.toString()?.trim().orEmpty()
-            if (value.isNotEmpty()) persistScan(value)
-        }
-
         binding.btnSync.setOnClickListener {
             WorkManager.getInstance(this).enqueue(OneTimeWorkRequestBuilder<SyncWorker>().build())
             binding.txtStatus.text = "Sync scheduled"
         }
 
         scheduleBackgroundSync()
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startCamera()
-        } else permissionLauncher.launch(Manifest.permission.CAMERA)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
+        else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
     private fun startCamera() {
@@ -69,66 +55,47 @@ class MainActivity : AppCompatActivity() {
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
             val preview = Preview.Builder().build().also { it.surfaceProvider = binding.previewView.surfaceProvider }
-
-            val barcodeScanner = BarcodeScanning.getClient(
-                BarcodeScannerOptions.Builder().setBarcodeFormats(
-                    com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS
-                ).build()
-            )
-            val textScanner = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-            val analysis = ImageAnalysis.Builder().build().also {
-                it.setAnalyzer(cameraExecutor) { imageProxy ->
-                    val mediaImage = imageProxy.image
-                    if (mediaImage == null || locked) {
-                        imageProxy.close(); return@setAnalyzer
-                    }
-                    val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                    barcodeScanner.process(image)
-                        .addOnSuccessListener { codes ->
-                            val raw = codes.firstOrNull()?.rawValue
-                            if (!raw.isNullOrBlank()) onScanned(raw)
-                            else {
-                                textScanner.process(image)
-                                    .addOnSuccessListener { text ->
-                                        val sku = Regex("(?i)S\\s*K\\W*(\\d{10,})").find(text.text)?.groupValues?.getOrNull(1)
-                                        if (!sku.isNullOrBlank()) onScanned("SK$sku")
-                                    }
-                                    .addOnCompleteListener { imageProxy.close() }
-                            }
-                        }
-                        .addOnFailureListener { imageProxy.close() }
-                        .addOnCompleteListener { if (imageProxy.image != null) imageProxy.close() }
-                }
+            val analyzer = SkuFrameAnalyzer(onStableSku = ::onScanned, focusBoxProvider = ::focusRect)
+            val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
+                it.setAnalyzer(cameraExecutor, analyzer)
             }
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
-            binding.txtStatus.text = "Scanner ready"
+            binding.txtStatus.text = "Scanning center area..."
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun onScanned(value: String) {
+    private fun focusRect(): Rect? = Rect(binding.focusBox.left, binding.focusBox.top, binding.focusBox.right, binding.focusBox.bottom)
+
+    private fun onScanned(sku: String) {
         if (locked) return
         locked = true
-        runOnUiThread {
-            binding.manualInput.setText(value)
-            persistScan(value)
+        vibrate()
+        binding.txtDetectedSku.text = "Detected: $sku"
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val response = app.api.processScan(scanInput = sku)
+                if (!response.success) throw IllegalStateException(response.message)
+                runOnUiThread { binding.txtStatus.text = response.message }
+            } catch (_: Exception) {
+                app.db.scanDao().insert(ScanRecord(sku = sku, timestamp = System.currentTimeMillis()))
+                runOnUiThread { binding.txtStatus.text = "Offline saved: $sku" }
+            } finally {
+                binding.previewView.postDelayed({ locked = false }, 1200)
+            }
         }
-        binding.previewView.postDelayed({ locked = false }, 1200)
     }
 
-    private fun persistScan(value: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            app.db.scanDao().insert(ScanRecord(scannedData = value, timestamp = System.currentTimeMillis()))
-            runOnUiThread { binding.txtStatus.text = "Saved locally: $value" }
-        }
+    private fun vibrate() {
+        val vibrator = getSystemService(VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE))
+        else @Suppress("DEPRECATION") vibrator.vibrate(120)
     }
 
     private fun scheduleBackgroundSync() {
         val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
-        WorkManager.getInstance(this)
-            .enqueueUniquePeriodicWork("scanner-sync", ExistingPeriodicWorkPolicy.UPDATE, request)
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("scanner-sync", ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 }

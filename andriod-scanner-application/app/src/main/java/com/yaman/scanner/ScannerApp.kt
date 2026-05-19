@@ -7,7 +7,7 @@ import com.yaman.scanner.network.NetworkModule
 
 class ScannerApp : Application() {
     val db: AppDatabase by lazy {
-        Room.databaseBuilder(this, AppDatabase::class.java, "scanner.db").build()
+        Room.databaseBuilder(this, AppDatabase::class.java, "scanner.db").fallbackToDestructiveMigration().build()
     }
     val api by lazy { NetworkModule.api }
 }
