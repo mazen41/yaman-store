@@ -38,8 +38,10 @@ if (empty($sku)) {
 }
 
 try {
-    // ── Ensure product row exists / fetch shein product details ────────────────────────
-    sheinEnsureSchema($db);
+    // NOTE: sheinEnsureSchema() intentionally removed from this hot path.
+    // It runs ALTER TABLE statements on every request which causes timeouts.
+    // Schema is expected to be created during initial setup / migrations.
+
     $productStmt = $db->prepare("
         SELECT * FROM shein_products 
         WHERE shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci 

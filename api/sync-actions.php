@@ -36,7 +36,8 @@ function localNormalizeSku(string $sku): string
 $results = [];
 
 try {
-    sheinEnsureSchema($db);
+    // NOTE: sheinEnsureSchema() intentionally removed from this hot path.
+    // It runs ALTER TABLE statements on every sync which causes timeouts under load.
 
     foreach ($scans as $scan) {
         $id = $scan['id'] ?? null; // Local database ID in the Flutter app

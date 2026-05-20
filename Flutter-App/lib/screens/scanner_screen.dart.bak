@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -92,7 +92,8 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final resp = await ApiService.instance.login(u, p);
       if (resp.success) {
-        bool syncOk = false;
+        // Pull latest orders immediately after login so scanner works online-first
+        // without waiting for user to open manual sync.
         try {
           final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
           final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime);
@@ -101,16 +102,9 @@ class _LoginScreenState extends State<LoginScreen> {
             final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
             await DatabaseHelper.instance.setMetadata('lastSyncTime', syncResp.syncTimestamp.toString());
             await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
-            syncOk = true;
           }
-        } catch (e) {
-          debugPrint('[Login] Auto-sync failed: $e');
-        }
-        if (mounted && !syncOk) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('تم تسجيل الدخول، لكن فشلت المزامنة. اضغط زر المزامنة.', textDirection: TextDirection.rtl),
-            backgroundColor: Colors.orange, duration: const Duration(seconds: 5),
-          ));
+        } catch (_) {
+          // Don't block login success if first sync fails; scanner screen can retry.
         }
         widget.onLoggedIn();
       } else {
@@ -869,9 +863,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     // 2. Load unsynced records
     List<ScanRecord> unsynced = await DatabaseHelper.instance.getUnsynced();
     if (unsynced.isEmpty) {
-      final cached = await DatabaseHelper.instance.countCachedItems();
-      _showSnack(cached > 0 ? 'تمت مزامنة الطلبات ✅ ($cached منتج محلياً)' : 'تمت المزامنة — لا طلبات نشطة حالياً');
-      await _loadSyncMetadata();
+      _showSnack('جميع السجلات متزامنة بالفعل');
       return;
     }
 
