@@ -483,10 +483,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
       }
     } else {
       // 2. Local cache miss — perform online fallback lookup if connected
-      final online = await ApiService.instance.ping();
-      if (online) {
-        try {
-          final onlineResponse = await ApiService.instance.onlineSkuLookup(sku);
+      try {
+        final onlineResponse = await ApiService.instance.onlineSkuLookup(sku);
           if (onlineResponse.success && onlineResponse.matches.isNotEmpty) {
             if (onlineResponse.matches.length == 1) {
               final match = onlineResponse.matches.first;
@@ -511,11 +509,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             });
             if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
           }
-        } catch (_) {
-          await _handleOfflineCacheMiss(sku, canVibrate);
-        }
-      } else {
-        // Real offline cache miss — place in pending queue and show warning
+      } catch (_) {
         await _handleOfflineCacheMiss(sku, canVibrate);
       }
     }

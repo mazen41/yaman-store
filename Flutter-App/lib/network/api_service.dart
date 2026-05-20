@@ -391,12 +391,11 @@ class ApiService {
 
   Future<bool> ping() async {
     try {
-      // Call a lightweight endpoint to check connectivity
+      // Connectivity probe should only verify internet reachability, not auth state.
       final response = await http.get(
-        Uri.parse('$_baseUrl/api/orders.php?updated_after=9999999999'),
-        headers: await _jsonHeaders(),
+        Uri.parse('$_baseUrl/api/login.php'),
       ).timeout(const Duration(seconds: 5));
-      return response.statusCode == 200 || response.statusCode == 401;
+      return response.statusCode < 500;
     } catch (_) {
       return false;
     }
