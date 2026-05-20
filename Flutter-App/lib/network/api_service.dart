@@ -40,10 +40,10 @@ class ScanResponse {
     return ScanResponse(
       success: json['success'] == true,
       message: json['message'] ?? '',
-      alreadyScanned = json['already_scanned'] == true,
-      allDone = json['all_done'] == true,
+      alreadyScanned: json['already_scanned'] == true,
+      allDone: json['all_done'] == true,
       requiresSelection: requiresSel,
-      sku = json['sku'] ?? '',
+      sku: (json['sku'] ?? '').toString(),
       matches: requiresSel
           ? (json['matches'] as List<dynamic>? ?? [])
               .map((m) => OrderMatch.fromJson(m as Map<String, dynamic>))
@@ -487,6 +487,41 @@ class ApiService {
 
     throw Exception('فشل رفع العمليات: ${response.statusCode}');
   }
+
+  Future<ScanResponse> processScan(String sku, {int? selectedItemId}) async {
+    final payload = {
+      'id': 0,
+      'sku': sku,
+      'selected_item_id': selectedItemId ?? 0,
+      'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    };
+
+    final result = await syncOfflineScans([payload]);
+    final results = result['results'] as List<dynamic>? ?? const [];
+    if (results.isEmpty) {
+      return ScanResponse(
+        success: result['success'] == true,
+        message: (result['message'] ?? 'فشل تنفيذ المسح').toString(),
+        alreadyScanned: false,
+        allDone: false,
+        sku: sku,
+      );
+    }
+
+    final first = results.first;
+    if (first is! Map<String, dynamic>) {
+      return ScanResponse(
+        success: false,
+        message: 'استجابة غير صالحة من الخادم',
+        alreadyScanned: false,
+        allDone: false,
+        sku: sku,
+      );
+    }
+
+    return ScanResponse.fromJson(first);
+  }
+
 }
 
 class UnauthorizedException implements Exception {
