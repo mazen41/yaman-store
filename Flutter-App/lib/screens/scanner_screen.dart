@@ -491,9 +491,23 @@ class _ScannerScreenState extends State<ScannerScreen> {
             widget.onLoggedOut?.call();
             return;
           } catch (e) {
+            // Save the user selection locally so sync can retry with context.
+            final existing = await DatabaseHelper.instance.getUnsyncedBySku(sku);
+            if (existing == null) {
+              await DatabaseHelper.instance.insertScan(ScanRecord(
+                sku: sku,
+                timestamp: DateTime.now().millisecondsSinceEpoch,
+                selectedItemId: match.itemId,
+              ));
+            } else {
+              await DatabaseHelper.instance
+                  .updateSelectedItemId(existing.id!, match.itemId);
+            }
+            await _refreshBadge();
+
             setState(() {
-              _statusMessage = 'فشل الاتصال بالسيرفر';
-              _statusType = StatusType.error;
+              _statusMessage = 'تم الحفظ محلياً مع التحديد (${match.orderNumber})';
+              _statusType = StatusType.offline;
             });
           }
           await Future.delayed(const Duration(milliseconds: 2500));

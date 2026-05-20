@@ -51,7 +51,7 @@ class DatabaseHelper {
     final path = join(await getDatabasesPath(), 'yaman_scanner.db');
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE scan_records (
@@ -60,7 +60,7 @@ class DatabaseHelper {
             timestamp         INTEGER NOT NULL,
             synced            INTEGER NOT NULL DEFAULT 0,
             selected_item_id  INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(sku) ON CONFLICT IGNORE
+            UNIQUE(sku, selected_item_id) ON CONFLICT IGNORE
           )
         ''');
       },
@@ -74,6 +74,27 @@ class DatabaseHelper {
           } catch (_) {
             // Column may already exist on a re-install — ignore
           }
+        }
+
+        if (oldVersion < 3) {
+          // Rebuild table so uniqueness keeps context for multi-order SKUs.
+          await db.execute('''
+            CREATE TABLE scan_records_v3 (
+              id                INTEGER PRIMARY KEY AUTOINCREMENT,
+              sku               TEXT NOT NULL,
+              timestamp         INTEGER NOT NULL,
+              synced            INTEGER NOT NULL DEFAULT 0,
+              selected_item_id  INTEGER NOT NULL DEFAULT 0,
+              UNIQUE(sku, selected_item_id) ON CONFLICT IGNORE
+            )
+          ''');
+          await db.execute('''
+            INSERT INTO scan_records_v3 (id, sku, timestamp, synced, selected_item_id)
+            SELECT id, sku, timestamp, synced, COALESCE(selected_item_id, 0)
+            FROM scan_records
+          ''');
+          await db.execute('DROP TABLE scan_records');
+          await db.execute('ALTER TABLE scan_records_v3 RENAME TO scan_records');
         }
       },
     );
