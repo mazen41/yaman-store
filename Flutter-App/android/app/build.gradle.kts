@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.yaman.yaman_scanner"
-    compileSdk = 36
+    compileSdk = 35
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -19,7 +19,7 @@ android {
     defaultConfig {
         applicationId = "com.yaman.yaman_scanner"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

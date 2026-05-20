@@ -26,7 +26,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   // Stability: same SKU must appear 3 frames in a row
   final List<String> _skuHistory = [];
   static const int _stabilityFrames = 3;
-  static const _skuPattern = r'SK\d+';
+  static const _skuPattern = r'SK-?\d{3,}';
 
   @override
   void initState() {
@@ -65,9 +65,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
       String? found;
       for (final block in recognized.blocks) {
-        final match = regex.firstMatch(block.text.replaceAll(' ', ''));
+        // Remove spaces and common OCR noise characters
+        final cleaned = block.text.replaceAll(RegExp(r'[\s\-—]'), '');
+        final match = regex.firstMatch(cleaned);
         if (match != null) {
-          found = match.group(0)!.toUpperCase();
+          found = match.group(0)!.toUpperCase().replaceAll('-', '');
           break;
         }
       }
