@@ -157,30 +157,6 @@ class ApiService {
     throw Exception('فشل المزامنة (${primaryResponse.statusCode})');
   }
 
-    final primary = await http
-        .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
-        .timeout(const Duration(seconds: 15));
-    if (primary.statusCode == 200) {
-      final json = jsonDecode(primary.body) as Map<String, dynamic>;
-    final response = await http
-        .get(Uri.parse('$_apiBase?action=sync_orders'), headers: await _jsonHeaders())
-        .timeout(const Duration(seconds: 15));
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return SyncOrdersResponse.fromJson(json);
-    }
-    if (primary.statusCode == 401 || primary.statusCode == 403) {
-      final fallback = await http
-          .get(Uri.parse('$_apiBase?action=sync_orders_public'), headers: headers)
-          .timeout(const Duration(seconds: 15));
-      if (fallback.statusCode == 200) {
-        final json = jsonDecode(fallback.body) as Map<String, dynamic>;
-        return SyncOrdersResponse.fromJson(json);
-      }
-      throw Exception('فشل المزامنة (${fallback.statusCode})');
-    }
-    throw Exception('فشل المزامنة (${primary.statusCode})');
-  }
 
   Future<ScanResponse> processScan(String sku, {int selectedItemId = 0}) async {
     final response = await http
