@@ -593,9 +593,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
+              Text(
                 'أنت في وضع عدم الاتصال بالإنترنت. الطلبات الجديدة التي تم إنشاؤها بعد المزامنة الأخيرة قد لا تكون متوفرة.',
-                style: TextStyle(color: Colors.white75, fontSize: 14, height: 1.4),
+                style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 14, height: 1.4),
                 textAlign: TextAlign.right,
                 textDirection: TextDirection.rtl,
               ),
@@ -1056,7 +1056,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.black74,
+                              color: Colors.black.withOpacity(0.74),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(
