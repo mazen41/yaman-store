@@ -1,0 +1,21 @@
+# Flutter/Dart
+**/build/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+
+# Android
+**/*.apk
+**/*.aab
+**/.gradle/
+**/local.properties
+**/*.iml
+
+# Crash logs
+**/hs_err_pid*.log
+**/replay_pid*.log
+
+# IDE
+**/.idea/
+**/*.iml
