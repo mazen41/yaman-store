@@ -9,12 +9,117 @@ import '../network/api_service.dart';
 // Scanner screen
 // ─────────────────────────────────────────────────────────────────────────────
 
-class AppEntry extends StatelessWidget {
+class AppEntry extends StatefulWidget {
   const AppEntry({super.key});
 
   @override
+  State<AppEntry> createState() => _AppEntryState();
+}
+
+class _AppEntryState extends State<AppEntry> {
+  bool _checking = true;
+  bool _loggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    final loggedIn = await ApiService.instance.isLoggedIn();
+    if (mounted) {
+      setState(() {
+        _checking = false;
+        _loggedIn = loggedIn;
+      });
+    }
+  }
+
+  void _onLoggedIn() {
+    if (mounted) setState(() => _loggedIn = true);
+  }
+
+  void _onLoggedOut() {
+    if (mounted) setState(() => _loggedIn = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const ScannerScreen();
+    if (_checking) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF111827),
+        body: Center(child: CircularProgressIndicator(color: Colors.white)),
+      );
+    }
+
+    return _loggedIn
+        ? ScannerScreen(onLoggedOut: _onLoggedOut)
+        : LoginScreen(onLoggedIn: _onLoggedIn);
+  }
+}
+
+class LoginScreen extends StatefulWidget {
+  final VoidCallback onLoggedIn;
+  const LoginScreen({super.key, required this.onLoggedIn});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _userCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _loading = false;
+  String _error = '';
+
+  Future<void> _login() async {
+    final u = _userCtrl.text.trim();
+    final p = _passCtrl.text.trim();
+    if (u.isEmpty || p.isEmpty) {
+      setState(() => _error = 'يرجى إدخال اسم المستخدم وكلمة المرور');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final resp = await ApiService.instance.login(u, p);
+      if (resp.success) {
+        widget.onLoggedIn();
+      } else {
+        setState(() => _error = resp.message.isNotEmpty ? resp.message : 'بيانات غير صحيحة');
+      }
+    } catch (_) {
+      setState(() => _error = 'تعذر الاتصال بالسيرفر');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF111827),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: _userCtrl, decoration: const InputDecoration(hintText: 'اسم المستخدم')),
+              const SizedBox(height: 12),
+              TextField(controller: _passCtrl, obscureText: true, decoration: const InputDecoration(hintText: 'كلمة المرور')),
+              const SizedBox(height: 12),
+              if (_error.isNotEmpty) Text(_error, style: const TextStyle(color: Colors.redAccent)),
+              const SizedBox(height: 12),
+              ElevatedButton(onPressed: _loading ? null : _login, child: _loading ? const CircularProgressIndicator() : const Text('دخول')),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -381,6 +486,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
   // ── Sync offline scans ───────────────────────────────────────────────────
 
   Future<void> _syncNow() async {
+    final loggedIn = await ApiService.instance.isLoggedIn();
+    if (!loggedIn) {
+      _showSnack('يرجى تسجيل الدخول أولاً');
+      widget.onLoggedOut?.call();
+      return;
+    }
+
     final unsynced = await DatabaseHelper.instance.getUnsynced();
     if (unsynced.isEmpty) {
       _showSnack('لا توجد سجلات للمزامنة');
@@ -491,6 +603,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
             style: TextStyle(
                 color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white70),
+            tooltip: 'تسجيل الخروج',
+            onPressed: () async {
+              await ApiService.instance.clearToken();
+              widget.onLoggedOut?.call();
+            },
+          ),
           // Manual entry button
           IconButton(
             icon: const Icon(Icons.keyboard_alt_outlined, color: Colors.white70),
