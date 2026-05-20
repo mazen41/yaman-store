@@ -92,6 +92,43 @@ class LoginResponse {
       );
 }
 
+
+class SyncOrdersResponse {
+  final bool success;
+  final String message;
+  final List<Map<String, dynamic>> orders;
+  final List<Map<String, dynamic>> items;
+
+  SyncOrdersResponse({required this.success, required this.message, required this.orders, required this.items});
+
+  factory SyncOrdersResponse.fromJson(Map<String, dynamic> json) {
+    final ordersRaw = (json['orders'] as List<dynamic>? ?? []);
+    final itemsRaw = (json['items'] as List<dynamic>? ?? []);
+    return SyncOrdersResponse(
+      success: json['success'] == true,
+      message: (json['message'] ?? '').toString(),
+      orders: ordersRaw.map((o) {
+        final m = o as Map<String, dynamic>;
+        return {
+          'order_id': int.tryParse(m['order_id'].toString()) ?? 0,
+          'order_number': (m['order_number'] ?? '').toString(),
+          'customer_name': (m['customer_name'] ?? '').toString(),
+          'customer_mobile': (m['customer_mobile'] ?? '').toString(),
+          'status': (m['status'] ?? '').toString(),
+        };
+      }).toList(),
+      items: itemsRaw.map((i) {
+        final m = i as Map<String, dynamic>;
+        return {
+          'item_id': int.tryParse(m['item_id'].toString()) ?? 0,
+          'order_id': int.tryParse(m['order_id'].toString()) ?? 0,
+          'sku': (m['sku'] ?? '').toString(),
+          'is_sorted': (m['is_sorted'] == true || m['is_sorted'].toString() == '1') ? 1 : 0,
+        };
+      }).toList(),
+    );
+  }
+}
 // ── API Service ───────────────────────────────────────────────────────────
 
 class ApiService {
@@ -181,6 +218,20 @@ class ApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  Future<SyncOrdersResponse> syncOrders() async {
+    final headers = await _authHeaders();
+    final response = await http.get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers).timeout(const Duration(seconds: 15));
+    if (response.statusCode == 401) {
+      await clearToken();
+      throw UnauthorizedException('انتهت جلسة العمل — يرجى تسجيل الدخول مجدداً');
+    }
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return SyncOrdersResponse.fromJson(json);
+    }
+    throw Exception('فشل المزامنة (${response.statusCode})');
   }
 
   // ── Scan ──────────────────────────────────────────────────────────
