@@ -256,6 +256,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   bool _isProcessing = false;
   bool _locked = false;
   String _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+  String _syncInfo = 'آخر مزامنة: غير متوفر';
   String _detectedSku = '';
   StatusType _statusType = StatusType.idle;
 
@@ -277,6 +278,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     super.initState();
     _initCamera();
     _refreshBadge();
+    _autoSyncOrders();
   }
 
   Future<void> _refreshBadge() async {
@@ -369,6 +371,23 @@ class _ScannerScreenState extends State<ScannerScreen> {
     );
   }
 
+  Future<void> _autoSyncOrders() async {
+    try {
+      final resp = await ApiService.instance.syncOrders();
+      if (resp.success) {
+        await DatabaseHelper.instance.replaceOrdersCache(resp.orders, resp.items);
+        if (mounted) setState(() => _syncInfo = 'آخر مزامنة: الآن');
+      }
+    } catch (e) {
+      final cached = await DatabaseHelper.instance.countCachedItems();
+      if (!mounted) return;
+      setState(() {
+        _syncInfo = cached > 0 ? 'وضع أوف لاين — فشل مزامنة السيرفر' : 'لا توجد بيانات — يرجى المزامنة أولاً';
+      });
+      _showSnack('فشل مزامنة الطلبات: $e');
+    }
+  }
+
   // ── Main scan handler ────────────────────────────────────────────────────
 
   Future<void> _onStableSku(String sku) async {
@@ -380,38 +399,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
 
     final canVibrate = await Vibration.hasVibrator() ?? false;
-    if (canVibrate) Vibration.vibrate(duration: 120);
+    final matches = await DatabaseHelper.instance.findOrdersBySku(sku);
 
-    try {
-      final response = await ApiService.instance.processScan(sku);
-      await _handleScanResponse(response, sku, canVibrate);
-    } on UnauthorizedException {
-      if (mounted) {
-        setState(() {
-          _statusMessage = 'انتهت الجلسة — يرجى تسجيل الدخول';
-          _statusType = StatusType.error;
-        });
-        await Future.delayed(const Duration(milliseconds: 1800));
-        widget.onLoggedOut?.call();
-      }
-      return;
-    } catch (_) {
-      // ── Offline save — dedup at DB level + pre-check ──────────────────
-      final existing = await DatabaseHelper.instance.getUnsyncedBySku(sku);
-      if (existing == null) {
-        await DatabaseHelper.instance.insertScan(ScanRecord(
-          sku: sku,
-          timestamp: DateTime.now().millisecondsSinceEpoch,
-        ));
-      }
-      await _refreshBadge();
+    if (matches.isEmpty) {
       setState(() {
-        _statusMessage = existing != null
-            ? 'محفوظ مسبقاً ($_pendingCount في الانتظار)'
-            : 'حُفظ محلياً ($_pendingCount في الانتظار)';
-        _statusType = StatusType.offline;
+        _statusMessage = 'SKU غير موجود في أي طلب';
+        _statusType = StatusType.error;
       });
-      if (canVibrate) Vibration.vibrate(duration: 80);
+    } else if (matches.length == 1) {
+      await _processSingleLocalMatch(sku, matches.first, canVibrate);
+    } else {
+      _locked = false;
+      await _showOrderPicker(sku, matches.map((m) => OrderMatch(itemId: m.itemId, orderId: m.orderId, orderNumber: m.orderNumber, customerName: m.customerName, customerMobile: m.customerMobile, status: m.status)).toList());
+      return;
     }
 
     await Future.delayed(const Duration(milliseconds: 2000));
@@ -422,6 +422,21 @@ class _ScannerScreenState extends State<ScannerScreen> {
       });
     }
     _locked = false;
+  }
+
+  Future<void> _processSingleLocalMatch(String sku, LocalOrderMatch match, bool canVibrate) async {
+    await DatabaseHelper.instance.markItemSorted(match.itemId);
+    try {
+      final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId);
+      await _handleScanResponse(response, sku, canVibrate);
+    } catch (_) {
+      await DatabaseHelper.instance.insertScan(ScanRecord(sku: sku, timestamp: DateTime.now().millisecondsSinceEpoch, selectedItemId: match.itemId));
+      await _refreshBadge();
+      setState(() {
+        _statusMessage = 'تم الفرز (محلياً)';
+        _statusType = StatusType.offline;
+      });
+    }
   }
 
   Future<void> _handleScanResponse(
@@ -478,6 +493,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           });
           _locked = true;
           final canVibrate = await Vibration.hasVibrator() ?? false;
+          await DatabaseHelper.instance.markItemSorted(match.itemId);
           try {
             final response = await ApiService.instance
                 .processScan(sku, selectedItemId: match.itemId);
@@ -506,7 +522,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             await _refreshBadge();
 
             setState(() {
-              _statusMessage = 'تم الحفظ محلياً مع التحديد (${match.orderNumber})';
+              _statusMessage = 'تم الفرز (محلياً)';
               _statusType = StatusType.offline;
             });
           }
@@ -831,8 +847,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
                             ),
                           ),
                         ),
-                      _StatusBadge(
-                          message: _statusMessage, type: _statusType),
+                      _StatusBadge(message: _statusMessage, type: _statusType),
+                      const SizedBox(height: 8),
+                      Text(_syncInfo, style: const TextStyle(color: Colors.white54, fontSize: 12)),
                     ],
                   ),
                 ),

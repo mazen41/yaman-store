@@ -66,6 +66,10 @@ try {
             requireAuth($userId);
             handleStats($db, $userId);
             break;
+        case 'sync_orders':
+            requireAuth($userId);
+            handleSyncOrders($db);
+            break;
         default:
             fail('Unknown action: ' . htmlspecialchars($action), 400);
     }
@@ -361,6 +365,52 @@ function handlePending(PDO $db): void
     }
 
     ok(['items' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ACTION: SYNC ORDERS
+// ═══════════════════════════════════════════════════════════════════
+
+
+function handleSyncOrders(PDO $db): void
+{
+    $ordersStmt = $db->query("
+        SELECT co.id AS order_id,
+               co.order_number,
+               c.name AS customer_name,
+               c.mobile_number AS customer_mobile,
+               co.status
+        FROM customer_orders co
+        LEFT JOIN customers c ON c.id = co.customer_id
+        WHERE co.status NOT IN ('cancelled', 'delivered')
+        ORDER BY co.id DESC
+        LIMIT 500
+    ");
+    $orders = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $orderIds = array_column($orders, 'order_id');
+    $items = [];
+
+    if (!empty($orderIds)) {
+        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $itemsStmt = $db->prepare("
+            SELECT oi.id AS item_id,
+                   oi.order_id,
+                   oi.shein_sku AS sku,
+                   CASE WHEN oi.status = 'scanned' THEN 1 ELSE 0 END AS is_sorted
+            FROM order_items oi
+            WHERE oi.order_id IN ($placeholders)
+              AND oi.shein_sku IS NOT NULL
+              AND oi.shein_sku <> ''
+        ");
+        $itemsStmt->execute($orderIds);
+        $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    ok([
+        'orders' => $orders,
+        'items'  => $items,
+    ]);
 }
 
 // ═══════════════════════════════════════════════════════════════════
