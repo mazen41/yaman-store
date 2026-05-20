@@ -132,6 +132,31 @@ class ApiService {
 
   Future<SyncOrdersResponse> syncOrders() async {
     final headers = await _jsonHeaders();
+    final primaryResponse = await http
+        .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
+        .timeout(const Duration(seconds: 15));
+
+    if (primaryResponse.statusCode == 200) {
+      final json = jsonDecode(primaryResponse.body) as Map<String, dynamic>;
+      return SyncOrdersResponse.fromJson(json);
+    }
+
+    if (primaryResponse.statusCode == 401 || primaryResponse.statusCode == 403) {
+      final fallbackResponse = await http
+          .get(Uri.parse('$_apiBase?action=sync_orders_public'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+
+      if (fallbackResponse.statusCode == 200) {
+        final json = jsonDecode(fallbackResponse.body) as Map<String, dynamic>;
+        return SyncOrdersResponse.fromJson(json);
+      }
+
+      throw Exception('فشل المزامنة (${fallbackResponse.statusCode})');
+    }
+
+    throw Exception('فشل المزامنة (${primaryResponse.statusCode})');
+  }
+
     final primary = await http
         .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
         .timeout(const Duration(seconds: 15));
