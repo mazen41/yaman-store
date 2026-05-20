@@ -131,6 +131,12 @@ class ApiService {
   }
 
   Future<SyncOrdersResponse> syncOrders() async {
+    final headers = await _jsonHeaders();
+    final primary = await http
+        .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
+        .timeout(const Duration(seconds: 15));
+    if (primary.statusCode == 200) {
+      final json = jsonDecode(primary.body) as Map<String, dynamic>;
     final response = await http
         .get(Uri.parse('$_apiBase?action=sync_orders'), headers: await _jsonHeaders())
         .timeout(const Duration(seconds: 15));
@@ -138,7 +144,17 @@ class ApiService {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       return SyncOrdersResponse.fromJson(json);
     }
-    throw Exception('فشل المزامنة (${response.statusCode})');
+    if (primary.statusCode == 401 || primary.statusCode == 403) {
+      final fallback = await http
+          .get(Uri.parse('$_apiBase?action=sync_orders_public'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+      if (fallback.statusCode == 200) {
+        final json = jsonDecode(fallback.body) as Map<String, dynamic>;
+        return SyncOrdersResponse.fromJson(json);
+      }
+      throw Exception('فشل المزامنة (${fallback.statusCode})');
+    }
+    throw Exception('فشل المزامنة (${primary.statusCode})');
   }
 
   Future<ScanResponse> processScan(String sku, {int selectedItemId = 0}) async {
@@ -156,6 +172,22 @@ class ApiService {
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       return ScanResponse.fromJson(json);
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final fallback = await http
+          .post(
+            Uri.parse('$_apiBase?action=scan_public'),
+            headers: await _jsonHeaders(),
+            body: jsonEncode({
+              'scan_input': sku,
+              'selected_item_id': selectedItemId,
+            }),
+          )
+          .timeout(const Duration(seconds: 12));
+      if (fallback.statusCode == 200) {
+        final json = jsonDecode(fallback.body) as Map<String, dynamic>;
+        return ScanResponse.fromJson(json);
+      }
     }
 
     try {

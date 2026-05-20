@@ -49,6 +49,9 @@ try {
         case 'scan':
             handleScan($db, $userId);
             break;
+        case 'scan_public':
+            handleScan($db, $userId);
+            break;
         case 'unscan':
             handleUnscan($db);
             break;
@@ -59,6 +62,9 @@ try {
             handleStats($db, $userId);
             break;
         case 'sync_orders':
+            handleSyncOrders($db);
+            break;
+        case 'sync_orders_public':
             handleSyncOrders($db);
             break;
         default:
