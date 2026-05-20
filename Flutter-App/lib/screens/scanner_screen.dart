@@ -9,8 +9,19 @@ import '../network/api_service.dart';
 // Scanner screen
 // ─────────────────────────────────────────────────────────────────────────────
 
+class AppEntry extends StatelessWidget {
+  const AppEntry({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const ScannerScreen();
+  }
+}
+
 class ScannerScreen extends StatefulWidget {
-  const ScannerScreen({super.key});
+  final VoidCallback? onLoggedOut;
+
+  const ScannerScreen({super.key, this.onLoggedOut});
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -140,19 +151,18 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _autoSyncOrders() async {
+    final loggedIn = await ApiService.instance.isLoggedIn();
+    if (!loggedIn) return;
+
     try {
       final resp = await ApiService.instance.syncOrders();
       if (resp.success) {
         await DatabaseHelper.instance.replaceOrdersCache(resp.orders, resp.items);
         if (mounted) setState(() => _syncInfo = 'آخر مزامنة: الآن');
       }
-    } catch (e) {
-      final cached = await DatabaseHelper.instance.countCachedItems();
-      if (!mounted) return;
-      setState(() {
-        _syncInfo = cached > 0 ? 'وضع أوف لاين — فشل مزامنة السيرفر' : 'لا توجد بيانات — يرجى المزامنة أولاً';
-      });
-      _showSnack('فشل مزامنة الطلبات: $e');
+    } on UnauthorizedException {
+      widget.onLoggedOut?.call();
+      return;
     } catch (_) {
       final cached = await DatabaseHelper.instance.countCachedItems();
       if (!mounted) return;

@@ -65,6 +65,7 @@ class DatabaseHelper {
       await _createTables(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 4) {
+        await db.execute('''CREATE TABLE IF NOT EXISTS scan_records (id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT NOT NULL, timestamp INTEGER NOT NULL, synced INTEGER NOT NULL DEFAULT 0, selected_item_id INTEGER NOT NULL DEFAULT 0, UNIQUE(sku, selected_item_id) ON CONFLICT IGNORE)''');
         await _createOrdersTables(db);
       }
     });

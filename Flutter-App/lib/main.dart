@@ -23,7 +23,7 @@ class YamanScannerApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const ScannerScreen(),
+      home: const AppEntry(),
     );
   }
 }
