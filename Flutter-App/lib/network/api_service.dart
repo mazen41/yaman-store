@@ -132,16 +132,28 @@ class ApiService {
 
   Future<SyncOrdersResponse> syncOrders() async {
     final headers = await _jsonHeaders();
-    final primaryResponse = await http
-        .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
-        .timeout(const Duration(seconds: 15));
+
+    http.Response primaryResponse;
+    try {
+      primaryResponse = await http
+          .get(Uri.parse('$_apiBase?action=sync_orders'), headers: headers)
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {
+      primaryResponse = http.Response('', 0);
+    }
 
     if (primaryResponse.statusCode == 200) {
       final json = jsonDecode(primaryResponse.body) as Map<String, dynamic>;
       return SyncOrdersResponse.fromJson(json);
     }
 
-    if (primaryResponse.statusCode == 401 || primaryResponse.statusCode == 403) {
+    final shouldUsePublicFallback =
+        primaryResponse.statusCode == 0 ||
+        primaryResponse.statusCode == 400 ||
+        primaryResponse.statusCode == 401 ||
+        primaryResponse.statusCode == 403;
+
+    if (shouldUsePublicFallback) {
       final fallbackResponse = await http
           .get(Uri.parse('$_apiBase?action=sync_orders_public'), headers: headers)
           .timeout(const Duration(seconds: 15));
