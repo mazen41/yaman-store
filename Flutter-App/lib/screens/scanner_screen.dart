@@ -385,6 +385,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
         _syncInfo = cached > 0 ? 'وضع أوف لاين — فشل مزامنة السيرفر' : 'لا توجد بيانات — يرجى المزامنة أولاً';
       });
       _showSnack('فشل مزامنة الطلبات: $e');
+    } catch (_) {
+      final cached = await DatabaseHelper.instance.countCachedItems();
+      if (!mounted) return;
+      setState(() {
+        _syncInfo = cached > 0 ? 'وضع أوف لاين — آخر مزامنة: متاحة محلياً' : 'لا توجد بيانات — يرجى المزامنة أولاً';
+      });
     }
   }
 
