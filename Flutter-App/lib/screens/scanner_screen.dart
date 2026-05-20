@@ -378,6 +378,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
         await DatabaseHelper.instance.replaceOrdersCache(resp.orders, resp.items);
         if (mounted) setState(() => _syncInfo = 'آخر مزامنة: الآن');
       }
+    } catch (e) {
+      final cached = await DatabaseHelper.instance.countCachedItems();
+      if (!mounted) return;
+      setState(() {
+        _syncInfo = cached > 0 ? 'وضع أوف لاين — فشل مزامنة السيرفر' : 'لا توجد بيانات — يرجى المزامنة أولاً';
+      });
+      _showSnack('فشل مزامنة الطلبات: $e');
     } catch (_) {
       final cached = await DatabaseHelper.instance.countCachedItems();
       if (!mounted) return;
