@@ -14,6 +14,7 @@
  *   GET  /api.php?action=stats         – today's session stats
  *   POST /api.php?action=token_login   – exchange username+password for a bearer token
  *   GET  /api.php?action=ping          – health-check
+ *   GET  /api.php?action=sync_orders   – download all pending orders + items for offline cache
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -65,6 +66,10 @@ try {
         case 'stats':
             requireAuth($userId);
             handleStats($db, $userId);
+            break;
+        case 'sync_orders':
+            requireAuth($userId);
+            handleSyncOrders($db);
             break;
         default:
             fail('Unknown action: ' . htmlspecialchars($action), 400);
@@ -361,6 +366,65 @@ function handlePending(PDO $db): void
     }
 
     ok(['items' => $stmt->fetchAll(PDO::FETCH_ASSOC)]);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ACTION: SYNC ORDERS (offline cache for mobile app)
+// ═══════════════════════════════════════════════════════════════════
+
+function handleSyncOrders(PDO $db): void
+{
+    // Fetch all active orders (exclude fully-delivered / cancelled)
+    $ordersStmt = $db->query("
+        SELECT co.id          AS order_id,
+               co.order_number,
+               c.name         AS customer_name,
+               c.mobile_number AS customer_mobile,
+               co.status
+        FROM   customer_orders co
+        LEFT JOIN customers c ON c.id = co.customer_id
+        WHERE  co.status NOT IN ('cancelled', 'delivered')
+        ORDER  BY co.id DESC
+        LIMIT  1000
+    ");
+    $orders = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $items = [];
+    if (!empty($orders)) {
+        $orderIds     = array_column($orders, 'order_id');
+        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+        $itemsStmt    = $db->prepare("
+            SELECT id                                                   AS item_id,
+                   order_id,
+                   shein_sku                                            AS sku,
+                   CASE WHEN status = 'scanned' THEN 1 ELSE 0 END      AS is_sorted
+            FROM   order_items
+            WHERE  order_id IN ($placeholders)
+              AND  shein_sku IS NOT NULL
+              AND  shein_sku <> ''
+            ORDER  BY order_id ASC, id ASC
+        ");
+        $itemsStmt->execute($orderIds);
+        $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Cast types so Flutter JSON parsing is happy
+        $items = array_map(static function (array $row): array {
+            $row['item_id']   = (int) $row['item_id'];
+            $row['order_id']  = (int) $row['order_id'];
+            $row['is_sorted'] = (int) $row['is_sorted'];
+            return $row;
+        }, $items);
+
+        $orders = array_map(static function (array $row): array {
+            $row['order_id'] = (int) $row['order_id'];
+            return $row;
+        }, $orders);
+    }
+
+    ok([
+        'orders' => $orders,
+        'items'  => $items,
+    ]);
 }
 
 // ═══════════════════════════════════════════════════════════════════
