@@ -92,6 +92,20 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final resp = await ApiService.instance.login(u, p);
       if (resp.success) {
+        // Pull latest orders immediately after login so scanner works online-first
+        // without waiting for user to open manual sync.
+        try {
+          final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
+          final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime);
+          if (syncResp.success) {
+            await DatabaseHelper.instance.syncOrdersIncremental(syncResp.orders, syncResp.items);
+            final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
+            await DatabaseHelper.instance.setMetadata('lastSyncTime', syncResp.syncTimestamp.toString());
+            await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
+          }
+        } catch (_) {
+          // Don't block login success if first sync fails; scanner screen can retry.
+        }
         widget.onLoggedIn();
       } else {
         setState(() => _error = resp.message.isNotEmpty ? resp.message : 'بيانات الدخول غير صحيحة');
@@ -509,8 +523,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
             });
             if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
           }
+      } on UnauthorizedException {
+        await ApiService.instance.forceSessionExpiration();
       } catch (_) {
-        await _handleOfflineCacheMiss(sku, canVibrate);
+        final online = await ApiService.instance.ping();
+        if (online) {
+          setState(() {
+            _statusMessage = 'تعذر جلب بيانات الطلب من الخادم. حاول المزامنة ثم أعد المحاولة.';
+            _statusType = StatusType.error;
+          });
+          if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+        } else {
+          await _handleOfflineCacheMiss(sku, canVibrate);
+        }
       }
     }
 
