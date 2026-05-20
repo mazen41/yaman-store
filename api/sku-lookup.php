@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * api/sku-lookup.php
  * ─────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ try {
                oi.status, 
                co.order_number,
                c.name AS customer_name, 
-               COALESCE(c.mobile_number, c.mobile, c.phone, '') AS customer_mobile
+               COALESCE(c.mobile_number, c.phone, '') AS customer_mobile
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN customers c ON c.id = co.customer_id

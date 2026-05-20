@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * api/orders.php
  * ─────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ try {
             SELECT co.id          AS order_id,
                    co.order_number,
                    c.name         AS customer_name,
-                   COALESCE(c.mobile_number, c.mobile, c.phone, '') AS customer_mobile,
+                   COALESCE(c.mobile_number, c.phone, '') AS customer_mobile,
                    co.status,
                    UNIX_TIMESTAMP(co.updated_at) AS updated_at
             FROM   customer_orders co
@@ -54,7 +54,7 @@ try {
             SELECT co.id          AS order_id,
                    co.order_number,
                    c.name         AS customer_name,
-                   COALESCE(c.mobile_number, c.mobile, c.phone, '') AS customer_mobile,
+                   COALESCE(c.mobile_number, c.phone, '') AS customer_mobile,
                    co.status,
                    UNIX_TIMESTAMP(co.updated_at) AS updated_at
             FROM   customer_orders co
