@@ -211,8 +211,7 @@ include '../../includes/header.php';
 <!-- Load Tajawal font -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;600;700;800&display=swap" rel="stylesheet">
-<!-- Tesseract.js — browser-side OCR, no API key, no rate limits -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- OCR handled server-side via ajax_ocr.php using Gemini Vision -->
 
 <div id="sortApp">
 
@@ -747,162 +746,16 @@ async function doUnscan() {
   } catch(e) { showMsg(e.message, 'error'); }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SKU OCR PIPELINE  –  crop → resize → enhance → OCR.Space → extract
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Extract all valid SKUs from raw OCR text.
- * Pattern: SK (case-insensitive) followed by 10+ digits.
- */
-function extractSkuFromText(text) {
-  const upper   = String(text || '').toUpperCase();
-  const cleaned = upper.replace(/[^A-Z0-9\n]/g, ' ');
-  const matches = cleaned.match(/SK\d{10,}/g) || [];
-  return Array.from(new Set(matches));
+// ======================================================
+// CAMERA - manual-only, NO auto-interval
+// ======================================================
+async function captureFrameBase64(video) {
+  var canvas = document.createElement('canvas');
+  canvas.width  = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
 }
-
-/**
- * Crop the bottom 25-30% of the video frame (where SKU label sits),
- * resize to <=800px, apply grayscale + contrast stretch + sharpen.
- */
-function prepareSkuOcrRegion(video) {
-  const VW = video.videoWidth;
-  const VH = video.videoHeight;
-  if (VW < 20 || VH < 20) return null;
-
-  // 1. Crop: bottom 25% band (68%->93%), exclude barcode strip at very bottom
-  const srcY = Math.floor(VH * 0.68);
-  const srcH = Math.floor(VH * 0.25);
-  const srcX = Math.floor(VW * 0.04);
-  const srcW = Math.floor(VW * 0.92);
-
-  // 2. Resize to <=800px wide
-  const MAX_W = 800;
-  const scale = srcW > MAX_W ? MAX_W / srcW : 1;
-  const dstW  = Math.round(srcW * scale);
-  const dstH  = Math.round(srcH * scale);
-
-  const canvas = document.createElement('canvas');
-  canvas.width  = dstW;
-  canvas.height = dstH;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, dstW, dstH);
-
-  // 3. Grayscale (ITU-R BT.601)
-  const imgData = ctx.getImageData(0, 0, dstW, dstH);
-  const px  = imgData.data;
-  const len = dstW * dstH;
-  const gray = new Uint8ClampedArray(len);
-  for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
-    gray[gi] = (px[i] * 0.299 + px[i+1] * 0.587 + px[i+2] * 0.114) | 0;
-  }
-
-  // 4. Contrast boost: 5th-95th percentile stretch
-  const hist = new Int32Array(256);
-  for (let i = 0; i < len; i++) hist[gray[i]]++;
-  let p5 = 0, p95 = 255, cum = 0;
-  for (let v = 0;   v < 256; v++) { cum += hist[v]; if (cum / len < 0.05) p5  = v; }
-  cum = 0;
-  for (let v = 255; v >= 0;  v--) { cum += hist[v]; if (cum / len < 0.05) p95 = v; }
-  const range = (p95 - p5) || 1;
-  for (let i = 0; i < len; i++) {
-    gray[i] = Math.min(255, Math.max(0, ((gray[i] - p5) / range * 255) | 0));
-  }
-
-  // 5. Sharpen: 3x3 unsharp-mask (centre x9 minus 8 neighbours)
-  const sharp = new Uint8ClampedArray(len);
-  const W = dstW, H = dstH;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const idx = y * W + x;
-      if (x === 0 || x === W-1 || y === 0 || y === H-1) { sharp[idx] = gray[idx]; continue; }
-      const v = gray[idx]*9
-        - gray[(y-1)*W+(x-1)] - gray[(y-1)*W+x] - gray[(y-1)*W+(x+1)]
-        - gray[ y   *W+(x-1)]                    - gray[ y   *W+(x+1)]
-        - gray[(y+1)*W+(x-1)] - gray[(y+1)*W+x] - gray[(y+1)*W+(x+1)];
-      sharp[idx] = Math.min(255, Math.max(0, v));
-    }
-  }
-
-  for (let i = 0, gi = 0; i < px.length; i += 4, gi++) {
-    px[i] = px[i+1] = px[i+2] = sharp[gi]; px[i+3] = 255;
-  }
-  ctx.putImageData(imgData, 0, 0);
-  return canvas;
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// TESSERACT.JS OCR — 100% client-side, no API key, no rate limits
-// Works on any shared hosting (Hostinger cPanel, etc.) because nothing
-// is installed on the server; everything runs in the user's browser.
-// ══════════════════════════════════════════════════════════════════════════════
-
-/** Lazy-initialised Tesseract worker (English, reused across calls). */
-let _tesseractWorker = null;
-
-async function getTesseractWorker() {
-  if (_tesseractWorker) return _tesseractWorker;
-  // Tesseract.js v5 API
-  _tesseractWorker = await Tesseract.createWorker('eng', 1, {
-    // Restrict character whitelist to what an SK code can contain
-    // (SK + digits). This alone dramatically improves accuracy.
-    tessedit_char_whitelist: 'SKsk0123456789',
-    // Page-segmentation mode 7 = treat image as a single text line.
-    // Our cropped strip is essentially one line of text.
-    tessedit_pageseg_mode: '7',
-  });
-  return _tesseractWorker;
-}
-
-/**
- * Single-frame OCR using Tesseract.js.
- *
- * Flow:
- *  1. Preprocess the video frame (crop → resize → grayscale → contrast → sharpen).
- *  2. Run Tesseract on the preprocessed canvas.
- *  3. Extract SK code via regex.
- *
- * Returns the matched SKU string (e.g. "SK1234567890"), or null if none found.
- * Throws on ambiguous multi-SKU frames or fatal errors.
- */
-async function recognizeSkuFromVideo(video) {
-  if (!video || video.videoWidth < 20 || video.videoHeight < 20) return null;
-
-  const ocrCanvas = prepareSkuOcrRegion(video);
-  if (!ocrCanvas) return null;
-
-  let worker;
-  try {
-    worker = await getTesseractWorker();
-  } catch (initErr) {
-    throw new Error('تعذّر تهيئة محرك OCR: ' + (initErr.message || initErr));
-  }
-
-  let result;
-  try {
-    result = await worker.recognize(ocrCanvas);
-  } catch (ocrErr) {
-    // Worker may be in a bad state — discard it so next call recreates it
-    _tesseractWorker = null;
-    try { worker.terminate(); } catch(_) {}
-    throw new Error('فشل OCR: ' + (ocrErr.message || ocrErr));
-  }
-
-  const rawText = result && result.data ? (result.data.text || '') : '';
-
-  // Extract SK code using strict regex: SK (case-insensitive) + ≥10 digits
-  const skus = extractSkuFromText(rawText);
-  if (skus.length === 0) return null;
-  if (skus.length === 1) return skus[0];
-  throw new Error('تم اكتشاف ' + skus.length + ' SKU في الإطار — وجّه الكاميرا على ملصق واحد فقط');
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// CAMERA — manual-only, NO auto-interval to avoid 429 rate-limit errors
-// ══════════════════════════════════════════════════════════════════════════════
 
 async function startCamera() {
   try {
@@ -934,45 +787,42 @@ function stopCamera() {
   showMsg('تم إيقاف الكاميرا', 'warning');
 }
 
-/**
- * Called ONCE per button press.
- * Takes ONE frame → sends ONE request to OCR.Space → auto-fills SKU → runs doScan.
- * No interval. No automatic firing. One click = one API call.
- */
 async function doOcrCapture() {
-  const video = $('scannerVideo');
+  var video = document.getElementById('scannerVideo');
   if (!state.camStream || !video || video.videoWidth < 20) {
     showMsg('الكاميرا غير نشطة — شغّلها أولاً', 'error');
     return;
   }
 
-  const btn = $('btnCamScan');
+  var btn = document.getElementById('btnCamScan');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ المسح...';
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارِ الإرسال إلى Gemini...';
   hideMsg();
 
-  try {
-    const sku = await recognizeSkuFromVideo(video);
-
-    if (!sku) {
-      // warning + raw OCR text already shown inside recognizeSkuFromVideo
-      scanInput.focus();
-      return;
-    }
-
-    // Auto-fill + trigger normal scan flow
-    scanInput.value = sku;
-    showMsg('\u2705 SKU \u062a\u0645 \u0627\u0633\u062a\u062e\u0631\u0627\u062c\u0647: ' + sku + ' \u2014 \u062c\u0627\u0631\u064d \u0627\u0644\u0641\u0631\u0632...', 'success');
-    await doScan(sku);
-
-  } catch(err) {
-    showMsg('\u274c ' + (err.message || '\u0641\u0634\u0644 \u0627\u0633\u062a\u062e\u0631\u0627\u062c SKU'), 'error');
+  captureFrameBase64(video).then(function(imageBase64) {
+    return fetch('ajax_ocr.php', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ image: imageBase64 }),
+    });
+  }).then(function(res) {
+    return res.json();
+  }).then(function(data) {
+    if (!data.success) throw new Error(data.message || 'فشل استخراج SKU');
+    var sku = data.sku;
+    document.getElementById('scanInput').value = sku;
+    showMsg('✅ SKU تم اكتشافه: ' + sku + ' — جارٍ الفرز...', 'success');
+    return doScan(sku);
+  }).catch(function(err) {
+    showMsg('❌ ' + (err.message || 'فشل استخراج SKU'), 'error');
     console.error('[doOcrCapture]', err);
-  } finally {
+  }).finally(function() {
     btn.disabled  = false;
-    btn.innerHTML = '<i class="fas fa-camera"><\/i> \u0645\u0633\u062d SKU \u0627\u0644\u0622\u0646';
-  }
+    btn.innerHTML = '<i class="fas fa-camera"></i> مسح SKU الآن';
+  });
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
 // EVENT BINDINGS
 // ══════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
