@@ -33,7 +33,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once '../../config/database.php';
 require_once '../../includes/shein_helpers.php';
 require_once '../../includes/sorting_status_helpers.php';
-require_once '../../includes/serpapi_lookup.php';
+if (file_exists(__DIR__ . '/../../includes/serpapi_lookup.php')) {
+    require_once '../../includes/serpapi_lookup.php';
+}
 
 // ── Auth disabled ─────────────────────────────────────────────────
 $userId = 0;
@@ -122,7 +124,7 @@ function handleScan(PDO $db, int $userId): void
     $product = $productStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$product || empty($product['name'])) {
-        $apiData = serpapi_find_product($sku);
+        $apiData = function_exists('serpapi_find_product') ? serpapi_find_product($sku) : null;
         if ($apiData) {
             sheinFindOrCreateProduct($db, [
                 'shein_sku' => $apiData['sku']   ?? $sku,
@@ -280,11 +282,11 @@ function handleSyncOrders(PDO $db): void
         SELECT co.id          AS order_id,
                co.order_number,
                c.name         AS customer_name,
-               c.mobile_number AS customer_mobile,
+               COALESCE(c.mobile_number, c.mobile, c.phone, '') AS customer_mobile,
                co.status
         FROM   customer_orders co
         LEFT JOIN customers c ON c.id = co.customer_id
-        WHERE  co.status NOT IN ('cancelled', 'delivered')
+        WHERE  co.status NOT IN ('cancelled', 'delivered', 'returned', 'refunded')
         ORDER  BY co.id DESC
         LIMIT  1000
     ");
