@@ -4,15 +4,13 @@
  * ─────────────────────────────────────────────────────────────────
  * REST API for the Yaman Sorting module.
  * Designed for offline-capable mobile apps.
- * Authentication: Bearer token (api_tokens table) or fallback to
- *                 session (browser calls).
+ * Authentication: disabled for scanner/sync flows.
  *
  * Endpoints:
  *   POST /api.php?action=scan          – scan / sort an item
  *   POST /api.php?action=unscan        – revert item to pending
  *   GET  /api.php?action=pending       – list pending items (for a given order or all)
  *   GET  /api.php?action=stats         – today's session stats
- *   POST /api.php?action=token_login   – exchange username+password for a bearer token
  *   GET  /api.php?action=ping          – health-check
  *   GET  /api.php?action=sync_orders   – download all pending orders + items for offline cache
  * ─────────────────────────────────────────────────────────────────
@@ -37,8 +35,8 @@ require_once '../../includes/shein_helpers.php';
 require_once '../../includes/sorting_status_helpers.php';
 require_once '../../includes/serpapi_lookup.php';
 
-// ── Auth ──────────────────────────────────────────────────────────
-$userId = authenticate($db);
+// ── Auth disabled ─────────────────────────────────────────────────
+$userId = 0;
 
 // ── Route ─────────────────────────────────────────────────────────
 $action = strtolower(trim($_GET['action'] ?? $_POST['action'] ?? ''));
@@ -48,27 +46,19 @@ try {
         case 'ping':
             ok(['status' => 'ok', 'server_time' => date('c')]);
             break;
-        case 'token_login':
-            handleTokenLogin($db);
-            break;
         case 'scan':
-            requireAuth($userId);
             handleScan($db, $userId);
             break;
         case 'unscan':
-            requireAuth($userId);
             handleUnscan($db);
             break;
         case 'pending':
-            requireAuth($userId);
             handlePending($db);
             break;
         case 'stats':
-            requireAuth($userId);
             handleStats($db, $userId);
             break;
         case 'sync_orders':
-            requireAuth($userId);
             handleSyncOrders($db);
             break;
         default:
@@ -78,50 +68,6 @@ try {
     fail($e->getMessage(), 422);
 }
 exit();
-
-// ═══════════════════════════════════════════════════════════════════
-// AUTHENTICATION
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * Returns user_id if authenticated via Bearer token, or 0 for
- * unauthenticated (public endpoints like ping/token_login are OK).
- */
-function authenticate(PDO $db): int
-{
-    // 1. Bearer token
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION']
-        ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-        ?? apache_request_headers()['Authorization']
-        ?? '';
-    if (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
-        $token = trim($m[1]);
-        try {
-            $stmt = $db->prepare(
-                "SELECT user_id FROM api_tokens WHERE token = ? AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1"
-            );
-            $stmt->execute([$token]);
-            $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($row) return (int) $row['user_id'];
-        } catch (PDOException $e) {
-            // api_tokens table may not exist yet; fall through
-        }
-    }
-    // 2. PHP session (browser / same-origin calls)
-    if (!headers_sent()) {
-        @session_start();
-    }
-    return (int) ($_SESSION['user_id'] ?? 0);
-}
-
-function requireAuth(int $userId): void
-{
-    if ($userId <= 0) {
-        http_response_code(401);
-        echo json_encode(['success' => false, 'message' => 'Unauthorized – provide Bearer token'], JSON_UNESCAPED_UNICODE);
-        exit();
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════
 // RESPONSE HELPERS
@@ -138,60 +84,6 @@ function fail(string $message, int $code = 422): void
     http_response_code($code);
     echo json_encode(['success' => false, 'message' => $message], JSON_UNESCAPED_UNICODE);
     exit();
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// ACTION: TOKEN LOGIN
-// ═══════════════════════════════════════════════════════════════════
-
-function handleTokenLogin(PDO $db): void
-{
-    $body = json_decode(file_get_contents('php://input'), true) ?: [];
-    $username = trim($body['username'] ?? $_POST['username'] ?? '');
-    $password = trim($body['password'] ?? $_POST['password'] ?? '');
-
-    if ($username === '' || $password === '') {
-        fail('username and password are required', 400);
-    }
-
-    // Reuse the same users table the web app uses
-    $stmt = $db->prepare("SELECT id, password, name FROM users WHERE username = ? OR email = ? LIMIT 1");
-    $stmt->execute([$username, $username]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$user) fail('Invalid credentials', 401);
-
-    // Support both bcrypt and plain-text (legacy) passwords
-    $valid = password_verify($password, $user['password'])
-        || ($user['password'] === $password)
-        || ($user['password'] === md5($password))
-        || ($user['password'] === sha1($password));
-
-    if (!$valid) fail('Invalid credentials', 401);
-
-    // Create api_tokens table if missing
-    $db->exec("
-        CREATE TABLE IF NOT EXISTS api_tokens (
-            id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            user_id    INT UNSIGNED NOT NULL,
-            token      VARCHAR(64) NOT NULL UNIQUE,
-            created_at DATETIME NOT NULL DEFAULT NOW(),
-            expires_at DATETIME NULL,
-            INDEX idx_token (token),
-            INDEX idx_user  (user_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ");
-
-    $token = bin2hex(random_bytes(32));
-    $db->prepare(
-        "INSERT INTO api_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 90 DAY))"
-    )->execute([$user['id'], $token]);
-
-    ok([
-        'token'   => $token,
-        'user_id' => $user['id'],
-        'name'    => $user['name'] ?? $username,
-    ]);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -373,42 +265,8 @@ function handlePending(PDO $db): void
 // ═══════════════════════════════════════════════════════════════════
 
 
-function handleSyncOrders(PDO $db): void
-{
-    $ordersStmt = $db->query("
-        SELECT co.id AS order_id,
-               co.order_number,
-               c.name AS customer_name,
-               c.mobile_number AS customer_mobile,
-               co.status
-        FROM customer_orders co
-        LEFT JOIN customers c ON c.id = co.customer_id
-        WHERE co.status NOT IN ('cancelled', 'delivered')
-        ORDER BY co.id DESC
-        LIMIT 500
-    ");
-    $orders = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $orderIds = array_column($orders, 'order_id');
-    $items = [];
-
-    if (!empty($orderIds)) {
-        $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
-        $itemsStmt = $db->prepare("
-            SELECT oi.id AS item_id,
-                   oi.order_id,
-                   oi.shein_sku AS sku,
-                   CASE WHEN oi.status = 'scanned' THEN 1 ELSE 0 END AS is_sorted
-            FROM order_items oi
-            WHERE oi.order_id IN ($placeholders)
-              AND oi.shein_sku IS NOT NULL
-              AND oi.shein_sku <> ''
-        ");
-        $itemsStmt->execute($orderIds);
-        $items = $itemsStmt->fetchAll(PDO::FETCH_ASSOC);
 // ACTION: SYNC ORDERS (offline cache for mobile app)
 // ═══════════════════════════════════════════════════════════════════
-
 function handleSyncOrders(PDO $db): void
 {
     // Fetch all active orders (exclude fully-delivered / cancelled)
@@ -505,6 +363,7 @@ function handleStats(PDO $db, int $userId): void
 
 function findOrderItem(PDO $db, string $sku, int $selectedItemId = 0): ?array
 {
+    $normalizedSku = normalizeSku($sku);
     $base = "
         SELECT oi.*,
                co.order_number, co.id AS order_id,
@@ -522,34 +381,41 @@ function findOrderItem(PDO $db, string $sku, int $selectedItemId = 0): ?array
     if ($selectedItemId > 0) {
         $stmt = $db->prepare($base . "
             WHERE oi.id = ?
-              AND oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+              AND UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
             LIMIT 1
         ");
-        $stmt->execute([$selectedItemId, $sku]);
+        $stmt->execute([$selectedItemId, $normalizedSku]);
     } else {
         $stmt = $db->prepare($base . "
-            WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+            WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
             ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
             LIMIT 1
         ");
-        $stmt->execute([$sku]);
+        $stmt->execute([$normalizedSku]);
     }
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
 function findOrderItemsBySku(PDO $db, string $sku): array
 {
+    $normalizedSku = normalizeSku($sku);
     $stmt = $db->prepare("
         SELECT oi.id, oi.order_id, oi.status, co.order_number,
                c.name AS customer_name, c.mobile_number AS customer_mobile
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN customers c ON c.id = co.customer_id
-        WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+        WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
         ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
     ");
-    $stmt->execute([$sku]);
+    $stmt->execute([$normalizedSku]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function normalizeSku(string $sku): string
+{
+    $sku = strtoupper(trim($sku));
+    return preg_replace('/[\s\-\x{00A0}\x{200B}\x{200C}\x{200D}]+/u', '', $sku) ?? '';
 }
 
 function getOrderCounts(PDO $db, int $orderId): array
