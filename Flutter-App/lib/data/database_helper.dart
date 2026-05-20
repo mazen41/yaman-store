@@ -46,6 +46,8 @@ class LocalOrderMatch {
 }
 
 class DatabaseHelper {
+  static String _normalizeSku(String value) =>
+      value.toUpperCase().replaceAll(RegExp(r"[-\s\u00A0\u200B\u200C\u200D]"), "");
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
 
@@ -77,6 +79,7 @@ class DatabaseHelper {
     await db.execute('''CREATE TABLE IF NOT EXISTS orders_cache (order_id INTEGER PRIMARY KEY, order_number TEXT, customer_name TEXT, customer_mobile TEXT, status TEXT, updated_at INTEGER NOT NULL)''');
     await db.execute('''CREATE TABLE IF NOT EXISTS order_items_cache (item_id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL, sku TEXT NOT NULL, is_sorted INTEGER NOT NULL DEFAULT 0, FOREIGN KEY(order_id) REFERENCES orders_cache(order_id) ON DELETE CASCADE)''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_items_sku ON order_items_cache(sku)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_items_unsorted ON order_items_cache(is_sorted)');
   }
 
   Future<void> replaceOrdersCache(List<Map<String, dynamic>> orders, List<Map<String, dynamic>> items) async {
@@ -100,8 +103,9 @@ class DatabaseHelper {
       SELECT i.item_id, i.order_id, i.sku, o.order_number, o.customer_name, o.customer_mobile, o.status
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
-      WHERE UPPER(REPLACE(i.sku, '-', '')) = ? AND i.is_sorted = 0
-    ''', [sku.toUpperCase().replaceAll('-', '')]);
+      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
+        AND i.is_sorted = 0
+    ''', [_normalizeSku(sku)]);
     return rows.map((r) => LocalOrderMatch(itemId: r['item_id'] as int, orderId: r['order_id'] as int, sku: (r['sku'] ?? '').toString(), orderNumber: (r['order_number'] ?? '').toString(), customerName: (r['customer_name'] ?? '').toString(), customerMobile: (r['customer_mobile'] ?? '').toString(), status: (r['status'] ?? '').toString())).toList();
   }
 
