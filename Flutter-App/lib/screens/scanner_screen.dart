@@ -497,16 +497,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
         // Multiple matches found locally — show picker
         _locked = false;
         await _showOrderPicker(
-          sku, 
-          matches.map((m) => OrderMatch(
-            itemId: m.itemId, 
-            orderId: m.orderId, 
-            orderNumber: m.orderNumber,
-            customerName: m.customerName, 
-            customerMobile: m.customerMobile, 
-            status: m.status,
-            isMultipleSameSku: matches.length > 1 && matches.every((x) => x.orderId == matches.first.orderId),
-          )).toList()
+          sku,
+          matches
+              .map<OrderMatch>((m) => OrderMatch(
+                    itemId: m.itemId,
+                    orderId: m.orderId,
+                    orderNumber: m.orderNumber,
+                    customerName: m.customerName,
+                    customerMobile: m.customerMobile,
+                    status: m.status,
+                  ))
+              .toList(),
+          isMultipleSameSku: matches.length > 1 &&
+              matches.every((x) => x.orderId == matches.first.orderId),
         );
         return;
       }
@@ -751,7 +754,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   // ── Order Picker Bottom Sheets ───────────────────────────────────────────
 
-  Future<void> _showOrderPicker(String sku, List<OrderMatch> matches) async {
+  Future<void> _showOrderPicker(String sku, List<OrderMatch> matches, {
+    bool isMultipleSameSku = false,
+  }) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -759,6 +764,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       builder: (_) => _OrderPickerSheet(
         sku: sku,
         matches: matches,
+        isMultipleSameSku: isMultipleSameSku,
         onSelect: (match) async {
           Navigator.of(context).pop();
           setState(() {
@@ -1258,7 +1264,9 @@ class _OrderPickerSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            sameOrder ? 'يوجد أكثر من منتج بنفس الـ SKU لهذا الطلب، اختر المنتج المراد فرزه' : 'تم العثور على الباركود في عدة طلبات',
+            isMultipleSameSku
+                ? 'يوجد أكثر من منتج بنفس الـ SKU لهذا الطلب، اختر المنتج المراد فرزه'
+                : 'تم العثور على الباركود في عدة طلبات',
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.right,
           ),
