@@ -530,10 +530,10 @@ class _ScannerScreenState extends State<ScannerScreen> {
               return;
             }
           } else {
-            // SKU not found anywhere on server either
+            final knownLocally = await DatabaseHelper.instance.hasAnySkuMatch(sku);
             setState(() {
-              _statusMessage = 'SKU غير موجود في أي طلب';
-              _statusType = StatusType.error;
+              _statusMessage = knownLocally ? 'هذا المنتج مفروز بالفعل' : 'SKU غير موجود في أي طلب';
+              _statusType = knownLocally ? StatusType.warning : StatusType.error;
             });
             if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
           }
@@ -1176,6 +1176,14 @@ class _OrderPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool sameOrder = matches.isNotEmpty && matches.every((m) => m.orderId == matches.first.orderId);
+    final Map<int, int> perOrderCounter = {};
+    final List<_OrderPickerViewItem> viewItems = matches.map((m) {
+      final idx = (perOrderCounter[m.orderId] ?? 0) + 1;
+      perOrderCounter[m.orderId] = idx;
+      return _OrderPickerViewItem(match: m, itemIndexInOrder: idx);
+    }).toList();
+
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFF1F2937),
@@ -1194,12 +1202,12 @@ class _OrderPickerSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            'تم العثور على الباركود في عدة طلبات',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          Text(
+            sameOrder ? 'يوجد أكثر من منتج بنفس الـ SKU، اختر المنتج المراد فرزه' : 'تم العثور على الباركود في عدة طلبات',
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.right,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1207,9 +1215,9 @@ class _OrderPickerSheet extends StatelessWidget {
                 sku,
                 style: const TextStyle(color: Colors.blueAccent, fontSize: 13, fontFamily: 'monospace', fontWeight: FontWeight.bold),
               ),
-              const Text(
-                'الرجاء اختيار الطلب الذي ترغب في فرز الشحنة إليه:',
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+              Text(
+                sameOrder ? 'الرجاء اختيار المنتج المطلوب:' : 'الرجاء اختيار الطلب الذي ترغب في فرز الشحنة إليه:',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
                 textAlign: TextAlign.right,
               ),
             ],
@@ -1219,10 +1227,15 @@ class _OrderPickerSheet extends StatelessWidget {
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: matches.length,
+              itemCount: viewItems.length,
               itemBuilder: (context, idx) {
-                final match = matches[idx];
-                return _MatchTile(match: match, onTap: () => onSelect(match));
+                final item = viewItems[idx];
+                return _MatchTile(
+                  match: item.match,
+                  itemIndexInOrder: item.itemIndexInOrder,
+                  sameOrderMode: sameOrder,
+                  onTap: () => onSelect(item.match),
+                );
               },
             ),
           ),
@@ -1234,9 +1247,16 @@ class _OrderPickerSheet extends StatelessWidget {
 
 class _MatchTile extends StatelessWidget {
   final OrderMatch match;
+  final int itemIndexInOrder;
+  final bool sameOrderMode;
   final VoidCallback onTap;
 
-  const _MatchTile({required this.match, required this.onTap});
+  const _MatchTile({
+    required this.match,
+    required this.itemIndexInOrder,
+    required this.sameOrderMode,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1264,7 +1284,13 @@ class _MatchTile extends StatelessWidget {
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                   ),
                   const SizedBox(height: 4),
-                  if (match.customerName.isNotEmpty)
+                  if (sameOrderMode)
+                    Text(
+                      'Product #$itemIndexInOrder',
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                      textDirection: TextDirection.ltr,
+                    )
+                  else if (match.customerName.isNotEmpty)
                     Text(
                       '${match.customerName} | ${match.customerMobile}',
                       style: const TextStyle(color: Colors.white54, fontSize: 12),
@@ -1279,6 +1305,16 @@ class _MatchTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _OrderPickerViewItem {
+  final OrderMatch match;
+  final int itemIndexInOrder;
+
+  const _OrderPickerViewItem({
+    required this.match,
+    required this.itemIndexInOrder,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

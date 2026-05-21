@@ -223,6 +223,8 @@ class DatabaseHelper {
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
+        AND COALESCE(i.is_sorted, 0) = 0
+        AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
     ''', [_normalizeSku(sku)]);
     
     return rows.map((r) => LocalOrderMatch(
@@ -236,6 +238,16 @@ class DatabaseHelper {
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
     )).toList();
+  }
+
+  Future<bool> hasAnySkuMatch(String sku) async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) AS c
+      FROM order_items_cache
+      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(sku), '-', ''), ' ', ''), '\t', '')) = ?
+    ''', [_normalizeSku(sku)]);
+    return (result.first['c'] as int? ?? 0) > 0;
   }
 
   Future<void> markItemSorted(int itemId) async {
