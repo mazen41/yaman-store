@@ -97,11 +97,19 @@ class _LoginScreenState extends State<LoginScreen> {
           final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
           final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime);
           if (syncResp.success) {
-            await DatabaseHelper.instance.syncOrdersIncremental(syncResp.orders, syncResp.items);
+            await DatabaseHelper.instance.replaceOrdersCache(syncResp.orders, syncResp.items);
             final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
             await DatabaseHelper.instance.setMetadata('lastSyncTime', syncResp.syncTimestamp.toString());
             await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
+            debugPrint('[Login] sync success: orders=${syncResp.orders.length}, items=${syncResp.items.length}, total=${syncResp.totalOrders}');
             syncOk = true;
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Fetched ${syncResp.totalOrders} total orders', textDirection: TextDirection.ltr),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+              ));
+            }
           }
         } catch (e) {
           debugPrint('[Login] Auto-sync failed: $e');
@@ -531,11 +539,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
           }
       } on UnauthorizedException {
         await ApiService.instance.forceSessionExpiration();
-      } catch (_) {
+      } catch (e) {
         final online = await ApiService.instance.ping();
         if (online) {
           setState(() {
-            _statusMessage = 'تعذر جلب بيانات الطلب من الخادم. حاول المزامنة ثم أعد المحاولة.';
+            _statusMessage = 'تعذر جلب بيانات الطلب من الخادم: $e';
             _statusType = StatusType.error;
           });
           if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
@@ -556,6 +564,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _processSingleLocalMatch(String sku, LocalOrderMatch match, bool canVibrate) async {
+    if (match.status.trim() == 'تم الفرز') {
+      setState(() {
+        _statusMessage = 'هذا الطلب مفروز بالفعل';
+        _statusType = StatusType.warning;
+      });
+      if (canVibrate) Vibration.vibrate(pattern: [0, 180, 80, 180]);
+      return;
+    }
     // Optimistically mark item as sorted in local SQLite database
     await DatabaseHelper.instance.markItemSorted(match.itemId);
     
@@ -639,7 +655,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                       style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     const Text(
-                      'آخر مزامنة ناجحة:',
+                      'آخر مزامنة للطلبات كانت:',
                       style: TextStyle(color: Colors.white60, fontSize: 13),
                     ),
                   ],
@@ -931,7 +947,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             successCount++;
           }
         }
-      } catch (_) {
+      } catch (e) {
         // network interrupted during batch sync
       }
     }
@@ -951,7 +967,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
             // Not found anywhere, delete local dead scan to avoid blocking
             await DatabaseHelper.instance.markSynced(scan.id!);
           }
-        } catch (_) {
+        } catch (e) {
           break; // network disconnected
         }
       }

@@ -86,7 +86,11 @@ try {
             $results[] = [
                 'id' => $id,
                 'success' => false,
-                'message' => "لم يتم العثور على طلب لهذا الرمز: $sku"
+                'message' => "لم يتم العثور على طلب لهذا الرمز: $sku",
+                'requires_selection' => false,
+                'already_scanned' => false,
+                'all_done' => false,
+                'sku' => $sku
             ];
             continue;
         }
@@ -96,6 +100,17 @@ try {
         if (!$alreadyScanned) {
             $updateStmt = $db->prepare("UPDATE order_items SET status = 'scanned', updated_at = NOW() WHERE id = ?");
             $updateStmt->execute([$item['id']]);
+        }
+
+
+        $orderStatusStmt = $db->prepare("SELECT status FROM customer_orders WHERE id = ? LIMIT 1");
+        $orderStatusStmt->execute([$item['order_id']]);
+        $orderStatus = (string)($orderStatusStmt->fetchColumn() ?: '');
+        $orderAlreadySorted = trim($orderStatus) === 'تم الفرز';
+
+        if (!$orderAlreadySorted) {
+            $updateOrderStatusStmt = $db->prepare("UPDATE customer_orders SET status = 'تم الفرز', updated_at = NOW() WHERE id = ?");
+            $updateOrderStatusStmt->execute([$item['order_id']]);
         }
 
         // Insert or update sorting_scans for user stats
@@ -113,7 +128,11 @@ try {
         $results[] = [
             'id' => $id,
             'success' => true,
-            'message' => $alreadyScanned ? 'تم الفرز مسبقاً' : 'تم الفرز بنجاح'
+            'message' => ($orderAlreadySorted || $alreadyScanned) ? 'هذا الطلب مفروز بالفعل' : 'تم الفرز بنجاح',
+            'already_scanned' => ($orderAlreadySorted || $alreadyScanned),
+            'all_done' => false,
+            'requires_selection' => false,
+            'sku' => $sku
         ];
     }
 

@@ -36,7 +36,8 @@ class ScanResponse {
   });
 
   factory ScanResponse.fromJson(Map<String, dynamic> json) {
-    final requiresSel = json['requires_selection'] == true;
+    final hasMatches = (json['matches'] is List && (json['matches'] as List).isNotEmpty);
+    final requiresSel = json['requires_selection'] == true || hasMatches;
     return ScanResponse(
       success: json['success'] == true,
       message: json['message'] ?? '',
@@ -44,11 +45,9 @@ class ScanResponse {
       allDone: json['all_done'] == true,
       requiresSelection: requiresSel,
       sku: (json['sku'] ?? '').toString(),
-      matches: requiresSel
-          ? (json['matches'] as List<dynamic>? ?? [])
-              .map((m) => OrderMatch.fromJson(m as Map<String, dynamic>))
-              .toList()
-          : [],
+      matches: (json['matches'] as List<dynamic>? ?? [])
+          .map((m) => OrderMatch.fromJson(m as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -86,6 +85,7 @@ class SyncOrdersResponse {
   final List<Map<String, dynamic>> orders;
   final List<Map<String, dynamic>> items;
   final int syncTimestamp;
+  final int totalOrders;
 
   SyncOrdersResponse({
     required this.success,
@@ -93,6 +93,7 @@ class SyncOrdersResponse {
     required this.orders,
     required this.items,
     required this.syncTimestamp,
+    required this.totalOrders,
   });
 
   factory SyncOrdersResponse.fromJson(Map<String, dynamic> json) {
@@ -102,6 +103,7 @@ class SyncOrdersResponse {
       success: json['success'] == true,
       message: (json['message'] ?? '').toString(),
       syncTimestamp: int.tryParse(json['sync_timestamp'].toString()) ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000),
+      totalOrders: int.tryParse(json['total_orders'].toString()) ?? ordersRaw.length,
       orders: ordersRaw.map((o) {
         final m = o as Map<String, dynamic>;
         return {
@@ -426,7 +428,7 @@ class ApiService {
       throw UnauthorizedException('انتهت الجلسة. الرجاء تسجيل الدخول مجدداً.');
     }
 
-    throw Exception('فشلت عملية المزامنة من الخادم: ${response.statusCode}');
+    throw Exception('فشلت عملية المزامنة من الخادم: ${response.statusCode} | ${response.body}');
   }
 
   // ── Online Lookup Fallback ───────────────────────────────────────────────
@@ -453,7 +455,7 @@ class ApiService {
       throw UnauthorizedException('انتهت الجلسة.');
     }
 
-    throw Exception('فشل البحث المتصل: ${response.statusCode}');
+    throw Exception('فشل البحث المتصل: ${response.statusCode} | ${response.body}');
   }
 
   // ── Batch Sync Offline Scans ──────────────────────────────────────────────
