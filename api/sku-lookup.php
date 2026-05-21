@@ -92,7 +92,10 @@ try {
 
     ok([
         'sku' => $sku,
+        'requires_selection' => count($matches) > 1,
         'matches' => $matches,
+        'success' => true,
+        'message' => empty($matches) ? 'SKU not found' : 'SKU matched',
         'product' => $product ?: [
             'shein_sku' => $sku,
             'name' => '',

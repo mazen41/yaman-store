@@ -180,7 +180,7 @@ class DatabaseHelper {
         final status = (order['status'] ?? '').toString().toLowerCase();
 
         // If the order status is inactive, purge it from cache to save space
-        if (['cancelled', 'delivered', 'returned', 'refunded', 'completed'].contains(status)) {
+        if (['cancelled', 'delivered', 'returned', 'refunded'].contains(status)) {
           await txn.delete('order_items_cache', where: 'order_id = ?', whereArgs: [orderId]);
           await txn.delete('orders_cache', where: 'order_id = ?', whereArgs: [orderId]);
         } else {
@@ -223,7 +223,6 @@ class DatabaseHelper {
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
-        AND i.is_sorted = 0
     ''', [_normalizeSku(sku)]);
     
     return rows.map((r) => LocalOrderMatch(
