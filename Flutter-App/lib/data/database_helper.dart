@@ -240,6 +240,31 @@ class DatabaseHelper {
     )).toList();
   }
 
+  Future<List<LocalOrderMatch>> findUnsortedOrdersBySku(String sku) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT i.item_id, i.order_id, i.sku, i.product_name, i.product_image,
+             o.order_number, o.customer_name, o.customer_mobile, o.status
+      FROM order_items_cache i
+      JOIN orders_cache o ON o.order_id = i.order_id
+      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
+        AND COALESCE(i.is_sorted, 0) = 0
+        AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
+    ''', [_normalizeSku(sku)]);
+
+    return rows.map((r) => LocalOrderMatch(
+      itemId: r['item_id'] as int,
+      orderId: r['order_id'] as int,
+      sku: (r['sku'] ?? '').toString(),
+      orderNumber: (r['order_number'] ?? '').toString(),
+      customerName: (r['customer_name'] ?? '').toString(),
+      customerMobile: (r['customer_mobile'] ?? '').toString(),
+      status: (r['status'] ?? '').toString(),
+      productName: (r['product_name'] ?? '').toString(),
+      productImage: (r['product_image'] ?? '').toString(),
+    )).toList();
+  }
+
   Future<bool> hasAnySkuMatch(String sku) async {
     final db = await database;
     final result = await db.rawQuery('''

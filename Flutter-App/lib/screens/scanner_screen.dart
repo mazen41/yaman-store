@@ -487,7 +487,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final canVibrate = await Vibration.hasVibrator() ?? false;
     
     // 1. Search local SQLite cache
-    final matches = await DatabaseHelper.instance.findOrdersBySku(sku);
+    final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(sku);
 
     if (matches.isNotEmpty) {
       if (matches.length == 1) {
@@ -501,15 +501,34 @@ class _ScannerScreenState extends State<ScannerScreen> {
           matches.map((m) => OrderMatch(
             itemId: m.itemId, 
             orderId: m.orderId, 
-            orderNumber: m.orderNumber, 
+            orderNumber: m.orderNumber,
             customerName: m.customerName, 
             customerMobile: m.customerMobile, 
-            status: m.status
+            status: m.status,
+            isMultipleSameSku: matches.length > 1 && matches.every((x) => x.orderId == matches.first.orderId),
           )).toList()
         );
         return;
       }
     } else {
+      final knownLocally = await DatabaseHelper.instance.hasAnySkuMatch(sku);
+      if (knownLocally) {
+        setState(() {
+          _statusMessage = 'هذا المنتج مفروز بالفعل';
+          _statusType = StatusType.warning;
+        });
+        if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+        await Future.delayed(const Duration(milliseconds: 2200));
+        if (mounted) {
+          setState(() {
+            _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+            _statusType = StatusType.idle;
+          });
+        }
+        _locked = false;
+        return;
+      }
+
       // 2. Local cache miss — perform online fallback lookup if connected
       try {
         final onlineResponse = await ApiService.instance.onlineSkuLookup(sku);
@@ -530,10 +549,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
               return;
             }
           } else {
-            final knownLocally = await DatabaseHelper.instance.hasAnySkuMatch(sku);
             setState(() {
-              _statusMessage = knownLocally ? 'هذا المنتج مفروز بالفعل' : 'SKU غير موجود في أي طلب';
-              _statusType = knownLocally ? StatusType.warning : StatusType.error;
+              _statusMessage = 'SKU غير موجود في أي طلب';
+              _statusType = StatusType.error;
             });
             if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
           }
@@ -564,14 +582,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _processSingleLocalMatch(String sku, LocalOrderMatch match, bool canVibrate) async {
-    if (match.status.trim() == 'تم الفرز') {
-      setState(() {
-        _statusMessage = 'هذا الطلب مفروز بالفعل';
-        _statusType = StatusType.warning;
-      });
-      if (canVibrate) Vibration.vibrate(pattern: [0, 180, 80, 180]);
-      return;
-    }
     // Optimistically mark item as sorted in local SQLite database
     await DatabaseHelper.instance.markItemSorted(match.itemId);
     
@@ -895,7 +905,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     for (var i = 0; i < unsynced.length; i++) {
       final scan = unsynced[i];
       if (scan.selectedItemId == 0) {
-        final matches = await DatabaseHelper.instance.findOrdersBySku(scan.sku);
+        final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(scan.sku);
         if (matches.length == 1) {
           await DatabaseHelper.instance.updateSelectedItemId(scan.id!, matches.first.itemId);
           unsynced[i] = ScanRecord(
@@ -982,6 +992,43 @@ class _ScannerScreenState extends State<ScannerScreen> {
       _showSnack('تمت المزامنة: $successCount فرز بنجاح. المتبقي: $remaining شحنات');
     } else {
       _showSnack('🎉 تمت مزامنة جميع عمليات الفرز بنجاح!');
+    }
+  }
+
+  Future<void> _forceRefreshOrders() async {
+    final loggedIn = await ApiService.instance.isLoggedIn();
+    if (!loggedIn) {
+      _showSnack('انتهت الجلسة. يرجى تسجيل الدخول.');
+      widget.onLoggedOut?.call();
+      return;
+    }
+
+    final online = await ApiService.instance.ping();
+    if (!online) {
+      _showSnack('تعذر الاتصال بالخادم. يرجى التحقق من اتصالك بالشبكة.');
+      return;
+    }
+
+    try {
+      final resp = await ApiService.instance.syncOrders(updatedAfter: null);
+      if (!resp.success) {
+        _showSnack('فشل تحديث الطلبات من الخادم');
+        return;
+      }
+
+      await DatabaseHelper.instance.replaceOrdersCache(resp.orders, resp.items);
+      final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
+      await DatabaseHelper.instance.setMetadata('lastSyncTime', resp.syncTimestamp.toString());
+      await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
+      await _loadSyncMetadata();
+
+      final cached = await DatabaseHelper.instance.countCachedItems();
+      _showSnack(cached > 0 ? 'تم تحديث الطلبات ✅ ($cached منتج محلياً)' : 'تم تحديث الطلبات — لا طلبات نشطة حالياً');
+    } on UnauthorizedException {
+      await ApiService.instance.forceSessionExpiration();
+      widget.onLoggedOut?.call();
+    } catch (_) {
+      _showSnack('تعذر تحديث الطلبات حالياً، حاول مرة أخرى');
     }
   }
 
@@ -1138,6 +1185,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         ),
                       _StatusBadge(message: _statusMessage, type: _statusType),
                       const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('تحديث الطلبات'),
+                        onPressed: _forceRefreshOrders,
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -1167,16 +1220,18 @@ class _OrderPickerSheet extends StatelessWidget {
   final String sku;
   final List<OrderMatch> matches;
   final void Function(OrderMatch) onSelect;
+  final bool isMultipleSameSku;
 
   const _OrderPickerSheet({
     required this.sku,
     required this.matches,
     required this.onSelect,
+    this.isMultipleSameSku = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bool sameOrder = matches.isNotEmpty && matches.every((m) => m.orderId == matches.first.orderId);
+    final bool sameOrder = isMultipleSameSku || (matches.isNotEmpty && matches.every((m) => m.orderId == matches.first.orderId));
     final Map<int, int> perOrderCounter = {};
     final List<_OrderPickerViewItem> viewItems = matches.map((m) {
       final idx = (perOrderCounter[m.orderId] ?? 0) + 1;
@@ -1203,7 +1258,7 @@ class _OrderPickerSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            sameOrder ? 'يوجد أكثر من منتج بنفس الـ SKU، اختر المنتج المراد فرزه' : 'تم العثور على الباركود في عدة طلبات',
+            sameOrder ? 'يوجد أكثر من منتج بنفس الـ SKU لهذا الطلب، اختر المنتج المراد فرزه' : 'تم العثور على الباركود في عدة طلبات',
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
             textAlign: TextAlign.right,
           ),
@@ -1286,9 +1341,9 @@ class _MatchTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   if (sameOrderMode)
                     Text(
-                      'Product #$itemIndexInOrder',
+                      'منتج #$itemIndexInOrder',
                       style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      textDirection: TextDirection.ltr,
+                      textDirection: TextDirection.rtl,
                     )
                   else if (match.customerName.isNotEmpty)
                     Text(
