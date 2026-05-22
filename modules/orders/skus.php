@@ -90,12 +90,13 @@ if ($page > $total_pages) {
     $offset = ($page - 1) * $per_page;
 }
 
-$orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, o.customer_name, o.status, COUNT(oi.id) AS missing_items_count
+$orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COALESCE(c.name, '') AS customer_name, o.status, COUNT(oi.id) AS missing_items_count
     FROM customer_orders o
+    LEFT JOIN customers c ON o.customer_id = c.id
     INNER JOIN order_items oi ON oi.order_id = o.id
     WHERE TRIM(COALESCE(oi.shein_sku, '')) = ''
     $where_extra
-    GROUP BY o.id, o.order_number, o.created_at, o.customer_name, o.status
+    GROUP BY o.id, o.order_number, o.created_at, c.name, o.status
     ORDER BY o.id DESC
     LIMIT " . (int)$per_page . " OFFSET " . (int)$offset);
 $orders_stmt->execute($params_fetch);
