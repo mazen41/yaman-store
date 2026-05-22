@@ -92,8 +92,6 @@ if (!empty($order_ids)) {
             oi.order_id,
             oi.product_name,
             oi.quantity,
-            oi.size,
-            oi.color,
             oi.shein_sku
         FROM order_items oi
         WHERE oi.order_id IN ($placeholders)
@@ -156,7 +154,6 @@ include '../../includes/header.php';
                                 <div id="row-<?php echo (int)$item['id']; ?>" class="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                                     <div class="min-w-0 flex-1">
                                         <div class="font-medium text-slate-800 text-sm truncate"><?php echo htmlspecialchars($item['product_name'] ?: 'بدون اسم منتج'); ?></div>
-                                        <div class="text-xs text-slate-600 mt-1">#<?php echo (int)$item['id']; ?> · Qty: <?php echo (int)($item['quantity'] ?? 0); ?><?php if (!empty($item['size'])): ?> · Size: <?php echo htmlspecialchars($item['size']); ?><?php endif; ?><?php if (!empty($item['color'])): ?> · Color: <?php echo htmlspecialchars($item['color']); ?><?php endif; ?></div>
                                     </div>
                                     <div class="flex items-center gap-2 w-full sm:w-auto">
                                         <input type="text" class="sku-input flex-1 sm:w-40 h-9 border border-slate-300 rounded-md px-2 text-sm dir-ltr focus:ring-2 focus:ring-blue-300 focus:border-blue-500" data-item-id="<?php echo (int)$item['id']; ?>" data-order-id="<?php echo $oid; ?>" data-index="<?php echo $idx; ?>" placeholder="Enter SKU">
