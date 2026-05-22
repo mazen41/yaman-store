@@ -760,6 +760,18 @@ include '../../includes/header.php';
                                 </div>
                                 <div class="total-row"><span><i class="fas fa-receipt"></i>مبلغ الضريبة</span><span
                                         id="taxAmountDisplay">0.00 YER</span></div>
+
+                                <div class="total-row" style="background:#f8fafc; border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem;">
+                                    <span><i class="fas fa-coins"></i>عرض القيم حسب العملة</span>
+                                    <span style="font-size: 12px; color: #6b7280;">1 SAR = 140 YER</span>
+                                </div>
+                                <div class="total-row"><span>المجموع قبل الخصم</span><span id="subtotalCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>تكلفة الشحن</span><span id="shippingCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>مبلغ الضريبة</span><span id="taxCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>خصم يدوي</span><span id="manualDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>خصم نقاط</span><span id="pointsDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>خصم نادي</span><span id="clubDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>إجمالي الخصومات</span><span id="totalDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
                                 <hr style="border-color: var(--border-color); margin: 1rem 0;">
 
                                 <!-- DISCOUNT SECTION -->
