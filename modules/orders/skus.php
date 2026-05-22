@@ -57,7 +57,7 @@ $offset = ($page - 1) * $per_page;
 
 // FIX 1: Add the INNER JOIN to the count query so it matches the fetch query exactly.
 $total_orders_stmt = $db->query("SELECT COUNT(DISTINCT o.id)
-    FROM orders o
+    FROM customer_orders o
     INNER JOIN order_items oi ON oi.order_id = o.id
     WHERE TRIM(COALESCE(oi.shein_sku, '')) = ''");
 $total_orders = (int)$total_orders_stmt->fetchColumn();
@@ -71,7 +71,7 @@ if ($page > $total_pages) {
 // FIX 2: Directly inject integer-casted values into LIMIT and OFFSET 
 // to prevent the common PDO string-binding syntax error.
 $orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COUNT(oi.id) AS missing_items_count
-    FROM orders o
+    FROM customer_orders o
     INNER JOIN order_items oi ON oi.order_id = o.id
     WHERE TRIM(COALESCE(oi.shein_sku, '')) = ''
     GROUP BY o.id, o.order_number, o.created_at
