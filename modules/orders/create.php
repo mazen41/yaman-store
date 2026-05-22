@@ -351,8 +351,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
                 foreach ($shein_items as $index => $shein_item) {
                     $sku = sheinNormalizeSku($shein_item['sku'] ?? '');
+                    $fallback_name = 'منتج SHEIN #' . ($index + 1);
+
                     if ($sku === '') {
-                        throw new Exception('يرجى إدخال SKU لمنتج SHEIN رقم ' . ($index + 1));
+                        $shein_item_stmt->execute([
+                            $order_id,
+                            $fallback_name,
+                            null,
+                            null,
+                            $notes,
+                            null,
+                            'available',
+                        ]);
+                        continue;
                     }
 
                     $product_data = sheinExtractProductDataBySku($sku);
