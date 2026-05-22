@@ -12,6 +12,13 @@ $page_title = 'تقرير بطاقات الشراء';
 $start_date = $_GET['start_date'] ?? '';
 $end_date = $_GET['end_date'] ?? '';
 
+if ($start_date === '' || $end_date === '') {
+    $rangeStmt = $db->query("SELECT DATE(MIN(created_at)) as min_date, DATE(MAX(created_at)) as max_date FROM purchase_cards");
+    $range = $rangeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $start_date = $start_date !== '' ? $start_date : ($range['min_date'] ?? '');
+    $end_date = $end_date !== '' ? $end_date : ($range['max_date'] ?? '');
+}
+
 // Optional filter by purchase card name
 $card_name_filter = trim($_GET['card_name'] ?? '');
 
@@ -27,7 +34,8 @@ $query = "
         pc.initial_balance as total_added,
         pc.created_at,
         COUNT(DISTINCT pb.id) as transactions_count,
-        COALESCE(SUM(pb.final_amount), 0) as total_used
+        COALESCE(SUM(pb.final_amount), 0) as total_used,
+        (COALESCE(pc.card_purchase_amount,0) - COALESCE(pc.initial_balance,0)) as profit_amount
     FROM purchase_cards pc
     LEFT JOIN purchase_baskets pb ON pc.id = pb.payment_source_id
         AND pb.payment_source_type = 'purchase_card'
@@ -64,6 +72,7 @@ try {
     $total_added = array_sum(array_column($cards, 'total_added'));
     $total_purchase = array_sum(array_column($cards, 'card_purchase_amount')); // Corrected this line
     $total_transactions = array_sum(array_column($cards, 'transactions_count'));
+    $avg_profit_percentage = 0;
 
 } catch (PDOException $e) {
     $error = $e->getMessage();
@@ -109,6 +118,7 @@ include '../../includes/header.php';
 
     .data-table {
         background: white;
+        touch-action: pan-x;
         border-radius: 12px;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         overflow-x: auto !important;
@@ -121,7 +131,7 @@ include '../../includes/header.php';
 
     .data-table table {
         width: 100%;
-        min-width: 1200px; /* Forces horizontal scroll on smaller screens */
+        min-width: 1300px; /* Forces horizontal scroll on smaller screens */
         border-collapse: collapse;
         display: table; /* Ensures table rendering */
         table-layout: auto;
@@ -428,6 +438,7 @@ include '../../includes/header.php';
                         <th>الرصيد الحالي</th>
                         <th>مبلغ الشراء</th>
                         <th>المبلغ المستخدم</th>
+                                    <th>نسبة الربح %</th>
                         <th>المبلغ المضاف</th>
                         <th>عدد المعاملات</th>
                         <th>تاريخ الإنشاء</th>
