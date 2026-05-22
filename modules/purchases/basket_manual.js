@@ -10,7 +10,7 @@
  * - NEW: No specific JS changes needed for multiple file upload itself, as browser handles input.
  */
 
-console.log('🚀 Basket Manual JS Loaded (v4.4)');
+console.log('🚀 Basket Manual JS Loaded (v4.5)');
 
 // ============================================
 // INITIALIZATION
@@ -214,6 +214,16 @@ function updateTotals() {
     document.getElementById('taxAmountDisplay').textContent = formatMoney(taxAmount);
     document.getElementById('grandTotalDisplay').textContent = formatMoney(grandTotal);
 
+    // Currency displays (display only; no impact on submitted values)
+    const exchangeRate = 140; // 1 SAR = 140 YER
+    setCurrencyDisplay('subtotalCurrencyDisplay', subtotal, exchangeRate);
+    setCurrencyDisplay('shippingCurrencyDisplay', shippingCost, exchangeRate);
+    setCurrencyDisplay('taxCurrencyDisplay', taxAmount, exchangeRate);
+    setCurrencyDisplay('manualDiscountCurrencyDisplay', manualDiscount, exchangeRate);
+    setCurrencyDisplay('pointsDiscountCurrencyDisplay', pointsDiscount, exchangeRate);
+    setCurrencyDisplay('clubDiscountCurrencyDisplay', clubDiscount, exchangeRate);
+    setCurrencyDisplay('totalDiscountCurrencyDisplay', totalDiscount, exchangeRate);
+
     // --- NEW: Automatically fill the final price input with the grand total ---
     // The field remains editable for manual overrides.
     document.getElementById('final_price_override').value = grandTotal.toFixed(2);
@@ -239,4 +249,19 @@ function formatMoney(amount) {
 
     // 'en-US' locale uses standard Western Arabic numerals (0, 1, 2...)
     return new Intl.NumberFormat('en-US', options).format(parseFloat(amount)) + ' YER';
+}
+
+function setCurrencyDisplay(elementId, yerAmount, exchangeRate) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    const sarAmount = yerAmount / exchangeRate;
+    element.textContent = `${formatSarMoney(sarAmount)} | ${formatMoney(yerAmount)}`;
+}
+
+function formatSarMoney(amount) {
+    if (amount === null || isNaN(amount)) return '0.00 SAR';
+    return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(parseFloat(amount)) + ' SAR';
 }
