@@ -600,6 +600,11 @@ $generated_id = 'CALC-' . time();
             '{REMAINING_YR}': remaining_yr_display
         };
 
+        if (!hasPaidInput) {
+            // Keep paid/remaining placeholders empty when no paid amount is entered
+            template = template.replace(/\{PAID_YR\}|\{AMOUNT_PAID\}|\{AMOUNT_PAID_YR\}|\{REMAINING_YR\}/g, "");
+        }
+
         let finalMsg = template;
         for (const key in replacements) {
             finalMsg = finalMsg.replace(new RegExp(key, 'g'), replacements[key]);
@@ -612,6 +617,8 @@ $generated_id = 'CALC-' . time();
             setTimeout(() => { toast.style.display = 'none'; }, 2500);
         });
     }
+
+    window.addEventListener('load', () => { clearFields(); });
 
     function clearFields() {
         document.getElementById('percentage').value = defaultPercentage; 

@@ -42,7 +42,7 @@ $sidebar_modules = [
     ['name' => 'طلبات المتجر', 'icon' => 'fas fa-shopping-basket', 'key' => 'shop_orders'],
     ['name' => 'سلايدر المنتجات', 'icon' => 'fas fa-images', 'key' => 'product_slides'],
     ['name' => 'المراجعة المالية', 'icon' => 'fas fa-file-invoice-dollar', 'key' => 'financial_review'],
-    ['name' => 'نسخ الرسائل', 'icon' => 'fas fa-calculator', 'key' => 'calculations'], // Calculations module
+    ['name' => 'حاسبه يمان', 'icon' => 'fas fa-calculator', 'key' => 'calculations'], // Calculations module
     ['name' => 'مجموعات الشراء', 'icon' => 'fas fa-layer-group', 'key' => 'purchase_groups'],
     ['name' => 'سلات الشراء', 'icon' => 'fas fa-shopping-basket', 'key' => 'baskets'],
     ['name' => 'بطاقات الشراء', 'icon' => 'fas fa-credit-card', 'key' => 'purchase_cards'],

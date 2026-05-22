@@ -210,7 +210,7 @@ try {
 
     // 2. Fetch related purchase baskets (COST)
     $baskets_stmt = $db->prepare("
-        SELECT pb.id, pb.basket_code, pb.basket_name, pb.final_amount, pb.status, pb.created_at,
+        SELECT pb.id, pb.basket_code, pb.basket_name, pb.final_amount, pb.status, pbs.status_name_ar, pb.created_at,
                pb.purchase_date,
                pb.subtotal_amount,
                pb.account_number,
@@ -218,6 +218,7 @@ try {
                (SELECT SUM(bi.quantity) FROM basket_items bi WHERE bi.basket_id = pb.id) as total_quantity,
                (SELECT GROUP_CONCAT(tracking_number SEPARATOR ', ') FROM basket_tracking WHERE basket_id = pb.id) AS tracking_numbers
         FROM purchase_baskets pb
+        LEFT JOIN purchase_basket_statuses pbs ON pb.status = pbs.status_key
         WHERE pb.purchase_group_id = ?
         ORDER BY pb.created_at DESC
     ");
@@ -439,7 +440,7 @@ include '../../../includes/header.php';
                                             't' => 'ترانزيت' // معالجة حالة حرف T
                                         ]; 
                                         $raw_status = strtolower(trim($basket['status'] ?? ''));
-                                        $display_status = $st[$raw_status] ?? $basket['status'];
+                                        $display_status = $basket['status_name_ar'] ?? ($st[$raw_status] ?? $basket['status']);
                                         ?>
                                         <span class="px-3 py-1 text-xs font-bold rounded-full bg-amber-100 text-amber-800">
                                             <?php echo htmlspecialchars($display_status); ?>

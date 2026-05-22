@@ -551,8 +551,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                     <thead class="bg-gray-50">
                         <tr>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">رقم الطلب</th>
-                            <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">تاريخ الطلب</th>
-                            <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">عدد القطع</th>
+                                                        <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">عدد القطع</th>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">رابط الطلب</th>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">رابط إضافي</th>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">الحالة</th>
@@ -563,14 +562,13 @@ if ($customer['enable_create_self_order'] === 'active') {
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">المبلغ النهائي</th>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">المدفوع</th>
                             <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">المتبقي</th>
-                            <th class="px-4 py-3 whitespace-nowrap text-xs font-medium text-gray-500 uppercase">رقم الفاتورة</th>
-                            <th class="px-4 py-3 whitespace-nowrap text-center text-xs font-medium text-gray-500 uppercase">الإجراءات</th>
+                                                        <th class="px-4 py-3 whitespace-nowrap text-center text-xs font-medium text-gray-500 uppercase">الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody id="ordersTableBody" class="bg-white divide-y divide-gray-200">
                         <?php if (empty($orders)): ?>
                             <tr>
-                                <td colspan="15" class="px-4 py-8 text-center text-gray-500">لا توجد طلبات مسجلة حتى الآن</td>
+                                <td colspan="13" class="px-4 py-8 text-center text-gray-500">لا توجد طلبات مسجلة حتى الآن</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($orders as $order): 
@@ -585,7 +583,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                             <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($display_status_key); ?>">
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <div class="flex items-center gap-2">
-                                        <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a>
+                                        <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a><div class="text-xs text-gray-400 mt-1"><?php echo date('Y-m-d', strtotime($order['created_at'])); ?></div>
                                         <?php if (!empty($order['is_self_order'])): ?>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="طلب ذاتي (من نظام المراجعة)">
                                                 <i class="fas fa-user-edit ml-1"></i> ذاتي
@@ -593,8 +591,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                         <?php endif; ?>
                                     </div>
                                 </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600"><?php echo date('Y-m-d', strtotime($order['created_at'])); ?></td>
-                                <td class="px-4 py-3 whitespace-nowrap text-center font-bold text-gray-900"><?php echo number_format($order['total_quantity']); ?></td>
+                                                                <td class="px-4 py-3 whitespace-nowrap text-center font-bold text-gray-900"><?php echo number_format($order['total_quantity']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <?php
                                     $pLink = !empty(trim($order['order_link'] ?? '')) ? trim($order['order_link']) : trim($order['first_product_link'] ?? '');
@@ -630,8 +627,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-emerald-600"><?php echo number_format($order['final_amount']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-600"><?php echo number_format($order['paid_amount']); ?></td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold <?php echo $remaining > 0.01 ? 'text-red-600' : 'text-green-600'; ?>"><?php echo number_format($remaining); ?></td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600"><?php echo !empty($order['invoice_numbers']) ? $order['invoice_numbers'] : '<span class="text-gray-400 italic">بانتظار الفاتورة</span>'; ?></td>
-                                <td class="px-4 py-3 whitespace-nowrap text-center">
+                                                                <td class="px-4 py-3 whitespace-nowrap text-center">
                                     <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" 
                                        class="inline-flex items-center justify-center px-4 py-2 bg-[#C7A46D] hover:bg-[#B8956A] text-white text-sm font-bold rounded-lg transition-all shadow-sm w-24">
                                        <i class="fas fa-eye ml-2"></i>
@@ -645,9 +641,9 @@ if ($customer['enable_create_self_order'] === 'active') {
                     <?php if (!empty($orders)): ?>
                     <tfoot class="bg-gray-100 font-bold border-t-2 border-gray-300">
                         <tr>
-                            <td colspan="2" class="px-4 py-3 whitespace-nowrap">الإجمالي العام</td>
+                            <td class="px-4 py-3 whitespace-nowrap">الإجمالي العام</td>
                             <td class="px-4 py-3 text-center whitespace-nowrap"><?php echo number_format($total_quantity); ?></td>
-                            <td colspan="3"></td>
+                            <td colspan="2"></td>
                             <td class="px-4 py-3 whitespace-nowrap text-blue-500"><?php echo number_format($total_subtotal); ?></td>
                             <td class="px-4 py-3 whitespace-nowrap text-green-500"><?php echo number_format($total_discount); ?></td>
                             <td></td>
@@ -655,7 +651,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                             <td class="px-4 py-3 whitespace-nowrap text-emerald-600"><?php echo number_format($total_final); ?></td>
                             <td class="px-4 py-3 whitespace-nowrap text-blue-600"><?php echo number_format($total_paid); ?></td>
                             <td class="px-4 py-3 whitespace-nowrap text-red-600"><?php echo number_format($total_remaining); ?></td>
-                            <td colspan="2"></td>
+                            <td></td>
                         </tr>
                     </tfoot>
                     <?php endif; ?>

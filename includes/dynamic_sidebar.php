@@ -37,7 +37,7 @@ $all_sidebar_modules = [
     'section' => 'modules',
 ],
 [
-    'name'    => 'نسخ الرسائل',
+    'name'    => 'حاسبه يمان',
     'route'   => '/modules/customer_text/copying.php',
     'icon'    => 'fas fa-copy',
     'key'     => 'calculations',
