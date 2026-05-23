@@ -50,6 +50,9 @@ try {
         case 'next_pending':
             handle_next_pending($db);
             break;
+        case 'sort_purchase_group':
+            handle_sort_purchase_group($db);
+            break;
         default:
             throw new InvalidArgumentException("إجراء غير معروف: $action");
     }
@@ -214,6 +217,46 @@ function handle_next_pending(PDO $db): void
 
     $next = get_next_pending($db, $orderId, 0);
     echo json_encode(['success' => true, 'next_item' => $next], JSON_UNESCAPED_UNICODE);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTION: SORT PURCHASE GROUP — bulk sort all pending items in selected group
+// ═══════════════════════════════════════════════════════════════════════════
+function handle_sort_purchase_group(PDO $db): void
+{
+    $purchaseGroupId = (int) ($_POST['purchase_group_id'] ?? $_GET['purchase_group_id'] ?? 0);
+    if ($purchaseGroupId <= 0) {
+        throw new InvalidArgumentException('purchase_group_id غير صالح');
+    }
+
+    $countStmt = $db->prepare("
+        SELECT COUNT(*) AS total_pending
+        FROM order_items oi
+        JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
+        WHERE oi.status != 'scanned'
+          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+    ");
+    $countStmt->execute([$purchaseGroupId]);
+    $before = (int) (($countStmt->fetch(PDO::FETCH_ASSOC)['total_pending'] ?? 0));
+
+    $updateStmt = $db->prepare("
+        UPDATE order_items oi
+        JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
+        SET oi.status = 'scanned', oi.updated_at = NOW()
+        WHERE oi.status != 'scanned'
+          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+    ");
+    $updateStmt->execute([$purchaseGroupId]);
+    $sortedItems = (int) $updateStmt->rowCount();
+
+    echo json_encode([
+        'success' => true,
+        'sorted_items' => $sortedItems,
+        'pending_before' => $before,
+        'message' => 'تم فرز جميع منتجات مجموعة الشراء المحددة بنجاح',
+    ], JSON_UNESCAPED_UNICODE);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
