@@ -257,6 +257,25 @@ include '../../includes/header.php';
             <i class="fas fa-barcode scan-input-icon"></i>
           </div>
 
+          <div>
+            <label for="purchaseGroupSelect" style="display:block;font-size:.82rem;font-weight:700;color:var(--sort-muted);margin-bottom:6px;">فلتر مجموعة الشراء (اختياري)</label>
+            <select id="purchaseGroupSelect" class="scan-input" style="direction:rtl;text-align:right;font-family:'Tajawal',sans-serif;letter-spacing:0;padding:12px 14px;">
+              <option value="">كل المجموعات</option>
+              <?php
+              try {
+                  $groupsStmt = $db->query("SELECT id, group_name, group_number FROM purchase_groups ORDER BY created_at DESC LIMIT 500");
+                  foreach ($groupsStmt->fetchAll(PDO::FETCH_ASSOC) as $pgRow) {
+                      $gLabel = trim(($pgRow['group_number'] ?? '') . ' - ' . ($pgRow['group_name'] ?? ''));
+                      if ($gLabel === '-') { $gLabel = 'مجموعة #' . (int)$pgRow['id']; }
+                      echo '<option value="' . (int)$pgRow['id'] . '">' . htmlspecialchars($gLabel) . '</option>';
+                  }
+              } catch (Throwable $e) {
+                  // keep dropdown with default option only if table is not available
+              }
+              ?>
+            </select>
+          </div>
+
           <div id="sortSpinner" class="sort-spinner">
             <div class="ring"></div>
             <span>جاري البحث عن المنتج...</span>
@@ -461,6 +480,7 @@ const state = {
   lastScanVal   : '',
   lastScanAt    : 0,
   camStream     : null,   // active MediaStream (no auto-interval)
+  purchaseGroupId: '',
 };
 
 const $ = id => document.getElementById(id);
@@ -468,6 +488,7 @@ const scanInput   = $('scanInput');
 const spinner     = $('sortSpinner');
 const msgEl       = $('sortMsg');
 const inputStatus = $('inputStatus');
+const purchaseGroupSelect = $('purchaseGroupSelect');
 const emptyState  = $('emptyState');
 const resultArea  = $('resultArea');
 
@@ -526,7 +547,7 @@ async function doScan(value, selectedItemId) {
     const res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId,
+      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId + '&purchase_group_id=' + encodeURIComponent(state.purchaseGroupId || ''),
     });
     const data = await res.json();
 
@@ -827,6 +848,14 @@ async function doOcrCapture() {
 // ══════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
   scanInput.focus();
+
+  if (purchaseGroupSelect) {
+    purchaseGroupSelect.addEventListener('change', function() {
+      state.purchaseGroupId = this.value || '';
+      $('skuPickWrap').style.display = 'none';
+      hideMsg();
+    });
+  }
 
   scanInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); doScan(scanInput.value); }
