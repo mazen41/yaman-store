@@ -257,6 +257,28 @@ include '../../includes/header.php';
             <i class="fas fa-barcode scan-input-icon"></i>
           </div>
 
+          <div>
+            <label for="purchaseGroupSelect" style="display:block;font-size:.82rem;font-weight:700;color:var(--sort-muted);margin-bottom:6px;">فلتر مجموعة الشراء (اختياري)</label>
+            <input id="purchaseGroupSearch" type="text" class="scan-input"
+                   placeholder="ابحث باسم/رقم المجموعة..."
+                   style="direction:rtl;text-align:right;font-family:'Tajawal',sans-serif;letter-spacing:0;padding:12px 14px;margin-bottom:8px;">
+            <select id="purchaseGroupSelect" class="scan-input" style="direction:rtl;text-align:right;font-family:'Tajawal',sans-serif;letter-spacing:0;padding:12px 14px;">
+              <option value="">كل المجموعات</option>
+              <?php
+              try {
+                  $groupsStmt = $db->query("SELECT id, group_name, group_number FROM purchase_groups ORDER BY created_at DESC LIMIT 500");
+                  foreach ($groupsStmt->fetchAll(PDO::FETCH_ASSOC) as $pgRow) {
+                      $gLabel = trim(($pgRow['group_number'] ?? '') . ' - ' . ($pgRow['group_name'] ?? ''));
+                      if ($gLabel === '-') { $gLabel = 'مجموعة #' . (int)$pgRow['id']; }
+                      echo '<option value="' . (int)$pgRow['id'] . '">' . htmlspecialchars($gLabel) . '</option>';
+                  }
+              } catch (Throwable $e) {
+                  // keep dropdown with default option only if table is not available
+              }
+              ?>
+            </select>
+          </div>
+
           <div id="sortSpinner" class="sort-spinner">
             <div class="ring"></div>
             <span>جاري البحث عن المنتج...</span>
@@ -273,6 +295,9 @@ include '../../includes/header.php';
           <div style="display:flex;gap:8px;">
             <button id="btnScan" type="button" class="s-btn s-btn-primary" style="flex:1;">
               <i class="fas fa-search"></i> بحث وفرز
+            </button>
+            <button id="btnSortGroup" type="button" class="s-btn s-btn-green" style="flex:1;">
+              <i class="fas fa-layer-group"></i> Sort
             </button>
             <button id="btnClear" type="button" class="s-btn s-btn-muted s-btn-sm">
               <i class="fas fa-times"></i>
@@ -461,6 +486,7 @@ const state = {
   lastScanVal   : '',
   lastScanAt    : 0,
   camStream     : null,   // active MediaStream (no auto-interval)
+  purchaseGroupId: '',
 };
 
 const $ = id => document.getElementById(id);
@@ -468,6 +494,8 @@ const scanInput   = $('scanInput');
 const spinner     = $('sortSpinner');
 const msgEl       = $('sortMsg');
 const inputStatus = $('inputStatus');
+const purchaseGroupSearch = $('purchaseGroupSearch');
+const purchaseGroupSelect = $('purchaseGroupSelect');
 const emptyState  = $('emptyState');
 const resultArea  = $('resultArea');
 
@@ -500,6 +528,45 @@ function showMsg(text, type) {
 }
 function hideMsg() { msgEl.style.display = 'none'; }
 
+function filterPurchaseGroups() {
+  if (!purchaseGroupSelect || !purchaseGroupSearch) return;
+  const needle = (purchaseGroupSearch.value || '').trim().toLowerCase();
+  Array.from(purchaseGroupSelect.options).forEach(function(opt, idx) {
+    if (idx === 0) { opt.hidden = false; return; }
+    const txt = (opt.textContent || '').toLowerCase();
+    opt.hidden = needle ? txt.indexOf(needle) === -1 : false;
+  });
+}
+
+async function doSortPurchaseGroup() {
+  const groupId = parseInt(state.purchaseGroupId || '0', 10);
+  if (!groupId) {
+    showMsg('اختر مجموعة شراء أولاً ثم اضغط Sort', 'warning');
+    return;
+  }
+  if (!confirm('سيتم فرز جميع المنتجات غير المفروزة في هذه المجموعة. هل تريد المتابعة؟')) return;
+  try {
+    spinner.style.display = 'flex';
+    const res = await fetch('ajax_scan.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'action=sort_purchase_group&purchase_group_id=' + encodeURIComponent(groupId),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'فشل فرز المجموعة');
+    showMsg(data.message || 'تم فرز المجموعة بنجاح', 'success');
+    if (typeof data.sorted_items !== 'undefined') {
+      $('hdrScanned').textContent = parseInt($('hdrScanned').textContent || '0', 10) + parseInt(data.sorted_items || 0, 10);
+    }
+    beep('success');
+  } catch (err) {
+    showMsg(err.message || 'حدث خطأ أثناء الفرز', 'error');
+    beep('error');
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CORE SCAN
 // ══════════════════════════════════════════════════════════════════════════════
@@ -526,7 +593,7 @@ async function doScan(value, selectedItemId) {
     const res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId,
+      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId + '&purchase_group_id=' + encodeURIComponent(state.purchaseGroupId || ''),
     });
     const data = await res.json();
 
@@ -828,6 +895,17 @@ async function doOcrCapture() {
 document.addEventListener('DOMContentLoaded', function() {
   scanInput.focus();
 
+  if (purchaseGroupSelect) {
+    purchaseGroupSelect.addEventListener('change', function() {
+      state.purchaseGroupId = this.value || '';
+      $('skuPickWrap').style.display = 'none';
+      hideMsg();
+    });
+  }
+  if (purchaseGroupSearch) {
+    purchaseGroupSearch.addEventListener('input', filterPurchaseGroups);
+  }
+
   scanInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') { e.preventDefault(); doScan(scanInput.value); }
   });
@@ -837,6 +915,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   $('btnScan').addEventListener('click', function() { doScan(scanInput.value); });
+  $('btnSortGroup').addEventListener('click', doSortPurchaseGroup);
   $('btnClear').addEventListener('click', function() {
     scanInput.value = ''; hideMsg(); scanInput.focus();
     inputStatus.textContent = 'جاهز'; inputStatus.className = 's-badge other';

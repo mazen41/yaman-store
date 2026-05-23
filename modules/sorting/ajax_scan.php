@@ -50,6 +50,9 @@ try {
         case 'next_pending':
             handle_next_pending($db);
             break;
+        case 'sort_purchase_group':
+            handle_sort_purchase_group($db);
+            break;
         default:
             throw new InvalidArgumentException("إجراء غير معروف: $action");
     }
@@ -111,7 +114,8 @@ function handle_scan(PDO $db): void
 
     // ── Find order item ──────────────────────────────────────────────────────
     $selectedItemId = (int) ($_POST['selected_item_id'] ?? 0);
-    $matches = find_order_items_by_sku($db, $sku);
+    $purchaseGroupId = (int) ($_POST['purchase_group_id'] ?? $_GET['purchase_group_id'] ?? 0);
+    $matches = find_order_items_by_sku($db, $sku, $purchaseGroupId);
     if (count($matches) > 1 && $selectedItemId <= 0) {
         $selectionList = array_map(static function ($it) {
             return [
@@ -133,7 +137,7 @@ function handle_scan(PDO $db): void
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         return;
     }
-    $item = find_order_item($db, $sku, $selectedItemId);
+    $item = find_order_item($db, $sku, $selectedItemId, $purchaseGroupId);
 
     if (!$item) {
         $msg = $product
@@ -216,10 +220,50 @@ function handle_next_pending(PDO $db): void
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ACTION: SORT PURCHASE GROUP — bulk sort all pending items in selected group
+// ═══════════════════════════════════════════════════════════════════════════
+function handle_sort_purchase_group(PDO $db): void
+{
+    $purchaseGroupId = (int) ($_POST['purchase_group_id'] ?? $_GET['purchase_group_id'] ?? 0);
+    if ($purchaseGroupId <= 0) {
+        throw new InvalidArgumentException('purchase_group_id غير صالح');
+    }
+
+    $countStmt = $db->prepare("
+        SELECT COUNT(*) AS total_pending
+        FROM order_items oi
+        JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
+        WHERE oi.status != 'scanned'
+          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+    ");
+    $countStmt->execute([$purchaseGroupId]);
+    $before = (int) (($countStmt->fetch(PDO::FETCH_ASSOC)['total_pending'] ?? 0));
+
+    $updateStmt = $db->prepare("
+        UPDATE order_items oi
+        JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
+        SET oi.status = 'scanned', oi.updated_at = NOW()
+        WHERE oi.status != 'scanned'
+          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+    ");
+    $updateStmt->execute([$purchaseGroupId]);
+    $sortedItems = (int) $updateStmt->rowCount();
+
+    echo json_encode([
+        'success' => true,
+        'sorted_items' => $sortedItems,
+        'pending_before' => $before,
+        'message' => 'تم فرز جميع منتجات مجموعة الشراء المحددة بنجاح',
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function find_order_item(PDO $db, string $sku, int $selectedItemId = 0): ?array
+function find_order_item(PDO $db, string $sku, int $selectedItemId = 0, int $purchaseGroupId = 0): ?array
 {
     if ($selectedItemId > 0) {
         $stmt = $db->prepare("
@@ -236,11 +280,13 @@ function find_order_item(PDO $db, string $sku, int $selectedItemId = 0): ?array
                 c.whatsapp_number AS customer_whatsapp
             FROM order_items oi
             JOIN customer_orders co ON co.id = oi.order_id
+            LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
             LEFT JOIN customers c ON c.id = co.customer_id
             WHERE oi.id = ? AND oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+              AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
             LIMIT 1
         ");
-        $stmt->execute([$selectedItemId, $sku]);
+        $stmt->execute([$selectedItemId, $sku, $purchaseGroupId, $purchaseGroupId]);
         return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
 
@@ -258,18 +304,20 @@ function find_order_item(PDO $db, string $sku, int $selectedItemId = 0): ?array
             c.whatsapp_number AS customer_whatsapp
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         LEFT JOIN customers c ON c.id = co.customer_id
         WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+          AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
         ORDER BY
             CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END,
             oi.id ASC
         LIMIT 1
     ");
-    $stmt->execute([$sku]);
+    $stmt->execute([$sku, $purchaseGroupId, $purchaseGroupId]);
     return $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
 }
 
-function find_order_items_by_sku(PDO $db, string $sku): array
+function find_order_items_by_sku(PDO $db, string $sku, int $purchaseGroupId = 0): array
 {
     $stmt = $db->prepare("
         SELECT
@@ -277,11 +325,13 @@ function find_order_items_by_sku(PDO $db, string $sku): array
             c.name AS customer_name, c.mobile_number AS customer_mobile
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         LEFT JOIN customers c ON c.id = co.customer_id
         WHERE oi.shein_sku COLLATE utf8mb4_unicode_ci = ? COLLATE utf8mb4_unicode_ci
+          AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
         ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
     ");
-    $stmt->execute([$sku]);
+    $stmt->execute([$sku, $purchaseGroupId, $purchaseGroupId]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
