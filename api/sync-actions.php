@@ -44,6 +44,7 @@ try {
         $rawSku = trim($scan['sku'] ?? '');
         $selectedItemId = (int)($scan['selected_item_id'] ?? 0);
         $timestamp = $scan['timestamp'] ?? time();
+        $purchaseGroupId = (int)($scan['purchase_group_id'] ?? 0);
 
         if (empty($rawSku)) {
             $results[] = [
@@ -63,22 +64,28 @@ try {
             $stmt = $db->prepare("
                 SELECT oi.id, oi.order_id, oi.status
                 FROM order_items oi
+                JOIN customer_orders co ON co.id = oi.order_id
+                LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
                 WHERE oi.id = ?
                   AND UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
+                  AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
                 LIMIT 1
             ");
-            $stmt->execute([$selectedItemId, $sku]);
+            $stmt->execute([$selectedItemId, $sku, $purchaseGroupId, $purchaseGroupId]);
             $item = $stmt->fetch(PDO::FETCH_ASSOC);
         } else {
             // Try to find the first pending order item matching the SKU
             $stmt = $db->prepare("
                 SELECT oi.id, oi.order_id, oi.status
                 FROM order_items oi
+                JOIN customer_orders co ON co.id = oi.order_id
+                LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
                 WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
+                  AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
                 ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
                 LIMIT 1
             ");
-            $stmt->execute([$sku]);
+            $stmt->execute([$sku, $purchaseGroupId, $purchaseGroupId]);
             $item = $stmt->fetch(PDO::FETCH_ASSOC);
         }
 

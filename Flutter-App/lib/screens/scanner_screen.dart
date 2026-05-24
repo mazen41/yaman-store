@@ -282,6 +282,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   // Tracks pending count so badge refreshes properly
   int _pendingCount = 0;
+  int _selectedPurchaseGroupId = 0;
+  String _selectedPurchaseGroupLabel = 'كل المجموعات';
+  List<Map<String, dynamic>> _purchaseGroups = [];
 
   // Periodic timer for connectivity monitoring & background sync
   Timer? _connectivityTimer;
@@ -302,6 +305,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _initCamera();
     _refreshBadge();
     _loadSyncMetadata();
+    _loadPurchaseGroups();
     
     // Register auto-logout on session expiration
     ApiService.instance.onSessionExpired = () {
@@ -317,6 +321,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _connectivityTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       _checkConnectivityAndAutoSync();
     });
+  }
+
+  Future<void> _loadPurchaseGroups() async {
+    try {
+      final groups = await ApiService.instance.fetchPurchaseGroups();
+      if (mounted) setState(() => _purchaseGroups = groups);
+    } catch (_) {}
   }
 
   @override
@@ -534,7 +545,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
       // 2. Local cache miss — perform online fallback lookup if connected
       try {
-        final onlineResponse = await ApiService.instance.onlineSkuLookup(sku);
+        final onlineResponse = await ApiService.instance.onlineSkuLookup(sku, purchaseGroupId: _selectedPurchaseGroupId);
           if (onlineResponse.success && onlineResponse.matches.isNotEmpty) {
             if (onlineResponse.matches.length == 1) {
               final match = onlineResponse.matches.first;
@@ -543,7 +554,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               await DatabaseHelper.instance.markItemSorted(match.itemId);
               
               // Process scan on server
-              final scanResponse = await ApiService.instance.processScan(sku, selectedItemId: match.itemId);
+              final scanResponse = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
               await _handleScanResponse(scanResponse, sku, canVibrate);
             } else {
               // Multiple matches found online
@@ -590,7 +601,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     
     try {
       // Attempt online push
-      final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId);
+      final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
       await _handleScanResponse(response, sku, canVibrate);
     } catch (_) {
       // Save scan to pending local queue for automatic retry
@@ -777,7 +788,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           await DatabaseHelper.instance.markItemSorted(match.itemId);
           
           try {
-            final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId);
+            final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
             await _handleScanResponse(response, sku, canVibrate);
           } catch (e) {
             // Save selection locally for resilient background syncing
@@ -972,7 +983,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (conflictScans.isNotEmpty) {
       for (final scan in conflictScans) {
         try {
-          final response = await ApiService.instance.onlineSkuLookup(scan.sku);
+          final response = await ApiService.instance.onlineSkuLookup(scan.sku, purchaseGroupId: _selectedPurchaseGroupId);
           if (response.success && response.matches.isNotEmpty) {
             if (!mounted) break;
             final resolved = await _showSyncOrderPicker(scan, response.matches);
@@ -1059,7 +1070,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     if (chosen == null) return false;
 
     try {
-      final response = await ApiService.instance.processScan(record.sku, selectedItemId: chosen!.itemId);
+      final response = await ApiService.instance.processScan(record.sku, selectedItemId: chosen!.itemId, purchaseGroupId: _selectedPurchaseGroupId);
       if (response.success || response.alreadyScanned) {
         await DatabaseHelper.instance.markSynced(record.id!);
         return true;
@@ -1083,6 +1094,55 @@ class _ScannerScreenState extends State<ScannerScreen> {
     );
   }
 
+  Future<void> _selectPurchaseGroup() async {
+    final selected = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      backgroundColor: const Color(0xFF1F2937),
+      builder: (_) => ListView(
+        children: [
+          ListTile(
+            title: const Text('كل المجموعات', style: TextStyle(color: Colors.white)),
+            onTap: () => Navigator.pop(context, {'id': 0, 'label': 'كل المجموعات'}),
+          ),
+          ..._purchaseGroups.map((g) => ListTile(
+                title: Text((g['label'] ?? '').toString(), style: const TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, {'id': g['id'] ?? 0, 'label': g['label'] ?? ''}),
+              )),
+        ],
+      ),
+    );
+    if (selected != null && mounted) {
+      setState(() {
+        _selectedPurchaseGroupId = int.tryParse(selected['id'].toString()) ?? 0;
+        _selectedPurchaseGroupLabel = selected['label'].toString();
+      });
+    }
+  }
+
+  Future<void> _sortSelectedPurchaseGroup() async {
+    if (_selectedPurchaseGroupId <= 0) {
+      _showSnack('اختر مجموعة شراء أولاً');
+      return;
+    }
+    setState(() {
+      _statusType = StatusType.loading;
+      _statusMessage = 'جارٍ فرز مجموعة الشراء...';
+    });
+    try {
+      final result = await ApiService.instance.sortPurchaseGroup(_selectedPurchaseGroupId);
+      setState(() {
+        _statusType = StatusType.success;
+        _statusMessage = (result['message'] ?? 'تم فرز المجموعة').toString();
+      });
+      await _autoSyncOrders();
+    } catch (e) {
+      setState(() {
+        _statusType = StatusType.error;
+        _statusMessage = 'فشل فرز المجموعة: $e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1095,6 +1155,16 @@ class _ScannerScreenState extends State<ScannerScreen> {
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.layers_outlined, color: Colors.white70),
+            tooltip: 'اختيار مجموعة الشراء',
+            onPressed: _selectPurchaseGroup,
+          ),
+          IconButton(
+            icon: const Icon(Icons.sort_rounded, color: Colors.greenAccent),
+            tooltip: 'فرز المجموعة المحددة',
+            onPressed: _sortSelectedPurchaseGroup,
+          ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white70),
             tooltip: 'تسجيل الخروج',
@@ -1190,6 +1260,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
                           ),
                         ),
                       _StatusBadge(message: _statusMessage, type: _statusType),
+                      const SizedBox(height: 8),
+                      Text(
+                        'مجموعة الشراء: $_selectedPurchaseGroupLabel',
+                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
                         icon: const Icon(Icons.refresh_rounded),

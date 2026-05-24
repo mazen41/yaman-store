@@ -13,6 +13,8 @@ const String _apiRegisterDevice = '$_baseUrl/api/register-device.php';
 const String _apiOrders = '$_baseUrl/api/orders.php';
 const String _apiSkuLookup = '$_baseUrl/api/sku-lookup.php';
 const String _apiSyncActions = '$_baseUrl/api/sync-actions.php';
+const String _apiPurchaseGroups = '$_baseUrl/api/purchase-groups.php';
+const String _apiSortPurchaseGroup = '$_baseUrl/api/sort-purchase-group.php';
 
 // ── Response types ────────────────────────────────────────────────────────
 
@@ -433,9 +435,9 @@ class ApiService {
 
   // ── Online Lookup Fallback ───────────────────────────────────────────────
 
-  Future<ScanResponse> onlineSkuLookup(String sku) async {
+  Future<ScanResponse> onlineSkuLookup(String sku, {int purchaseGroupId = 0}) async {
     final headers = await _jsonHeaders();
-    final url = Uri.parse('$_apiSkuLookup?sku=${Uri.encodeComponent(sku)}');
+    final url = Uri.parse('$_apiSkuLookup?sku=${Uri.encodeComponent(sku)}&purchase_group_id=$purchaseGroupId');
 
     final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
 
@@ -489,11 +491,12 @@ class ApiService {
     throw Exception('فشل رفع العمليات: ${response.statusCode}');
   }
 
-  Future<ScanResponse> processScan(String sku, {int? selectedItemId}) async {
+  Future<ScanResponse> processScan(String sku, {int? selectedItemId, int purchaseGroupId = 0}) async {
     final payload = {
       'id': 0,
       'sku': sku,
       'selected_item_id': selectedItemId ?? 0,
+      'purchase_group_id': purchaseGroupId,
       'timestamp': DateTime.now().millisecondsSinceEpoch ~/ 1000,
     };
 
@@ -521,6 +524,32 @@ class ApiService {
     }
 
     return ScanResponse.fromJson(first);
+  }
+
+  Future<Map<String, dynamic>> sortPurchaseGroup(int purchaseGroupId) async {
+    final headers = await _jsonHeaders();
+    final response = await http.post(
+      Uri.parse(_apiSortPurchaseGroup),
+      headers: headers,
+      body: jsonEncode({'purchase_group_id': purchaseGroupId}),
+    ).timeout(const Duration(seconds: 30));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('فشل فرز مجموعة الشراء: ${response.statusCode}');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPurchaseGroups() async {
+    final headers = await _jsonHeaders();
+    final response = await http
+        .get(Uri.parse(_apiPurchaseGroups), headers: headers)
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final groups = (json['groups'] as List<dynamic>? ?? const []);
+      return groups.map((g) => (g as Map).cast<String, dynamic>()).toList();
+    }
+    throw Exception('فشل تحميل مجموعات الشراء: ${response.statusCode}');
   }
 
 }
