@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // --- FINANCIAL CALCULATION SETUP ---
     const financialInputs = [
         'sarInput', 'subtotalInput', 'shippingCost', 'taxRate', 'manualDiscountInput',
-        'points_discount', 'club_discount'
+        'points_discount', 'club_discount', 'yerExchangeRateInput', 'subtotalCurrencyDisplay', 'shippingCurrencyDisplay', 'taxCurrencyDisplay', 'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay', 'clubDiscountCurrencyDisplay', 'totalDiscountCurrencyDisplay', 'grandTotalDisplay'
     ];
     financialInputs.forEach(id => {
         const element = document.getElementById(id);
@@ -212,17 +212,17 @@ function updateTotals() {
     // --- Update display elements ---
     document.getElementById('totalDiscountDisplay').textContent = formatMoney(totalDiscount);
     document.getElementById('taxAmountDisplay').textContent = formatMoney(taxAmount);
-    document.getElementById('grandTotalDisplay').textContent = formatMoney(grandTotal);
 
-    // Currency displays (display only; no impact on submitted values)
-    const exchangeRate = 140; // 1 SAR = 140 YER
-    setCurrencyDisplay('subtotalCurrencyDisplay', subtotal, exchangeRate);
-    setCurrencyDisplay('shippingCurrencyDisplay', shippingCost, exchangeRate);
-    setCurrencyDisplay('taxCurrencyDisplay', taxAmount, exchangeRate);
-    setCurrencyDisplay('manualDiscountCurrencyDisplay', manualDiscount, exchangeRate);
-    setCurrencyDisplay('pointsDiscountCurrencyDisplay', pointsDiscount, exchangeRate);
-    setCurrencyDisplay('clubDiscountCurrencyDisplay', clubDiscount, exchangeRate);
-    setCurrencyDisplay('totalDiscountCurrencyDisplay', totalDiscount, exchangeRate);
+    const exchangeInput = document.getElementById('yerExchangeRateInput');
+    const exchangeRate = parseFloat(exchangeInput?.value) || 140;
+    setCurrencyInput('subtotalCurrencyDisplay', subtotal, exchangeRate);
+    setCurrencyInput('shippingCurrencyDisplay', shippingCost, exchangeRate);
+    setCurrencyInput('taxCurrencyDisplay', taxAmount, exchangeRate);
+    setCurrencyInput('manualDiscountCurrencyDisplay', manualDiscount, exchangeRate);
+    setCurrencyInput('pointsDiscountCurrencyDisplay', pointsDiscount, exchangeRate);
+    setCurrencyInput('clubDiscountCurrencyDisplay', clubDiscount, exchangeRate);
+    setCurrencyInput('totalDiscountCurrencyDisplay', totalDiscount, exchangeRate);
+    setCurrencyInput('grandTotalDisplay', grandTotal, exchangeRate);
 
     // --- NEW: Automatically fill the final price input with the grand total ---
     // The field remains editable for manual overrides.
@@ -251,11 +251,13 @@ function formatMoney(amount) {
     return new Intl.NumberFormat('en-US', options).format(parseFloat(amount)) + ' YER';
 }
 
-function setCurrencyDisplay(elementId, yerAmount, exchangeRate) {
+function setCurrencyInput(elementId, yerAmount, exchangeRate) {
     const element = document.getElementById(elementId);
     if (!element) return;
-    const sarAmount = yerAmount / exchangeRate;
-    element.textContent = `${formatSarMoney(sarAmount)} | ${formatMoney(yerAmount)}`;
+    if (document.activeElement === element) return;
+    const normalizedRate = exchangeRate > 0 ? exchangeRate : 140;
+    const value = yerAmount;
+    element.value = Number.isFinite(value) ? value.toFixed(2) : '0.00';
 }
 
 function formatSarMoney(amount) {
