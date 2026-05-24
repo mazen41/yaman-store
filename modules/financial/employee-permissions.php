@@ -35,6 +35,7 @@ $sidebar_modules = [
     ['name' => 'أنواع العملاء', 'icon' => 'fas fa-users-cog', 'key' => 'customer_types'],
     ['name' => 'المدن', 'icon' => 'fas fa-city', 'key' => 'cities'],
     ['name' => 'طلبات العملاء', 'icon' => 'fas fa-shopping-bag', 'key' => 'orders'],
+    ['name' => 'تعبئة SKU للطلبات', 'icon' => 'fas fa-barcode', 'key' => 'orders_skus'],
     ['name' => 'order approval', 'icon' => 'fas fa-clipboard-check', 'key' => 'order_approval'],
     ['name' => 'المنتجات', 'icon' => 'fas fa-boxes', 'key' => 'products'],
     ['name' => 'الفئات', 'icon' => 'fas fa-tags', 'key' => 'categories'],

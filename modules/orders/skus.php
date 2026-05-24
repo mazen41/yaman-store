@@ -12,7 +12,7 @@ require_once '../../config/database.php';
 require_once '../../includes/check_permissions.php';
 
 $user_id = (int)($_SESSION['user_id'] ?? 0);
-if (!canViewOrders($user_id)) {
+if (!hasPermission($user_id, 'orders_skus', 'view')) {
     $_SESSION['error_message'] = 'ليس لديك صلاحية للوصول لهذه الصفحة.';
     header('Location: ../../index.php');
     exit();
@@ -21,7 +21,7 @@ if (!canViewOrders($user_id)) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_sku') {
     header('Content-Type: application/json; charset=utf-8');
 
-    if (!canEditOrders($user_id)) {
+    if (!hasPermission($user_id, 'orders_skus', 'add')) {
         echo json_encode(['success' => false, 'message' => 'ليس لديك صلاحية التعديل']);
         exit();
     }
@@ -53,6 +53,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     exit();
 }
 
+$can_add_skus = hasPermission($user_id, 'orders_skus', 'add');
+$target_order_id = max(0, (int)($_GET['order_id'] ?? 0));
+
 $page = max(1, (int)($_GET['page'] ?? 1));
 $per_page = 20;
 $offset = ($page - 1) * $per_page;
@@ -64,6 +67,12 @@ $date_to   = trim($_GET['date_to'] ?? '');
 $where_extra = '';
 $params_count = [];
 $params_fetch = [];
+
+if ($target_order_id > 0) {
+    $where_extra .= " AND o.id = :target_order_id";
+    $params_count[':target_order_id'] = $target_order_id;
+    $params_fetch[':target_order_id'] = $target_order_id;
+}
 
 if ($date_from !== '') {
     $where_extra .= " AND DATE(o.created_at) >= :date_from";
@@ -644,12 +653,14 @@ details[open] .chevron { transform: rotate(180deg); }
                                         placeholder="أدخل SKU..."
                                         autocomplete="off"
                                         spellcheck="false"
+                                        <?php echo $can_add_skus ? '' : 'readonly disabled'; ?>
                                     >
                                     <button
                                         type="button"
                                         class="save-btn"
                                         data-item-id="<?php echo (int)$item['id']; ?>"
                                         title="حفظ"
+                                        <?php echo $can_add_skus ? '' : 'disabled'; ?>
                                     >
                                         <span class="spinner"></span>
                                         <span class="btn-label">حفظ ↵</span>
@@ -669,7 +680,7 @@ details[open] .chevron { transform: rotate(180deg); }
         <span>صفحة <strong><?php echo (int)$page; ?></strong> من <strong><?php echo (int)$total_pages; ?></strong></span>
         <div class="pag-btns">
             <?php
-                $qs = http_build_query(array_filter(['date_from'=>$date_from,'date_to'=>$date_to]));
+                $qs = http_build_query(array_filter(['date_from'=>$date_from,'date_to'=>$date_to,'order_id'=>$target_order_id]));
                 $qs_sep = $qs ? '&' : '';
             ?>
             <?php if ($page > 1): ?>
@@ -733,6 +744,10 @@ function removeItemRow(itemId, orderId, inputRef) {
 }
 
 async function saveSku(itemId) {
+    <?php if (!$can_add_skus): ?>
+    showAlert('ليس لديك صلاحية إضافة SKU', 'error');
+    return;
+    <?php endif; ?>
     const input = document.querySelector(`.sku-input[data-item-id="${itemId}"]`);
     const btn   = document.querySelector(`.save-btn[data-item-id="${itemId}"]`);
     if (!input || !btn) return;
@@ -775,6 +790,10 @@ async function saveSku(itemId) {
         progressBar.classList.remove('active');
     }
 }
+
+<?php if (!$can_add_skus): ?>
+showAlert('لديك صلاحية عرض فقط. لا يمكنك تعديل أو حفظ SKU.', 'error');
+<?php endif; ?>
 
 // Events
 document.querySelectorAll('.save-btn').forEach(btn =>
