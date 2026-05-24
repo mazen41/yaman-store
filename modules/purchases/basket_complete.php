@@ -56,18 +56,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $total_items = intval($_POST['total_products'] ?? 0);
         $coupon_code = trim($_POST['coupon_code'] ?? null);
 
+        $sanitize_decimal = function ($value, $default = 0.0) {
+            if ($value === null || $value === '') return (float)$default;
+            $value = str_replace([',', ' '], '', (string)$value);
+            return is_numeric($value) ? (float)$value : (float)$default;
+        };
+
         // Financial values from manual inputs
-        $subtotal_amount = floatval($_POST['subtotal_amount'] ?? 0);
+        $subtotal_amount = $sanitize_decimal($_POST['subtotal_amount'] ?? 0);
         
         // ** FIX START: Capture each discount individually **
-        $manual_discount_amount = floatval($_POST['manual_discount_amount'] ?? 0);
-        $points_discount = floatval($_POST['points_discount'] ?? 0);
-        $club_discount = floatval($_POST['club_discount'] ?? 0);
+        $manual_discount_amount = $sanitize_decimal($_POST['manual_discount_amount'] ?? 0);
+        $points_discount = $sanitize_decimal($_POST['points_discount'] ?? 0);
+        $club_discount = $sanitize_decimal($_POST['club_discount'] ?? 0);
         // This is the total discount amount which will be used for calculations
         $total_discount_for_calculation = $manual_discount_amount + $points_discount + $club_discount; 
         // ** FIX END **
 
-        $final_price_override = !empty($_POST['final_price_override']) ? floatval($_POST['final_price_override']) : null;
+        $final_price_override = isset($_POST['final_price_override']) && $_POST['final_price_override'] !== '' ? $sanitize_decimal($_POST['final_price_override']) : null;
 
         $delivery_codes = trim($_POST['delivery_codes'] ?? null);
         $delivery_codes_status = trim($_POST['delivery_codes_status'] ?? null);
@@ -78,6 +84,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         } elseif ($payment_source_type === 'purchase_card') {
             $payment_source_id = !empty($_POST['payment_source_id_purchase']) ? intval($_POST['payment_source_id_purchase']) : null;
         }
+
+        $yer_exchange_rate = $sanitize_decimal($_POST['yer_exchange_rate'] ?? 140, 140);
+        if ($yer_exchange_rate <= 0) {
+            $yer_exchange_rate = 140;
+        }
+        $sar_amount = $sanitize_decimal($_POST['sar_amount'] ?? 0);
+        $subtotal_amount_yer = $sanitize_decimal($_POST['subtotal_amount_yer'] ?? $subtotal_amount);
+        $shipping_cost_yer = $sanitize_decimal($_POST['shipping_cost_yer'] ?? $shipping_cost);
+        $tax_amount_yer = $sanitize_decimal($_POST['tax_amount_yer'] ?? 0);
+        $manual_discount_yer = $sanitize_decimal($_POST['manual_discount_yer'] ?? $manual_discount_amount);
+        $points_discount_yer = $sanitize_decimal($_POST['points_discount_yer'] ?? $points_discount);
+        $club_discount_yer = $sanitize_decimal($_POST['club_discount_yer'] ?? $club_discount);
+        $total_discount_yer = $sanitize_decimal($_POST['total_discount_yer'] ?? $total_discount_for_calculation);
+        $grand_total_yer = $sanitize_decimal($_POST['grand_total_yer'] ?? 0);
 
         // --- Handle multiple file uploads ---
         $attachment_paths = [];
@@ -114,6 +134,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             $final_total = $base_for_tax + $tax_amount + $shipping_cost;
         }
 
+        // Ensure YER editable columns exist (backward compatible safe extension)
+        $yerColumnsToEnsure = [
+            'sar_amount' => "DECIMAL(15,2) NULL",
+            'yer_exchange_rate' => "DECIMAL(10,4) NULL",
+            'subtotal_amount_yer' => "DECIMAL(15,2) NULL",
+            'shipping_cost_yer' => "DECIMAL(15,2) NULL",
+            'tax_amount_yer' => "DECIMAL(15,2) NULL",
+            'manual_discount_yer' => "DECIMAL(15,2) NULL",
+            'points_discount_yer' => "DECIMAL(15,2) NULL",
+            'club_discount_yer' => "DECIMAL(15,2) NULL",
+            'total_discount_yer' => "DECIMAL(15,2) NULL",
+            'grand_total_yer' => "DECIMAL(15,2) NULL"
+        ];
+        foreach ($yerColumnsToEnsure as $columnName => $columnType) {
+            $checkColStmt = $db->prepare("SHOW COLUMNS FROM purchase_baskets LIKE ?");
+            $checkColStmt->execute([$columnName]);
+            if (!$checkColStmt->fetch()) {
+                $db->exec("ALTER TABLE purchase_baskets ADD COLUMN `{$columnName}` {$columnType}");
+            }
+        }
+
         // Insert basket record - Status is now always 'ordered'
         $status = 'ordered';
         
@@ -127,8 +168,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             discount_amount, points_discount, club_discount, final_price_override,
             payment_source_type, payment_source_id,
             delivery_codes, delivery_codes_status, attachment_path,
-            subtotal_amount, tax_amount, final_amount
-        ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )";
+            subtotal_amount, tax_amount, final_amount,
+            sar_amount, yer_exchange_rate, subtotal_amount_yer, shipping_cost_yer, tax_amount_yer,
+            manual_discount_yer, points_discount_yer, club_discount_yer, total_discount_yer, grand_total_yer
+        ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )";
         $stmt = $db->prepare($sql);
         $stmt->execute([
             $basket_name,
@@ -156,7 +199,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             $attachment_path_json, // Storing JSON array of paths
             $subtotal_amount,
             $tax_amount,
-            $final_total
+            $final_total,
+            $sar_amount,
+            $yer_exchange_rate,
+            $subtotal_amount_yer,
+            $shipping_cost_yer,
+            $tax_amount_yer,
+            $manual_discount_yer,
+            $points_discount_yer,
+            $club_discount_yer,
+            $total_discount_yer,
+            $grand_total_yer
         ]);
         // ** FIX END **
         $basket_id = $db->lastInsertId();
@@ -763,15 +816,15 @@ include '../../includes/header.php';
 
                                 <div class="total-row" style="background:#f8fafc; border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem;">
                                     <span><i class="fas fa-coins"></i>عرض القيم حسب العملة</span>
-                                    <span style="font-size: 12px; color: #6b7280;">1 SAR = 140 YER</span>
+                                    <input type="number" name="yer_exchange_rate" id="yerExchangeRateInput" step="0.0001" min="0.0001" value="140" class="form-control totals-input" style="width: 150px;" placeholder="Exchange Rate">
                                 </div>
-                                <div class="total-row"><span>المجموع قبل الخصم</span><span id="subtotalCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>تكلفة الشحن</span><span id="shippingCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>مبلغ الضريبة</span><span id="taxCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>خصم يدوي</span><span id="manualDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>خصم نقاط</span><span id="pointsDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>خصم نادي</span><span id="clubDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
-                                <div class="total-row"><span>إجمالي الخصومات</span><span id="totalDiscountCurrencyDisplay">0.00 SAR | 0.00 YER</span></div>
+                                <div class="total-row"><span>المجموع قبل الخصم</span><input type="number" name="subtotal_amount_yer" id="subtotalCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>تكلفة الشحن</span><input type="number" name="shipping_cost_yer" id="shippingCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>مبلغ الضريبة</span><input type="number" name="tax_amount_yer" id="taxCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>خصم يدوي</span><input type="number" name="manual_discount_yer" id="manualDiscountCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>خصم نقاط</span><input type="number" name="points_discount_yer" id="pointsDiscountCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>خصم نادي</span><input type="number" name="club_discount_yer" id="clubDiscountCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
+                                <div class="total-row"><span>إجمالي الخصومات</span><input type="number" name="total_discount_yer" id="totalDiscountCurrencyDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER"></div>
                                 <hr style="border-color: var(--border-color); margin: 1rem 0;">
 
                                 <!-- DISCOUNT SECTION -->
@@ -795,7 +848,7 @@ include '../../includes/header.php';
                                 <hr style="border-color: var(--border-color); margin: 1rem 0;">
                                 <div class="total-row" style="padding-top:1.5rem;">
                                     <span><i class="fas fa-money-bill-wave"></i> الصافي النهائي</span>
-                                    <span id="grandTotalDisplay">0.00 YER</span>
+                                    <input type="number" name="grand_total_yer" id="grandTotalDisplay" step="0.01" min="0" value="0" class="form-control totals-input" style="width: 170px;" placeholder="YER">
                                 </div>
 
                                 <div class="total-row"
