@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $user = authenticateRequest($db);
 
 $rawSku = trim($_GET['sku'] ?? '');
+$purchaseGroupId = (int)($_GET['purchase_group_id'] ?? 0);
 
 if ($rawSku === '') {
     fail('الرجاء إرسال رمز SKU للبحث عنه.', 400);
@@ -76,11 +77,13 @@ try {
                COALESCE(c.mobile_number, c.phone, '') AS customer_mobile
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
+        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         LEFT JOIN customers c ON c.id = co.customer_id
         WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
+          AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
         ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
     ");
-    $stmt->execute([$sku]);
+    $stmt->execute([$sku, $purchaseGroupId, $purchaseGroupId]);
     $matches = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Cast IDs to integers
