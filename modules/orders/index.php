@@ -62,6 +62,7 @@ if (!canViewOrders($user_id, $db)) {
 $can_add_orders = hasPermission($user_id, 'orders', 'add');
 $can_edit_orders = hasPermission($user_id, 'orders', 'edit');
 $can_create_status = hasPermission($user_id, 'orders', 'create_status');
+$can_add_order_skus = hasPermission($user_id, 'orders_skus', 'add');
 
 // --- 2. INITIALIZATION & FILTERS ---
 $page_title = 'قائمة عرض طلبات العملاء';
@@ -698,6 +699,7 @@ include '../../includes/header.php';
                                         <?php if ($can_add_orders): ?>
                                             <button onclick="openManagerNotesModal(<?php echo $order['id']; ?>)" class="action-icon" style="background: #e0e7ff; color: #4338ca; border: none;" title="ملاحظات المدير"><i class="fas fa-user-shield"></i></button>
                                         <?php endif; ?>
+                                        <?php if ($can_add_order_skus): ?><a href="skus.php?order_id=<?php echo (int)$order['id']; ?>" class="action-icon" style="background: #dcfce7; color: #166534;" title="تعبئة SKU"><i class="fas fa-barcode"></i></a><?php endif; ?>
                                         <?php if ($can_edit_orders): ?><a href="edit.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background: #fef3c7; color: #92400e;" title="تعديل"><i class="fas fa-edit"></i></a><?php endif; ?>
                                         <a href="print.php?id=<?php echo $order['id']; ?>" target="_blank" class="action-icon" style="background: #f3f4f6; color: #374151;" title="طباعة"><i class="fas fa-print"></i></a>
                                         <?php if ($can_edit_orders): ?><button onclick="deleteOrder(<?php echo $order['id']; ?>, '<?php echo htmlspecialchars($order['order_number']); ?>')" class="action-icon" style="background: #fee2e2; color: #b91c1c; border: none;" title="حذف"><i class="fas fa-trash-alt"></i></button><?php endif; ?>
