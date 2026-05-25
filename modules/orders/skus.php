@@ -85,7 +85,7 @@ if ($date_to !== '') {
     $params_fetch[':date_to'] = $date_to;
 }
 
-$sku_where_clause = ($target_order_id > 0) ? '1=1' : "TRIM(COALESCE(oi.shein_sku, '')) = ''";
+$sku_where_clause = "TRIM(COALESCE(oi.shein_sku, '')) = ''";
 
 $total_orders_stmt = $db->prepare("SELECT COUNT(DISTINCT o.id)
     FROM customer_orders o
@@ -120,7 +120,7 @@ $total_missing_items = 0;
 
 if (!empty($order_ids)) {
     $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
-    $items_filter = ($target_order_id > 0) ? '' : "AND TRIM(COALESCE(oi.shein_sku, '')) = ''";
+    $items_filter = "AND TRIM(COALESCE(oi.shein_sku, '')) = ''";
     $items_stmt = $db->prepare("SELECT
             oi.id,
             oi.order_id,
@@ -141,6 +141,7 @@ if (!empty($order_ids)) {
         $total_missing_items++;
     }
 }
+
 
 include '../../includes/header.php';
 ?>
