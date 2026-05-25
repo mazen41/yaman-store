@@ -598,8 +598,11 @@ details[open] .chevron { transform: rotate(180deg); }
                 <label>إلى تاريخ</label>
                 <input type="date" name="date_to" value="<?php echo htmlspecialchars($date_to); ?>">
             </div>
-            <div style="display:flex;gap:.5rem;align-items:flex-end;">
+            <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap;">
                 <button type="submit" class="btn-filter primary">🔍 تطبيق</button>
+                <?php if ($can_add_skus): ?>
+                <button type="button" class="btn-filter ghost" id="saveAllBtn">💾 حفظ الكل</button>
+                <?php endif; ?>
                 <?php if ($date_from || $date_to): ?>
                 <a href="?" class="btn-filter ghost" style="display:inline-flex;align-items:center;text-decoration:none;">✕ إلغاء</a>
                 <?php endif; ?>
@@ -808,6 +811,25 @@ async function saveSku(itemId) {
 <?php if (!$can_add_skus): ?>
 showAlert('لديك صلاحية عرض فقط. لا يمكنك تعديل أو حفظ SKU.', 'error');
 <?php endif; ?>
+
+async function saveAllSkus() {
+    const inputs = [...document.querySelectorAll('.sku-input')]
+        .filter(input => input.value.trim().length > 0 && !input.disabled && !input.readOnly);
+
+    if (!inputs.length) {
+        showAlert('⚠️ أدخل SKU في منتج واحد على الأقل أولاً', 'error');
+        return;
+    }
+
+    for (const input of inputs) {
+        await saveSku(input.dataset.itemId);
+    }
+}
+
+const saveAllBtn = document.getElementById('saveAllBtn');
+if (saveAllBtn) {
+    saveAllBtn.addEventListener('click', saveAllSkus);
+}
 
 // Events
 document.querySelectorAll('.save-btn').forEach(btn =>
