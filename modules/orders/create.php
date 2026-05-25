@@ -111,11 +111,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (is_array($shein_items)) {
         foreach ($shein_items as $index => $shein_item) {
             $shein_sku = sheinNormalizeSku($shein_item['sku'] ?? '');
-            if ($shein_sku !== '') {
+            $shein_name = trim($shein_item['name'] ?? '');
+            $shein_image = trim($shein_item['image'] ?? '');
+
+            // Keep item rows even when SKU is empty so each order item can later be
+            // completed from the SKU entry page.
+            if ($shein_sku !== '' || $shein_name !== '' || $shein_image !== '') {
                 $clean_shein_items[] = [
                     'sku' => $shein_sku,
-                    'name' => trim($shein_item['name'] ?? ''),
-                    'image' => trim($shein_item['image'] ?? ''),
+                    'name' => $shein_name,
+                    'image' => $shein_image,
                 ];
             }
         }
