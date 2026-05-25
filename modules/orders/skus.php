@@ -138,8 +138,17 @@ if (!empty($order_ids)) {
         $oid = (int)$item['order_id'];
         if (!isset($items_by_order[$oid])) $items_by_order[$oid] = [];
         $items_by_order[$oid][] = $item;
-        $total_missing_items++;
+        $total_missing_items += max(1, (int)($item['quantity'] ?? 1));
     }
+}
+
+
+function calcMissingQty(array $items): int {
+    $sum = 0;
+    foreach ($items as $it) {
+        $sum += max(1, (int)($it['quantity'] ?? 1));
+    }
+    return $sum;
 }
 
 include '../../includes/header.php';
@@ -631,7 +640,7 @@ details[open] .chevron { transform: rotate(180deg); }
                         </div>
                         <div style="display:flex;align-items:center;gap:.625rem;flex-shrink:0;">
                             <div class="missing-badge" id="badge-<?php echo $oid; ?>">
-                                ⚠️ <span id="count-<?php echo $oid; ?>"><?php echo count($order_items_list); ?></span> ناقص
+                                ⚠️ <span id="count-<?php echo $oid; ?>"><?php echo calcMissingQty($order_items_list); ?></span> ناقص
                             </div>
                             <div class="chevron">▾</div>
                         </div>
@@ -639,7 +648,7 @@ details[open] .chevron { transform: rotate(180deg); }
 
                     <div class="items-area" id="items-<?php echo $oid; ?>">
                         <?php foreach ($order_items_list as $iidx => $item): ?>
-                            <div id="row-<?php echo (int)$item['id']; ?>" class="item-row" style="animation-delay:<?php echo $iidx * 0.04; ?>s">
+                            <div id="row-<?php echo (int)$item['id']; ?>" class="item-row" data-missing-qty="<?php echo max(1, (int)($item['quantity'] ?? 1)); ?>" style="animation-delay:<?php echo $iidx * 0.04; ?>s">
                                 <div class="item-num"><?php echo $iidx + 1; ?></div>
                                 <div class="item-info">
                                     <div class="item-name"><?php echo htmlspecialchars($item['product_name'] ?: 'بدون اسم منتج'); ?></div>
@@ -733,7 +742,8 @@ function removeItemRow(itemId, orderId, inputRef) {
             const badgeEl  = document.getElementById(`badge-${orderId}`);
             const card     = document.getElementById(`order-${orderId}`);
             if (wrapper) {
-                const left = wrapper.querySelectorAll('[id^="row-"]').length;
+                const rows = [...wrapper.querySelectorAll('[id^="row-"]')];
+                const left = rows.reduce((sum, el) => sum + (parseInt(el.dataset.missingQty || '1', 10) || 1), 0);
                 if (countEl) countEl.textContent = left;
                 if (left === 0 && card) {
                     card.style.transition = 'opacity .4s, transform .4s';
