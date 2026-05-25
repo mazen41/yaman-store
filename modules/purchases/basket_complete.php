@@ -99,6 +99,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $total_discount_yer = $sanitize_decimal($_POST['total_discount_yer'] ?? $total_discount_for_calculation);
         $grand_total_yer = $sanitize_decimal($_POST['grand_total_yer'] ?? 0);
 
+        // Keep YER fields in sync when SAR is entered manually (while preserving manual edit capability).
+        if ($sar_amount > 0) {
+            $subtotal_from_sar = $sar_amount * $yer_exchange_rate;
+            if ($subtotal_amount <= 0) {
+                $subtotal_amount = $subtotal_from_sar;
+            }
+            if ($subtotal_amount_yer <= 0) {
+                $subtotal_amount_yer = $subtotal_from_sar;
+            }
+            if ($manual_discount_yer <= 0) {
+                $manual_discount_yer = $manual_discount_amount;
+            }
+            if ($points_discount_yer <= 0) {
+                $points_discount_yer = $points_discount;
+            }
+            if ($club_discount_yer <= 0) {
+                $club_discount_yer = $club_discount;
+            }
+            if ($total_discount_yer <= 0) {
+                $total_discount_yer = $manual_discount_yer + $points_discount_yer + $club_discount_yer;
+            }
+
+            $base_for_tax_yer = $subtotal_amount_yer - $total_discount_yer;
+            if ($tax_included) {
+                $tax_amount_yer = ($tax_rate > 0) ? ($base_for_tax_yer * $tax_rate) / (100 + $tax_rate) : 0;
+                $calculated_grand_total_yer = $base_for_tax_yer + $shipping_cost_yer;
+            } else {
+                $tax_amount_yer = $base_for_tax_yer * ($tax_rate / 100);
+                $calculated_grand_total_yer = $base_for_tax_yer + $tax_amount_yer + $shipping_cost_yer;
+            }
+            if ($grand_total_yer <= 0) {
+                $grand_total_yer = $calculated_grand_total_yer;
+            }
+        }
+
         // --- Handle multiple file uploads ---
         $attachment_paths = [];
         if (isset($_FILES['attachment']) && count($_FILES['attachment']['name']) > 0) {

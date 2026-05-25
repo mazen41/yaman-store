@@ -88,9 +88,10 @@ $group_filter = $_GET['group_id'] ?? '';
 $remaining_filter = $_GET['remaining'] ?? '';
 $filter_customer_type = $_GET['customer_type'] ?? '';
 $manual_order_filter = $_GET['manual_order'] ?? ''; // NEW: Manual Order Filter
+$sorted_state_filter = $_GET['sorted_state'] ?? ''; // NEW: sorting completion filter
 
 // Determine if any ADVANCED filter is active (excluding search, sort, page)
-$advanced_filters_active = !empty($status_filter) || !empty($creator_filter) || !empty($date_from) || !empty($date_to) || !empty($group_filter) || !empty($remaining_filter) || !empty($filter_customer_type) || !empty($manual_order_filter);
+$advanced_filters_active = !empty($status_filter) || !empty($creator_filter) || !empty($date_from) || !empty($date_to) || !empty($group_filter) || !empty($remaining_filter) || !empty($filter_customer_type) || !empty($manual_order_filter) || !empty($sorted_state_filter);
 
 
 // Get Sort Parameters
@@ -145,8 +146,8 @@ try {
                         COALESCE(o.final_amount, 0) as final_amount,
                         COALESCE(o.paid_amount, 0) as paid_amount,
                         COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = o.id), 0) as total_quantity,
-                        (SELECT COUNT(*) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) as sorting_total_items,
-                        (SELECT COUNT(*) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') as sorting_sorted_items,
+                        (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) as sorting_total_items,
+                        (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') as sorting_sorted_items,
                         (SELECT COALESCE(SUM(price), 0) FROM order_damaged_items odi WHERE odi.order_id = o.id) as damaged_amount,
                         (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = o.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) as first_product_link,
                         pg.group_name as purchase_group_name,
@@ -219,6 +220,18 @@ try {
             $count_query .= " AND (SELECT id FROM order_approvals WHERE final_order_id = o.id LIMIT 1) IS NOT NULL";
         }
     }
+    if ($sorted_state_filter !== '') {
+        if ($sorted_state_filter === 'sorted') {
+            $query .= " AND (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) > 0";
+            $query .= " AND (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') >= (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id)";
+            $count_query .= " AND (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) > 0";
+            $count_query .= " AND (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') >= (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id)";
+        } elseif ($sorted_state_filter === 'unsorted') {
+            $query .= " AND ((SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) = 0 OR (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') < (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id))";
+            $count_query .= " AND ((SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id) = 0 OR (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') < (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id))";
+        }
+    }
+
     if ($search) {
         $search_param = "%$search%";
         $query .= " AND (o.order_number LIKE ? OR c.name LIKE ? OR c.mobile_number LIKE ?)";
@@ -534,6 +547,11 @@ include '../../includes/header.php';
                             <option value="">الكل</option>
                             <option value="has_remaining" <?php echo $remaining_filter == 'has_remaining' ? 'selected' : ''; ?>>له متبقي</option>
                             <option value="fully_paid" <?php echo $remaining_filter == 'fully_paid' ? 'selected' : ''; ?>>مدفوع بالكامل</option>
+                        </select></div>
+                    <div class="filter-group"><label>حالة الفرز</label><select name="sorted_state" class="form-control">
+                            <option value="">الكل</option>
+                            <option value="sorted" <?php echo $sorted_state_filter === 'sorted' ? 'selected' : ''; ?>>مفروز بالكامل</option>
+                            <option value="unsorted" <?php echo $sorted_state_filter === 'unsorted' ? 'selected' : ''; ?>>غير مكتمل الفرز</option>
                         </select></div>
                     <div class="filter-group"><label>المجموعة</label><select name="group_id" class="form-control">
                             <option value="">الكل</option>
