@@ -56,10 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 $can_add_skus = hasPermission($user_id, 'orders_skus', 'add');
 $target_order_id = max(0, (int)($_GET['order_id'] ?? 0));
 
-$page = max(1, (int)($_GET['page'] ?? 1));
-$per_page = 20;
-$offset = ($page - 1) * $per_page;
-
 // Date filters
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to   = trim($_GET['date_to'] ?? '');
@@ -87,36 +83,32 @@ if ($date_to !== '') {
 
 $sku_where_clause = "TRIM(COALESCE(oi.shein_sku, '')) = ''";
 
-$total_orders_stmt = $db->prepare("SELECT COUNT(DISTINCT o.id)
+$total_stmt = $db->prepare("SELECT
+        COUNT(*) AS total_missing_items,
+        COUNT(DISTINCT o.id) AS total_orders
     FROM customer_orders o
     INNER JOIN order_items oi ON oi.order_id = o.id
     WHERE {$sku_where_clause}
     $where_extra");
-$total_orders_stmt->execute($params_count);
-$total_orders = (int)$total_orders_stmt->fetchColumn();
-$total_pages = max(1, (int)ceil($total_orders / $per_page));
-
-if ($page > $total_pages) {
-    $page = $total_pages;
-    $offset = ($page - 1) * $per_page;
-}
+$total_stmt->execute($params_count);
+$totals = $total_stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$total_missing_items = (int)($totals['total_missing_items'] ?? 0);
+$total_orders = (int)($totals['total_orders'] ?? 0);
 
 $orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COALESCE(c.name, '') AS customer_name, o.status,
-        SUM(CASE WHEN TRIM(COALESCE(oi.shein_sku, '')) = '' THEN 1 ELSE 0 END) AS missing_items_count
+        COUNT(oi.id) AS missing_items_count
     FROM customer_orders o
     LEFT JOIN customers c ON o.customer_id = c.id
     INNER JOIN order_items oi ON oi.order_id = o.id
     WHERE {$sku_where_clause}
     $where_extra
     GROUP BY o.id, o.order_number, o.created_at, c.name, o.status
-    ORDER BY o.id DESC
-    LIMIT " . (int)$per_page . " OFFSET " . (int)$offset);
+    ORDER BY o.id DESC");
 $orders_stmt->execute($params_fetch);
 $orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $order_ids = array_map('intval', array_column($orders, 'id'));
 $items_by_order = [];
-$total_missing_items = 0;
 
 if (!empty($order_ids)) {
     $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
@@ -138,7 +130,6 @@ if (!empty($order_ids)) {
         $oid = (int)$item['order_id'];
         if (!isset($items_by_order[$oid])) $items_by_order[$oid] = [];
         $items_by_order[$oid][] = $item;
-        $total_missing_items += max(1, (int)($item['quantity'] ?? 1));
     }
 }
 
@@ -573,7 +564,7 @@ details[open] .chevron { transform: rotate(180deg); }
         <div class="stats-row">
             <div class="stat-pill amber">
                 <div class="dot"></div>
-                <?php echo (int)$total_orders; ?> طلب ناقص
+                <?php echo (int)$total_orders; ?> طلب يحتوي عناصر ناقصة
             </div>
             <div class="stat-pill blue">
                 <div class="dot"></div>
@@ -690,24 +681,6 @@ details[open] .chevron { transform: rotate(180deg); }
         <?php endif; ?>
     </div>
 
-    <!-- Pagination -->
-    <?php if ($total_pages > 1): ?>
-    <div class="pagination">
-        <span>صفحة <strong><?php echo (int)$page; ?></strong> من <strong><?php echo (int)$total_pages; ?></strong></span>
-        <div class="pag-btns">
-            <?php
-                $qs = http_build_query(array_filter(['date_from'=>$date_from,'date_to'=>$date_to,'order_id'=>$target_order_id]));
-                $qs_sep = $qs ? '&' : '';
-            ?>
-            <?php if ($page > 1): ?>
-                <a class="pag-btn" href="?<?php echo $qs.$qs_sep; ?>page=<?php echo $page-1; ?>">→ السابق</a>
-            <?php endif; ?>
-            <?php if ($page < $total_pages): ?>
-                <a class="pag-btn" href="?<?php echo $qs.$qs_sep; ?>page=<?php echo $page+1; ?>">التالي ←</a>
-            <?php endif; ?>
-        </div>
-    </div>
-    <?php endif; ?>
 
 </div>
 </div>
