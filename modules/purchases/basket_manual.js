@@ -182,8 +182,11 @@ if (attachmentInput && previewContainer) {
 function updateTotals() {
     const sarInput = document.getElementById('sarInput');
     const subtotalInput = document.getElementById('subtotalInput');
+    const exchangeInput = document.getElementById('yerExchangeRateInput');
+    const exchangeRate = parseFloat(exchangeInput?.value) || 140;
+    const safeRate = exchangeRate > 0 ? exchangeRate : 140;
     if (sarInput && document.activeElement === sarInput) {
-        subtotalInput.value = ((parseFloat(sarInput.value) || 0) * 140).toFixed(2);
+        subtotalInput.value = ((parseFloat(sarInput.value) || 0) * safeRate).toFixed(2);
     }
     const subtotal = parseFloat(subtotalInput.value) || 0;
     const shippingCost = parseFloat(document.getElementById('shippingCost').value) || 0;
@@ -213,16 +216,14 @@ function updateTotals() {
     document.getElementById('totalDiscountDisplay').textContent = formatMoney(totalDiscount);
     document.getElementById('taxAmountDisplay').textContent = formatMoney(taxAmount);
 
-    const exchangeInput = document.getElementById('yerExchangeRateInput');
-    const exchangeRate = parseFloat(exchangeInput?.value) || 140;
-    setCurrencyInput('subtotalCurrencyDisplay', subtotal, exchangeRate);
-    setCurrencyInput('shippingCurrencyDisplay', shippingCost, exchangeRate);
-    setCurrencyInput('taxCurrencyDisplay', taxAmount, exchangeRate);
-    setCurrencyInput('manualDiscountCurrencyDisplay', manualDiscount, exchangeRate);
-    setCurrencyInput('pointsDiscountCurrencyDisplay', pointsDiscount, exchangeRate);
-    setCurrencyInput('clubDiscountCurrencyDisplay', clubDiscount, exchangeRate);
-    setCurrencyInput('totalDiscountCurrencyDisplay', totalDiscount, exchangeRate);
-    setCurrencyInput('grandTotalDisplay', grandTotal, exchangeRate);
+    setCurrencyInput('subtotalCurrencyDisplay', subtotal, safeRate);
+    setCurrencyInput('shippingCurrencyDisplay', shippingCost, safeRate);
+    setCurrencyInput('taxCurrencyDisplay', taxAmount, safeRate);
+    setCurrencyInput('manualDiscountCurrencyDisplay', manualDiscount, safeRate);
+    setCurrencyInput('pointsDiscountCurrencyDisplay', pointsDiscount, safeRate);
+    setCurrencyInput('clubDiscountCurrencyDisplay', clubDiscount, safeRate);
+    setCurrencyInput('totalDiscountCurrencyDisplay', totalDiscount, safeRate);
+    setCurrencyInput('grandTotalDisplay', grandTotal, safeRate);
 
     // --- NEW: Automatically fill the final price input with the grand total ---
     // The field remains editable for manual overrides.

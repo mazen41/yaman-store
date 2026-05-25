@@ -85,10 +85,12 @@ if ($date_to !== '') {
     $params_fetch[':date_to'] = $date_to;
 }
 
+$sku_where_clause = ($target_order_id > 0) ? '1=1' : "TRIM(COALESCE(oi.shein_sku, '')) = ''";
+
 $total_orders_stmt = $db->prepare("SELECT COUNT(DISTINCT o.id)
     FROM customer_orders o
     INNER JOIN order_items oi ON oi.order_id = o.id
-    WHERE TRIM(COALESCE(oi.shein_sku, '')) = ''
+    WHERE {$sku_where_clause}
     $where_extra");
 $total_orders_stmt->execute($params_count);
 $total_orders = (int)$total_orders_stmt->fetchColumn();
@@ -99,11 +101,12 @@ if ($page > $total_pages) {
     $offset = ($page - 1) * $per_page;
 }
 
-$orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COALESCE(c.name, '') AS customer_name, o.status, COUNT(oi.id) AS missing_items_count
+$orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COALESCE(c.name, '') AS customer_name, o.status,
+        SUM(CASE WHEN TRIM(COALESCE(oi.shein_sku, '')) = '' THEN 1 ELSE 0 END) AS missing_items_count
     FROM customer_orders o
     LEFT JOIN customers c ON o.customer_id = c.id
     INNER JOIN order_items oi ON oi.order_id = o.id
-    WHERE TRIM(COALESCE(oi.shein_sku, '')) = ''
+    WHERE {$sku_where_clause}
     $where_extra
     GROUP BY o.id, o.order_number, o.created_at, c.name, o.status
     ORDER BY o.id DESC
@@ -117,6 +120,7 @@ $total_missing_items = 0;
 
 if (!empty($order_ids)) {
     $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
+    $items_filter = ($target_order_id > 0) ? '' : "AND TRIM(COALESCE(oi.shein_sku, '')) = ''";
     $items_stmt = $db->prepare("SELECT
             oi.id,
             oi.order_id,
@@ -125,7 +129,7 @@ if (!empty($order_ids)) {
             oi.shein_sku
         FROM order_items oi
         WHERE oi.order_id IN ($placeholders)
-          AND TRIM(COALESCE(oi.shein_sku, '')) = ''
+          $items_filter
         ORDER BY oi.order_id DESC, oi.id ASC");
     $items_stmt->execute($order_ids);
     $items = $items_stmt->fetchAll(PDO::FETCH_ASSOC);
