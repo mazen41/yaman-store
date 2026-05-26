@@ -284,6 +284,7 @@ include '../../includes/header.php';
                                 <tr>
                                     <th>#</th>
                                     <th>المنتج</th>
+                                    <th class="text-center">SKU شين</th>
                                     <th>الرابط</th>
                                     <th>ملاحظات</th>
                                     <th class="text-center">الكمية</th>
@@ -297,6 +298,13 @@ include '../../includes/header.php';
                                     <tr>
                                         <td><?php echo $index + 1; ?></td>
                                         <td class="font-semibold text-gray-800"><?php echo htmlspecialchars($item['product_name']); ?></td>
+                                        <td class="text-center">
+                                            <?php if (!empty($item['shein_sku'])): ?>
+                                                <span class="inline-block bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-2 py-1 text-xs font-mono font-bold"><?php echo htmlspecialchars($item['shein_sku']); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-gray-400">-</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <?php if (!empty($item['product_link'])): ?>
                                                 <a href="<?php echo htmlspecialchars($item['product_link']); ?>" target="_blank" class="text-blue-500 hover:text-blue-700"><i class="fas fa-external-link-alt"></i> رابط</a>
