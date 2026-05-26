@@ -299,6 +299,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
   DateTime _lastProcessedAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const _dedupCooldown = Duration(seconds: 4);
 
+  int _scanRequestSeq = 0;
+
+  String _normalizeSku(String? value) {
+    if (value == null) return '';
+    return value.trim().toUpperCase().replaceAll(RegExp(r'[-\s\u00A0\u200B\u200C\u200D]'), '');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -488,27 +495,38 @@ class _ScannerScreenState extends State<ScannerScreen> {
   // ── Main scan logic ──────────────────────────────────────────────────────
 
   Future<void> _onStableSku(String sku) async {
+    final normalizedSku = _normalizeSku(sku);
+    if (normalizedSku.isEmpty) {
+      debugPrint('[Scan] ignored empty/invalid SKU. raw="$sku"');
+      return;
+    }
+
+    final int requestId = ++_scanRequestSeq;
     _locked = true;
+    if (!mounted) return;
     setState(() {
-      _detectedSku = sku;
+      _detectedSku = normalizedSku;
       _statusMessage = 'جارٍ البحث...';
       _statusType = StatusType.loading;
     });
 
+    debugPrint('[Scan] scanned SKU="$normalizedSku" (requestId=$requestId)');
     final canVibrate = await Vibration.hasVibrator() ?? false;
-    
-    // 1. Search local SQLite cache
-    final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(sku);
 
-    if (matches.isNotEmpty) {
-      if (matches.length == 1) {
-        // Single match found locally
-        await _processSingleLocalMatch(sku, matches.first, canVibrate);
-      } else {
-        // Multiple matches found locally — show picker
+    try {
+      final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(normalizedSku);
+      debugPrint('[Scan] fetched local orders count=${matches.length} for SKU="$normalizedSku"');
+
+      if (!mounted || requestId != _scanRequestSeq) {
+        debugPrint('[Scan] stale scan result discarded (requestId=$requestId, active=$_scanRequestSeq)');
+        return;
+      }
+
+      if (matches.isNotEmpty) {
+        debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
         _locked = false;
         await _showOrderPicker(
-          sku,
+          normalizedSku,
           matches
               .map<OrderMatch>((m) => OrderMatch(
                     itemId: m.itemId,
@@ -524,85 +542,63 @@ class _ScannerScreenState extends State<ScannerScreen> {
         );
         return;
       }
-    } else {
-      final knownLocally = await DatabaseHelper.instance.hasAnySkuMatch(sku);
-      if (knownLocally) {
-        setState(() {
-          _statusMessage = 'هذا المنتج مفروز بالفعل';
-          _statusType = StatusType.warning;
-        });
-        if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
-        await Future.delayed(const Duration(milliseconds: 2200));
-        if (mounted) {
-          setState(() {
-            _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
-            _statusType = StatusType.idle;
-          });
-        }
-        _locked = false;
+
+      final onlineResponse = await ApiService.instance.onlineSkuLookup(
+        normalizedSku,
+        purchaseGroupId: _selectedPurchaseGroupId,
+      );
+
+      if (!mounted || requestId != _scanRequestSeq) {
+        debugPrint('[Scan] stale online result discarded (requestId=$requestId, active=$_scanRequestSeq)');
         return;
       }
 
-      // 2. Local cache miss — perform online fallback lookup if connected
-      try {
-        final onlineResponse = await ApiService.instance.onlineSkuLookup(sku, purchaseGroupId: _selectedPurchaseGroupId);
-          if (onlineResponse.success && onlineResponse.matches.isNotEmpty) {
-            if (onlineResponse.matches.length == 1) {
-              final match = onlineResponse.matches.first;
-              
-              // Optimistically mark sorted locally
-              await DatabaseHelper.instance.markItemSorted(match.itemId);
-              
-              // Process scan on server
-              final scanResponse = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
-              await _handleScanResponse(scanResponse, sku, canVibrate);
-            } else {
-              // Multiple matches found online
-              _locked = false;
-              await _showOrderPicker(sku, onlineResponse.matches);
-              return;
-            }
-          } else {
-            setState(() {
-              _statusMessage = 'SKU غير موجود في أي طلب';
-              _statusType = StatusType.error;
-            });
-            if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
-          }
-      } on UnauthorizedException {
-        await ApiService.instance.forceSessionExpiration();
-      } catch (e) {
-        final online = await ApiService.instance.ping();
-        if (online) {
-          setState(() {
-            _statusMessage = 'تعذر جلب بيانات الطلب من الخادم: $e';
-            _statusType = StatusType.error;
-          });
-          if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
-        } else {
-          await _handleOfflineCacheMiss(sku, canVibrate);
-        }
-      }
-    }
+      debugPrint('[Scan] fetched online orders count=${onlineResponse.matches.length} for SKU="$normalizedSku"');
 
-    await Future.delayed(const Duration(milliseconds: 2200));
-    if (mounted) {
+      if (onlineResponse.success && onlineResponse.matches.isNotEmpty) {
+        debugPrint('[Scan] matched orders count=${onlineResponse.matches.length} for SKU="$normalizedSku"');
+        _locked = false;
+        await _showOrderPicker(normalizedSku, onlineResponse.matches);
+        return;
+      }
+
       setState(() {
-        _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
-        _statusType = StatusType.idle;
+        _statusMessage = 'No matching orders found';
+        _statusType = StatusType.error;
       });
+      if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+    } on UnauthorizedException {
+      await ApiService.instance.forceSessionExpiration();
+    } catch (e) {
+      debugPrint('[Scan] lookup failed for SKU="$normalizedSku": $e');
+      final online = await ApiService.instance.ping();
+      if (online) {
+        if (!mounted || requestId != _scanRequestSeq) return;
+        setState(() {
+          _statusMessage = 'تعذر جلب بيانات الطلب من الخادم: $e';
+          _statusType = StatusType.error;
+        });
+        if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+      } else {
+        await _handleOfflineCacheMiss(normalizedSku, canVibrate);
+      }
+    } finally {
+      await Future.delayed(const Duration(milliseconds: 1800));
+      if (mounted && requestId == _scanRequestSeq && !_locked) {
+        setState(() {
+          _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+          _statusType = StatusType.idle;
+        });
+      }
+      _locked = false;
     }
-    _locked = false;
   }
 
   Future<void> _processSingleLocalMatch(String sku, LocalOrderMatch match, bool canVibrate) async {
-    // Optimistically mark item as sorted in local SQLite database
-    await DatabaseHelper.instance.markItemSorted(match.itemId);
-    
     try {
       // Attempt online push
       final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
-      await _handleScanResponse(response, sku, canVibrate);
+      await _handleScanResponse(response, sku, canVibrate, sortedItemId: match.itemId);
     } catch (_) {
       // Save scan to pending local queue for automatic retry
       await DatabaseHelper.instance.insertScan(ScanRecord(
@@ -729,7 +725,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
   }
 
-  Future<void> _handleScanResponse(ScanResponse response, String sku, bool canVibrate) async {
+  Future<void> _handleScanResponse(ScanResponse response, String sku, bool canVibrate, {int? sortedItemId}) async {
     if (response.requiresSelection) {
       _locked = false;
       if (mounted) {
@@ -755,6 +751,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
       });
       if (canVibrate) Vibration.vibrate(pattern: [0, 200, 100, 200]);
     } else {
+      if (sortedItemId != null && sortedItemId > 0) {
+        await DatabaseHelper.instance.markItemSorted(sortedItemId);
+      }
       setState(() {
         _statusMessage = response.allDone ? '🎉 تم فرز الطلب بالكامل!' : 'تم الفرز بنجاح ✅';
         _statusType = StatusType.success;
@@ -785,11 +784,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
           _locked = true;
           final canVibrate = await Vibration.hasVibrator() ?? false;
           
-          await DatabaseHelper.instance.markItemSorted(match.itemId);
-          
           try {
             final response = await ApiService.instance.processScan(sku, selectedItemId: match.itemId, purchaseGroupId: _selectedPurchaseGroupId);
-            await _handleScanResponse(response, sku, canVibrate);
+            await _handleScanResponse(response, sku, canVibrate, sortedItemId: match.itemId);
           } catch (e) {
             // Save selection locally for resilient background syncing
             final existing = await DatabaseHelper.instance.getUnsyncedBySku(sku);
