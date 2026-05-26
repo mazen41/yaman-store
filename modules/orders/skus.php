@@ -60,86 +60,86 @@ $target_order_id = max(0, (int)($_GET['order_id'] ?? 0));
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to   = trim($_GET['date_to'] ?? '');
 
-$where_extra = '';
-$params_count = [];
-$params_fetch = [];
+// ─────────────────────────────────────────────────────────────────────────────
+// SINGLE FLAT QUERY: fetch every order_item that is missing a SKU, joined with
+// its parent order. No GROUP BY that could collapse rows, no LIMIT, no DISTINCT.
+// We group the results into $orders_map / $items_by_order purely in PHP.
+// ─────────────────────────────────────────────────────────────────────────────
+$sql_conditions = ["TRIM(COALESCE(oi.shein_sku, '')) = ''"];
+$sql_params     = [];
 
 if ($target_order_id > 0) {
-    $where_extra .= " AND o.id = :target_order_id";
-    $params_count[':target_order_id'] = $target_order_id;
-    $params_fetch[':target_order_id'] = $target_order_id;
+    $sql_conditions[] = 'o.id = ?';
+    $sql_params[]     = $target_order_id;
 }
-
 if ($date_from !== '') {
-    $where_extra .= " AND DATE(o.created_at) >= :date_from";
-    $params_count[':date_from'] = $date_from;
-    $params_fetch[':date_from'] = $date_from;
+    $sql_conditions[] = 'DATE(o.created_at) >= ?';
+    $sql_params[]     = $date_from;
 }
 if ($date_to !== '') {
-    $where_extra .= " AND DATE(o.created_at) <= :date_to";
-    $params_count[':date_to'] = $date_to;
-    $params_fetch[':date_to'] = $date_to;
+    $sql_conditions[] = 'DATE(o.created_at) <= ?';
+    $sql_params[]     = $date_to;
 }
 
-$sku_where_clause = "TRIM(COALESCE(oi.shein_sku, '')) = ''";
+$where_clause = implode(' AND ', $sql_conditions);
 
-$total_stmt = $db->prepare("SELECT
-        COUNT(*) AS total_missing_items,
-        COUNT(DISTINCT o.id) AS total_orders
-    FROM customer_orders o
-    INNER JOIN order_items oi ON oi.order_id = o.id
-    WHERE {$sku_where_clause}
-    $where_extra");
-$total_stmt->execute($params_count);
-$totals = $total_stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-$total_missing_items = (int)($totals['total_missing_items'] ?? 0);
-$total_orders = (int)($totals['total_orders'] ?? 0);
+$flat_stmt = $db->prepare("
+    SELECT
+        oi.id          AS item_id,
+        oi.order_id,
+        oi.product_name,
+        oi.quantity,
+        oi.shein_sku,
+        o.order_number,
+        o.created_at,
+        o.status,
+        COALESCE(c.name, '') AS customer_name
+    FROM order_items oi
+    INNER JOIN customer_orders o ON o.id = oi.order_id
+    LEFT  JOIN customers       c ON c.id = o.customer_id
+    WHERE {$where_clause}
+    ORDER BY o.id DESC, oi.id ASC
+");
+$flat_stmt->execute($sql_params);
+$flat_rows = $flat_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$orders_stmt = $db->prepare("SELECT o.id, o.order_number, o.created_at, COALESCE(c.name, '') AS customer_name, o.status,
-        COUNT(oi.id) AS missing_items_count
-    FROM customer_orders o
-    LEFT JOIN customers c ON o.customer_id = c.id
-    INNER JOIN order_items oi ON oi.order_id = o.id
-    WHERE {$sku_where_clause}
-    $where_extra
-    GROUP BY o.id, o.order_number, o.created_at, c.name, o.status
-    ORDER BY o.id DESC");
-$orders_stmt->execute($params_fetch);
-$orders = $orders_stmt->fetchAll(PDO::FETCH_ASSOC);
+// Group into orders → items in PHP (guaranteed: every single row appears)
+$orders_map     = [];   // order_id => order meta
+$items_by_order = [];   // order_id => [ item, item, ... ]
 
-$order_ids = array_map('intval', array_column($orders, 'id'));
-$items_by_order = [];
+foreach ($flat_rows as $row) {
+    $oid = (int)$row['order_id'];
 
-if (!empty($order_ids)) {
-    $placeholders = implode(',', array_fill(0, count($order_ids), '?'));
-    $items_filter = "AND TRIM(COALESCE(oi.shein_sku, '')) = ''";
-    $items_stmt = $db->prepare("SELECT
-            oi.id,
-            oi.order_id,
-            oi.product_name,
-            oi.quantity,
-            oi.shein_sku
-        FROM order_items oi
-        WHERE oi.order_id IN ($placeholders)
-          $items_filter
-        ORDER BY oi.order_id DESC, oi.id ASC");
-    $items_stmt->execute($order_ids);
-    $items = $items_stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($items as $item) {
-        $oid = (int)$item['order_id'];
-        if (!isset($items_by_order[$oid])) $items_by_order[$oid] = [];
-        $items_by_order[$oid][] = $item;
+    if (!isset($orders_map[$oid])) {
+        $orders_map[$oid] = [
+            'id'            => $oid,
+            'order_number'  => $row['order_number'],
+            'created_at'    => $row['created_at'],
+            'status'        => $row['status'],
+            'customer_name' => $row['customer_name'],
+        ];
+        $items_by_order[$oid] = [];
     }
+
+    $items_by_order[$oid][] = [
+        'id'           => (int)$row['item_id'],
+        'order_id'     => $oid,
+        'product_name' => $row['product_name'],
+        'quantity'     => (int)($row['quantity'] ?? 1),
+        'shein_sku'    => $row['shein_sku'],
+    ];
 }
 
+// Build the $orders array in the same shape the template already expects
+$orders = array_values($orders_map);
+
+// Totals derived directly from the flat result — no second query needed
+$total_missing_items = count($flat_rows);
+$total_orders        = count($orders_map);
 
 function calcMissingQty(array $items): int {
-    $sum = 0;
-    foreach ($items as $it) {
-        $sum += max(1, (int)($it['quantity'] ?? 1));
-    }
-    return $sum;
+    // Returns number of ITEM ROWS (not qty sum) so the badge matches what is shown
+    return count($items);
 }
 
 include '../../includes/header.php';

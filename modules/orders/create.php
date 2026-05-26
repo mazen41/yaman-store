@@ -110,21 +110,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $clean_shein_items = [];
     if (is_array($shein_items)) {
         foreach ($shein_items as $index => $shein_item) {
-            $shein_sku = sheinNormalizeSku($shein_item['sku'] ?? '');
-            $shein_name = trim($shein_item['name'] ?? '');
+            $shein_sku   = sheinNormalizeSku($shein_item['sku'] ?? '');
+            $shein_name  = trim($shein_item['name']  ?? '');
             $shein_image = trim($shein_item['image'] ?? '');
 
-            // Keep item rows even when SKU is empty so each order item can later be
-            // completed from the SKU entry page.
-            if ($shein_sku !== '' || $shein_name !== '' || $shein_image !== '') {
-                $clean_shein_items[] = [
-                    'sku' => $shein_sku,
-                    'name' => $shein_name,
-                    'image' => $shein_image,
-                ];
-            }
+            // Always keep every slot — even fully-empty ones — so that each
+            // product slot becomes its own order_item row that can later be
+            // filled in from the SKU entry page.
+            $clean_shein_items[] = [
+                'sku'   => $shein_sku,
+                'name'  => $shein_name,
+                'image' => $shein_image,
+            ];
         }
     }
+
+    // If no shein_items were submitted at all (old orders / no JS), fall back
+    // to creating one placeholder row per unit from item_count.
+    if (empty($clean_shein_items)) {
+        $item_count = max(1, (int)($items[0]['item_count'] ?? $items[0]['quantity'] ?? 1));
+        for ($i = 0; $i < $item_count; $i++) {
+            $clean_shein_items[] = ['sku' => '', 'name' => '', 'image' => ''];
+        }
+    }
+
     $shein_items = $clean_shein_items;
 
     if (!empty($errors)) {

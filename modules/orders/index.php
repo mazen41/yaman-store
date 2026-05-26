@@ -150,6 +150,8 @@ try {
                         (SELECT COALESCE(SUM(oi_sort.quantity), 0) FROM order_items oi_sort WHERE oi_sort.order_id = o.id AND oi_sort.status = 'scanned') as sorting_sorted_items,
                         (SELECT COALESCE(SUM(price), 0) FROM order_damaged_items odi WHERE odi.order_id = o.id) as damaged_amount,
                         (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = o.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) as first_product_link,
+                        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.shein_sku IS NOT NULL AND oi.shein_sku <> '') as sku_items_count,
+                        (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) as total_items_count,
                         pg.group_name as purchase_group_name,
                         pg.group_number as purchase_group_number,
                         (SELECT GROUP_CONCAT(CONCAT(ci.id, ':', ci.invoice_number) SEPARATOR ';')
@@ -607,6 +609,7 @@ include '../../includes/header.php';
                         <th>رابط إضافي</th>
                         <th>الحالة</th>
                         <th>حالة الفرز</th>
+                        <th>SKU</th>
                         <th>ملاحظات المدير</th>
                         <th>العملة</th>
                         <th>المبلغ الأصلي</th> <!-- This is your Gross Total -->
@@ -624,7 +627,7 @@ include '../../includes/header.php';
                 <tbody id="orders-table-body">
                     <?php if (empty($orders)): ?>
                         <tr>
-                            <td colspan="20" style="text-align: center; padding: 40px; color: #6b7280;">لا توجد طلبات تطابق معايير البحث</td>
+                            <td colspan="21" style="text-align: center; padding: 40px; color: #6b7280;">لا توجد طلبات تطابق معايير البحث</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($orders as $order):
@@ -668,6 +671,19 @@ include '../../includes/header.php';
                                     <?php endif; ?>
                                 </td>
                                 <td><?php echo renderOrderSortingBadge($order_sorting_summary); ?></td>
+                                <td style="white-space: nowrap; text-align: center;">
+                                    <?php
+                                    $sku_count = (int)($order['sku_items_count'] ?? 0);
+                                    $total_items = (int)($order['total_items_count'] ?? 0);
+                                    if ($total_items > 0) {
+                                        $sku_color = ($sku_count >= $total_items) ? '#047857' : (($sku_count > 0) ? '#92400e' : '#b91c1c');
+                                        $sku_bg = ($sku_count >= $total_items) ? '#ecfdf5' : (($sku_count > 0) ? '#fffbeb' : '#fee2e2');
+                                        echo '<span style="background:' . $sku_bg . '; color:' . $sku_color . '; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;">' . $sku_count . '/' . $total_items . '</span>';
+                                    } else {
+                                        echo '<span style="color:#9ca3af;">-</span>';
+                                    }
+                                    ?>
+                                </td>
                                 <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="<?php echo htmlspecialchars($order['manager_notes']); ?>">
                                     <?php echo !empty($order['manager_notes']) ? htmlspecialchars($order['manager_notes']) : '<span style="color: #9ca3af;">-</span>'; ?>
                                 </td>
@@ -736,7 +752,7 @@ include '../../includes/header.php';
                         <tr style="font-weight: bold; font-size: 14px;">
                             <td colspan="3" style="text-align: right; padding: 12px;"><i class="fas fa-calculator"></i> إجمالي الصفحة (<?php echo $page_totals['total_count']; ?>)</td>
                             <td><?php echo number_format($page_totals['total_quantity_sum'], 0); ?></td>
-                            <td colspan="6"></td>
+                            <td colspan="7"></td>
                             <td style="color: #3b82f6;"><?php echo number_format($page_totals['total_subtotal_sum'], 0); ?></td>
                             <td style="color: #f59e0b;"><?php echo number_format($page_totals['total_discount_sum'], 0); ?></td>
                             <td></td>
