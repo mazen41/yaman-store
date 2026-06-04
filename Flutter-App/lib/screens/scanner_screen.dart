@@ -285,6 +285,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   int _selectedPurchaseGroupId = 0;
   String _selectedPurchaseGroupLabel = 'كل المجموعات';
   List<Map<String, dynamic>> _purchaseGroups = [];
+  List<Map<String, dynamic>> _sortingNotifications = [];
+  int _sortingUnreadCount = 0;
+  bool _loadingSortingNotifications = false;
 
   // Periodic timer for connectivity monitoring & background sync
   Timer? _connectivityTimer;
@@ -314,6 +317,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     _refreshBadge();
     _loadSyncMetadata();
     _loadPurchaseGroups();
+    _loadSortingNotifications();
     
     // Register auto-logout on session expiration
     ApiService.instance.onSessionExpired = () {
@@ -1045,23 +1049,49 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
 
-  Future<void> _refreshNotifications() async {
+  Future<void> _loadSortingNotifications({bool showErrors = false}) async {
+    if (_loadingSortingNotifications) return;
+    setState(() => _loadingSortingNotifications = true);
     try {
-      final lastRaw = await DatabaseHelper.instance.getMetadata('lastSortingNotificationId');
-      final afterId = int.tryParse(lastRaw ?? '0') ?? 0;
-      final response = await ApiService.instance.fetchSortingNotifications(afterId: afterId);
-      final notifications = response['notifications'] as List<dynamic>? ?? const [];
-      final lastId = int.tryParse((response['last_id'] ?? afterId).toString()) ?? afterId;
-      await DatabaseHelper.instance.setMetadata('lastSortingNotificationId', lastId.toString());
-      if (notifications.isEmpty) {
-        _showSnack('لا توجد إشعارات فرز جديدة');
-        return;
+      final response = await ApiService.instance.fetchSortingNotifications(afterId: 0, limit: 500);
+      final notifications = (response['notifications'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((n) => n.cast<String, dynamic>())
+          .toList()
+          .reversed
+          .toList();
+      final unreadCount = int.tryParse((response['unread_count'] ?? '0').toString()) ??
+          notifications.where((n) => int.tryParse((n['is_read'] ?? '0').toString()) == 0).length;
+      if (mounted) {
+        setState(() {
+          _sortingNotifications = notifications;
+          _sortingUnreadCount = unreadCount;
+          _loadingSortingNotifications = false;
+        });
       }
-      final latest = (notifications.last as Map).cast<String, dynamic>();
-      _showSnack('${notifications.length} إشعار جديد: ${latest['message'] ?? ''}');
     } catch (e) {
-      _showSnack('تعذر تحديث إشعارات الفرز: $e');
+      if (mounted) setState(() => _loadingSortingNotifications = false);
+      if (showErrors) _showSnack('تعذر تحميل إشعارات الفرز: $e');
     }
+  }
+
+  Future<void> _showSortingNotificationsSheet() async {
+    await _loadSortingNotifications(showErrors: true);
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111827),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _SortingNotificationsSheet(
+        notifications: _sortingNotifications,
+        unreadCount: _sortingUnreadCount,
+        loading: _loadingSortingNotifications,
+      ),
+    );
   }
 
   Future<void> _forceRefreshOrders() async {
@@ -1187,6 +1217,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         _statusMessage = (result['message'] ?? 'تم فرز المجموعة').toString();
       });
       await _autoSyncOrders();
+      await _loadSortingNotifications();
     } catch (e) {
       setState(() {
         _statusType = StatusType.error;
@@ -1216,6 +1247,29 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             icon: const Icon(Icons.sort_rounded, color: Colors.greenAccent),
             tooltip: 'فرز المجموعة المحددة',
             onPressed: _sortSelectedPurchaseGroup,
+          ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: Colors.white70),
+                tooltip: 'إشعارات الفرز',
+                onPressed: _showSortingNotificationsSheet,
+              ),
+              if (_sortingUnreadCount > 0)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                    child: Text(
+                      _sortingUnreadCount > 99 ? '99+' : '$_sortingUnreadCount',
+                      style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.white70),
@@ -1327,12 +1381,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                             label: const Text('تحديث الطلبات'),
                             onPressed: _forceRefreshOrders,
                           ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.notifications_active_outlined),
-                            label: const Text('Refresh Notifications'),
-                            onPressed: _refreshNotifications,
-                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -1353,6 +1401,194 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                 ),
               ],
             ),
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sorting notifications bottom sheet component
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SortingNotificationsSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> notifications;
+  final int unreadCount;
+  final bool loading;
+
+  const _SortingNotificationsSheet({
+    required this.notifications,
+    required this.unreadCount,
+    required this.loading,
+  });
+
+  String _text(Map<String, dynamic> notification, String key) => (notification[key] ?? '').toString();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.72,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (context, scrollController) {
+          return Column(
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_active_outlined, color: Colors.amberAccent),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'إشعارات الفرز',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                        textDirection: TextDirection.rtl,
+                      ),
+                    ),
+                    if (unreadCount > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                        ),
+                        child: Text(
+                          '$unreadCount جديد',
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (loading)
+                const Expanded(child: Center(child: CircularProgressIndicator(color: Colors.white)))
+              else if (notifications.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Text(
+                      'لا توجد إشعارات فرز حالياً',
+                      style: TextStyle(color: Colors.white60),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                    itemBuilder: (context, index) {
+                      final notification = notifications[index];
+                      final isUnread = int.tryParse(_text(notification, 'is_read')) == 0;
+                      final type = _text(notification, 'type');
+                      final orderNumber = _text(notification, 'order_number').isNotEmpty
+                          ? '#${_text(notification, 'order_number')}'
+                          : 'طلب #${_text(notification, 'order_id')}';
+                      final sku = _text(notification, 'sku');
+                      final createdBy = _text(notification, 'created_by_name');
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isUnread ? const Color(0xFF312331) : const Color(0xFF1F2937),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: isUnread ? Colors.redAccent.withOpacity(0.4) : Colors.white10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              type == 'order_complete' ? Icons.task_alt_rounded : Icons.inventory_2_outlined,
+                              color: type == 'order_complete' ? Colors.greenAccent : Colors.lightBlueAccent,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          orderNumber,
+                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                          textDirection: TextDirection.rtl,
+                                        ),
+                                      ),
+                                      if (isUnread)
+                                        const Text(
+                                          'جديد',
+                                          style: TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                          textDirection: TextDirection.rtl,
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _text(notification, 'message'),
+                                    style: const TextStyle(color: Colors.white70, height: 1.35),
+                                    textDirection: TextDirection.rtl,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (sku.isNotEmpty) _MetaChip(label: 'SKU: $sku'),
+                                      if (createdBy.isNotEmpty) _MetaChip(label: createdBy),
+                                      _MetaChip(label: _text(notification, 'created_at')),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemCount: notifications.length,
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final String label;
+
+  const _MetaChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(color: Colors.white54, fontSize: 11),
+        textDirection: TextDirection.rtl,
+      ),
     );
   }
 }

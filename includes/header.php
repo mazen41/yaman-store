@@ -462,14 +462,12 @@
                         class="hidden absolute left-0 mt-2 w-80 bg-white rounded-md shadow-lg py-2 z-50 border border-gray-200">
                         <div class="px-3 pb-2 border-b border-gray-100 flex items-center justify-between">
                             <span class="text-sm font-semibold text-gray-700">الإشعارات</span>
-                            <button id="notifRefresh" class="text-xs text-blue-600 hover:text-blue-700">
-                                <i class="fas fa-rotate-right ml-1"></i>تحديث
-                            </button>
+                            <span class="text-xs text-gray-400">عند تحديث الصفحة</span>
                         </div>
                         <div id="notifList" class="max-h-96 overflow-auto">
                             <div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>
                         </div>
-                        <div class="px-3 pt-2 border-t border-gray-100 text-xs text-gray-500">يتم التحديث تلقائياً</div>
+                        <div class="px-3 pt-2 border-t border-gray-100 text-xs text-gray-500">تعرض إشعارات الفرز المحملة عند تحديث الصفحة فقط</div>
                     </div>
                 </div>
 
@@ -572,38 +570,51 @@
                 }
             });
 
-            // ================= Notifications =================
+            // ================= Sorting Notifications =================
             const NOTIF_URL = '/modules/notifications/fetch.php';
             const notifButton = document.getElementById('notifButton');
             const notifDropdown = document.getElementById('notifDropdown');
             const notifBadge = document.getElementById('notifBadge');
             const notifList = document.getElementById('notifList');
-            const notifRefresh = document.getElementById('notifRefresh');
+
+            function escapeHtml(value) {
+                return String(value || '').replace(/[&<>'"]/g, function (char) {
+                    return {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        "'": '&#39;',
+                        '"': '&quot;'
+                    }[char];
+                });
+            }
 
             function renderNotifItems(items) {
                 if (!items || items.length === 0) {
-                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>';
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات فرز.</div>';
                     return;
                 }
                 const html = items.map(function (item) {
-                    const statusColor = item.status === 'sent' ? 'text-amber-600 bg-amber-50' : (item.status === 'failed' ? 'text-red-600 bg-red-50' : 'text-yellow-700 bg-yellow-50');
-                    const typeIcon = item.type === 'email' ? 'fa-envelope text-blue-600' : (item.type === 'whatsapp' ? 'fa-whatsapp text-amber-600' : 'fa-bell text-gray-500');
-                    const orderNumber = item.order_number ? ('#' + item.order_number) : ('طلب #' + item.order_id);
+                    const unreadClass = Number(item.is_read || 0) === 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-50';
+                    const typeIcon = item.type === 'order_complete' ? 'fa-check-circle text-green-600' : 'fa-box-open text-blue-600';
+                    const orderNumber = item.order_number ? ('#' + escapeHtml(item.order_number)) : ('طلب #' + escapeHtml(item.order_id));
+                    const sku = item.sku ? (' • SKU: ' + escapeHtml(item.sku)) : '';
+                    const creator = item.created_by_name ? (' • ' + escapeHtml(item.created_by_name)) : '';
                     return (
-                        '<div class="px-3 py-2 hover:bg-gray-50 border-b border-gray-50">' +
-                        '<div class="flex items-start justify-between">' +
-                        '<div class="flex items-start space-x-2 space-x-reverse">' +
+                        '<div class="px-3 py-2 hover:bg-gray-50 border-b ' + unreadClass + '">' +
+                        '<div class="flex items-start justify-between gap-3">' +
+                        '<div class="flex items-start space-x-2 space-x-reverse min-w-0">' +
                         '<i class="fas ' + typeIcon + ' mt-1 ml-2"></i>' +
-                        '<div>' +
-                        '<div class="text-sm font-semibold text-gray-800">' + item.title + ' - ' + orderNumber + '</div>' +
-                        '<div class="text-xs text-gray-500">' + (item.customer_name || '') + ' • ' + (item.sent_to || '') + '</div>' +
+                        '<div class="min-w-0">' +
+                        '<div class="text-sm font-semibold text-gray-800">' + escapeHtml(item.title) + ' - ' + orderNumber + '</div>' +
+                        '<div class="text-xs text-gray-600 mt-1 break-words">' + escapeHtml(item.message) + '</div>' +
+                        '<div class="text-[11px] text-gray-400 mt-1">' + escapeHtml(item.created_at) + sku + creator + '</div>' +
                         '</div>' +
                         '</div>' +
-                        '<span class="text-xs px-2 py-0.5 rounded ' + statusColor + '">' + item.status_text + '</span>' +
+                        (Number(item.is_read || 0) === 0 ? '<span class="text-[10px] px-2 py-0.5 rounded-full text-red-700 bg-red-100">جديد</span>' : '') +
                         '</div>' +
-                        '<div class="mt-2 flex justify-end space-x-2 space-x-reverse text-xs">' +
-                        '<a href="' + item.view_url + '" class="text-gray-600 hover:text-gray-800"><i class="fas fa-eye ml-1"></i>تفاصيل</a>' +
-                        '<a href="' + item.send_url + '" class="text-blue-600 hover:text-blue-800"><i class="fas fa-paper-plane ml-1"></i>إعادة الإرسال</a>' +
+                        '<div class="mt-2 flex justify-end text-xs">' +
+                        '<a href="' + escapeHtml(item.view_url) + '" class="text-blue-600 hover:text-blue-800"><i class="fas fa-eye ml-1"></i>تفاصيل الطلب</a>' +
                         '</div>' +
                         '</div>'
                     );
@@ -623,38 +634,26 @@
                 renderNotifItems(payload && payload.items ? payload.items : []);
             }
 
-            async function fetchNotifications() {
+            async function fetchNotificationsOnPageLoad() {
                 try {
                     const res = await fetch(NOTIF_URL, { credentials: 'same-origin' });
                     if (!res.ok) throw new Error('HTTP ' + res.status);
                     const data = await res.json();
                     updateNotifUI(data);
                 } catch (e) {
-                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-red-600">تعذر تحميل الإشعارات.</div>';
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-red-600">تعذر تحميل إشعارات الفرز.</div>';
                     notifBadge.classList.add('hidden');
                 }
             }
 
-            // Initial fetch and polling every 20s
-            fetchNotifications();
-            let notifInterval = setInterval(fetchNotifications, 20000);
+            // Load once after a full page refresh. Do not poll or auto-refresh.
+            fetchNotificationsOnPageLoad();
 
-            // Toggle dropdown
+            // Toggle dropdown without refetching.
             if (notifButton) {
                 notifButton.addEventListener('click', function (e) {
                     e.stopPropagation();
                     notifDropdown.classList.toggle('hidden');
-                    if (!notifDropdown.classList.contains('hidden')) {
-                        fetchNotifications();
-                    }
-                });
-            }
-
-            // Manual refresh
-            if (notifRefresh) {
-                notifRefresh.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    fetchNotifications();
                 });
             }
 

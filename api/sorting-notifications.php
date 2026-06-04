@@ -12,9 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 authenticateRequest($db);
 $afterId = max(0, (int)($_GET['after_id'] ?? 0));
-$limit = min(100, max(1, (int)($_GET['limit'] ?? 50)));
+$limit = min(500, max(1, (int)($_GET['limit'] ?? 100)));
 
 try {
+    $unreadStmt = $db->prepare("SELECT COUNT(*) FROM sorting_notifications WHERE COALESCE(is_read, 0) = 0");
+    $unreadStmt->execute();
+    $unreadCount = (int)$unreadStmt->fetchColumn();
+
     $stmt = $db->prepare("
         SELECT sn.id,
                sn.order_id,
@@ -53,6 +57,7 @@ try {
     ok([
         'notifications' => $notifications,
         'last_id' => empty($notifications) ? $afterId : (int)end($notifications)['id'],
+        'unread_count' => $unreadCount,
     ]);
 } catch (PDOException $e) {
     fail('حدث خطأ أثناء جلب إشعارات الفرز: ' . $e->getMessage(), 500);
