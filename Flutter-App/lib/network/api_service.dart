@@ -15,6 +15,8 @@ const String _apiSkuLookup = '$_baseUrl/api/sku-lookup.php';
 const String _apiSyncActions = '$_baseUrl/api/sync-actions.php';
 const String _apiPurchaseGroups = '$_baseUrl/api/purchase-groups.php';
 const String _apiSortPurchaseGroup = '$_baseUrl/api/sort-purchase-group.php';
+const String _apiSortingNotifications = '$_baseUrl/api/sorting-notifications.php';
+const String _apiUndoSort = '$_baseUrl/api/undo-sort.php';
 
 // ── Response types ────────────────────────────────────────────────────────
 
@@ -61,6 +63,7 @@ class OrderMatch {
   final String customerName;
   final String customerMobile;
   final String status;
+  final int totalSkus;
 
   OrderMatch({
     required this.itemId,
@@ -69,6 +72,7 @@ class OrderMatch {
     required this.customerName,
     required this.customerMobile,
     required this.status,
+    this.totalSkus = 0,
   });
 
   factory OrderMatch.fromJson(Map<String, dynamic> json) => OrderMatch(
@@ -78,6 +82,7 @@ class OrderMatch {
         customerName: json['customer_name'] ?? '',
         customerMobile: json['customer_mobile'] ?? '',
         status: json['status'] ?? '',
+        totalSkus: int.tryParse((json['total_skus'] ?? '0').toString()) ?? 0,
       );
 }
 
@@ -114,6 +119,7 @@ class SyncOrdersResponse {
           'customer_name': (m['customer_name'] ?? '').toString(),
           'customer_mobile': (m['customer_mobile'] ?? '').toString(),
           'status': (m['status'] ?? '').toString(),
+          'total_skus': int.tryParse((m['total_skus'] ?? '0').toString()) ?? 0,
           'updated_at': int.tryParse(m['updated_at'].toString()) ?? 0,
         };
       }).toList(),
@@ -550,6 +556,30 @@ class ApiService {
       return groups.map((g) => (g as Map).cast<String, dynamic>()).toList();
     }
     throw Exception('فشل تحميل مجموعات الشراء: ${response.statusCode}');
+  }
+
+  Future<Map<String, dynamic>> fetchSortingNotifications({int afterId = 0}) async {
+    final headers = await _jsonHeaders();
+    final response = await http
+        .get(Uri.parse('$_apiSortingNotifications?after_id=$afterId'), headers: headers)
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('فشل جلب إشعارات الفرز: ${response.statusCode}');
+  }
+
+  Future<Map<String, dynamic>> undoSort(int itemId) async {
+    final headers = await _jsonHeaders();
+    final response = await http.post(
+      Uri.parse(_apiUndoSort),
+      headers: headers,
+      body: jsonEncode({'item_id': itemId}),
+    ).timeout(const Duration(seconds: 15));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('فشل إلغاء الفرز: ${response.statusCode}');
   }
 
 }

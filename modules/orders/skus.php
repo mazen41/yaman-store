@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
         echo json_encode([
             'success'    => true,
             'message'    => 'تم حفظ SKU بنجاح ✓',
-            'remove_row' => ($sku !== ''),
+            'remove_row' => false,
             'item_id'    => $item_id,
         ]);
     } catch (Throwable $e) {
@@ -284,6 +284,10 @@ include '../../includes/header.php';
 .item-row:hover  { border-color:#fb923c; background:#fff7ed; }
 .item-row.saving { opacity:.6; pointer-events:none; }
 .item-row.saved-out { transform:translateX(-20px); opacity:0; }
+.item-row.saved { border-color:#86efac; background:#f0fdf4; }
+.item-row.saved:hover { border-color:#22c55e; background:#ecfdf5; }
+.item-row.saved .item-num { background:#bbf7d0; color:#15803d; }
+.saved-sku-pill { background:#dcfce7 !important; color:#166534 !important; border:1px solid #86efac; }
 @keyframes item-in { from{opacity:0;transform:translateX(8px)} to{opacity:1;transform:translateX(0)} }
 
 .item-num { width:28px; height:28px; border-radius:8px; background:#fed7aa; color:#c2410c; font-size:.72rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -309,6 +313,7 @@ include '../../includes/header.php';
 }
 .save-btn:hover:not(:disabled) { background:#0f172a; transform:translateY(-1px); box-shadow:0 4px 12px rgba(15,23,42,.2); }
 .save-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+.item-row.saved .save-btn:disabled { opacity:1; background:#16a34a; }
 .save-btn .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .6s linear infinite; display:none; }
 .save-btn.loading .spinner   { display:block; }
 .save-btn.loading .btn-label { display:none; }
@@ -736,6 +741,38 @@ function focusNextInput(currentInput) {
     if (i >= 0 && inputs[i + 1]) inputs[i + 1].focus();
 }
 
+function markItemRowSaved(itemId, sku, inputRef) {
+    const row = document.getElementById(`row-${itemId}`);
+    if (!row) return;
+    row.classList.remove('saving');
+    row.classList.add('saved');
+
+    const input = row.querySelector('.sku-input');
+    if (input) {
+        input.value = sku;
+        input.classList.add('has-value');
+        input.readOnly = true;
+        input.disabled = true;
+    }
+
+    const btn = row.querySelector('.save-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.remove('loading');
+        btn.innerHTML = '<i class="fas fa-check"></i><span class="btn-label">تم الحفظ</span>';
+    }
+
+    const details = row.querySelector('.item-details');
+    if (details && !details.querySelector('.saved-sku-pill')) {
+        const pill = document.createElement('span');
+        pill.className = 'saved-sku-pill';
+        pill.textContent = `SKU: ${sku}`;
+        details.appendChild(pill);
+    }
+
+    if (inputRef) focusNextInput(inputRef);
+}
+
 function removeItemRow(itemId, orderId, inputRef) {
     const row = document.getElementById(`row-${itemId}`);
     if (row) {
@@ -798,7 +835,7 @@ async function saveSku(itemId) {
         const data = await res.json();
         if (!data.success) throw new Error(data.message || 'فشل الحفظ');
         showAlert(data.message, 'success');
-        if (data.remove_row) removeItemRow(itemId, parseInt(input.dataset.orderId, 10), input);
+        markItemRowSaved(itemId, sku, input);
     } catch (e) {
         showAlert(e.message || 'فشل الحفظ، حاول مجدداً', 'error');
         btn.disabled = false;

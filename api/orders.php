@@ -49,6 +49,7 @@ try {
                 COALESCE(c.mobile_number, c.phone, '')         AS customer_mobile,
                 co.status,
                 co.sorting_status,
+                (SELECT COUNT(*) FROM order_items oi_count WHERE oi_count.order_id = co.id AND oi_count.shein_sku IS NOT NULL AND oi_count.shein_sku <> '') AS total_skus,
                 UNIX_TIMESTAMP(co.updated_at)                  AS updated_at
             FROM   customer_orders co
             LEFT JOIN customers c ON c.id = co.customer_id
@@ -72,6 +73,7 @@ try {
                 COALESCE(c.mobile_number, c.phone, '')         AS customer_mobile,
                 co.status,
                 co.sorting_status,
+                (SELECT COUNT(*) FROM order_items oi_count WHERE oi_count.order_id = co.id AND oi_count.shein_sku IS NOT NULL AND oi_count.shein_sku <> '') AS total_skus,
                 UNIX_TIMESTAMP(co.updated_at)                  AS updated_at
             FROM   customer_orders co
             LEFT JOIN customers c ON c.id = co.customer_id
@@ -123,6 +125,7 @@ try {
             $row['order_id']     = (int) $row['order_id'];
             $row['updated_at']   = (int) $row['updated_at'];
             $row['sorting_status'] = $row['sorting_status'] ?? 'not_started';
+            $row['total_skus'] = (int)($row['total_skus'] ?? 0);
             return $row;
         }, $orders);
 

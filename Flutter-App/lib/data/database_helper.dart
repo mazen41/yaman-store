@@ -43,6 +43,7 @@ class LocalOrderMatch {
   final String sku;
   final String productName;
   final String productImage;
+  final int totalSkus;
 
   LocalOrderMatch({
     required this.itemId,
@@ -54,6 +55,7 @@ class LocalOrderMatch {
     required this.sku,
     required this.productName,
     required this.productImage,
+    this.totalSkus = 0,
   });
 }
 
@@ -73,7 +75,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'yaman_scanner.db');
-    return openDatabase(path, version: 5, onCreate: (db, version) async {
+    return openDatabase(path, version: 6, onCreate: (db, version) async {
       await _createTables(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 4) {
@@ -93,6 +95,11 @@ class DatabaseHelper {
         // 2. Create auxiliary tables
         await _createAuxiliaryTables(db);
       }
+      if (oldVersion < 6) {
+        try {
+          await db.execute('ALTER TABLE orders_cache ADD COLUMN total_skus INTEGER NOT NULL DEFAULT 0');
+        } catch (_) {}
+      }
     });
   }
 
@@ -108,7 +115,8 @@ class DatabaseHelper {
       order_number TEXT, 
       customer_name TEXT, 
       customer_mobile TEXT, 
-      status TEXT, 
+      status TEXT,
+      total_skus INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     )''');
     await db.execute('''CREATE TABLE IF NOT EXISTS order_items_cache (
@@ -155,6 +163,7 @@ class DatabaseHelper {
           'customer_name': order['customer_name'],
           'customer_mobile': order['customer_mobile'],
           'status': order['status'],
+          'total_skus': order['total_skus'] ?? 0,
           'updated_at': order['updated_at'] ?? now,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -191,6 +200,7 @@ class DatabaseHelper {
             'customer_name': order['customer_name'],
             'customer_mobile': order['customer_mobile'],
             'status': order['status'],
+            'total_skus': order['total_skus'] ?? 0,
             'updated_at': order['updated_at'] ?? now,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -215,17 +225,17 @@ class DatabaseHelper {
     });
   }
 
-  Future<List<LocalOrderMatch>> findOrdersBySku(String sku) async {
+  Future<List<LocalOrderMatch>> findOrdersBySku(String sku, {bool sorted = false}) async {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status
+             o.order_number, o.customer_name, o.customer_mobile, o.status, o.total_skus
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
-        AND COALESCE(i.is_sorted, 0) = 0
+        AND COALESCE(i.is_sorted, 0) = ?
         AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
-    ''', [_normalizeSku(sku)]);
+    ''', [_normalizeSku(sku), sorted ? 1 : 0]);
     
     return rows.map((r) => LocalOrderMatch(
       itemId: r['item_id'] as int, 
@@ -237,6 +247,7 @@ class DatabaseHelper {
       status: (r['status'] ?? '').toString(),
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
+      totalSkus: r['total_skus'] as int? ?? 0,
     )).toList();
   }
 
@@ -244,7 +255,7 @@ class DatabaseHelper {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status
+             o.order_number, o.customer_name, o.customer_mobile, o.status, o.total_skus
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -262,6 +273,7 @@ class DatabaseHelper {
       status: (r['status'] ?? '').toString(),
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
+      totalSkus: r['total_skus'] as int? ?? 0,
     )).toList();
   }
 
@@ -278,6 +290,11 @@ class DatabaseHelper {
   Future<void> markItemSorted(int itemId) async {
     final db = await database;
     await db.update('order_items_cache', {'is_sorted': 1}, where: 'item_id = ?', whereArgs: [itemId]);
+  }
+
+  Future<void> markItemUnsorted(int itemId) async {
+    final db = await database;
+    await db.update('order_items_cache', {'is_sorted': 0}, where: 'item_id = ?', whereArgs: [itemId]);
   }
 
   Future<int> countCachedItems() async {
