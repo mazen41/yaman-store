@@ -150,11 +150,14 @@ try {
         $results[] = [
             'id' => $id,
             'success' => true,
-            'message' => ($orderAlreadySorted || $alreadyScanned) ? 'هذا الطلب مفروز بالفعل' : 'تم الفرز بنجاح',
-            'already_scanned' => ($orderAlreadySorted || $alreadyScanned),
+            'message' => $alreadyScanned ? 'هذا المنتج مفروز بالفعل' : 'تم الفرز بنجاح',
+            'already_scanned' => $alreadyScanned,
             'all_done' => $allDone,
             'requires_selection' => false,
-            'sku' => $sku
+            'sku' => $sku,
+            'item_id' => (int)$item['id'],
+            'item_status' => 'scanned',
+            'is_sorted' => 1
         ];
     }
 

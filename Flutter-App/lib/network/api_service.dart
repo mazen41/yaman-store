@@ -63,6 +63,7 @@ class OrderMatch {
   final String customerName;
   final String customerMobile;
   final String status;
+  final bool isSorted;
   final int totalSkus;
 
   OrderMatch({
@@ -72,8 +73,24 @@ class OrderMatch {
     required this.customerName,
     required this.customerMobile,
     required this.status,
+    required this.isSorted,
     this.totalSkus = 0,
   });
+
+  static bool _parseIsSorted(Map<String, dynamic> json) {
+    final rawSorted = json['is_sorted'] ?? json['isSorted'] ?? json['sorted'];
+    if (rawSorted is bool) return rawSorted;
+    final normalizedSorted = rawSorted?.toString().trim().toLowerCase();
+    if (normalizedSorted == '1' || normalizedSorted == 'true' || normalizedSorted == 'yes') {
+      return true;
+    }
+    if (normalizedSorted == '0' || normalizedSorted == 'false' || normalizedSorted == 'no') {
+      return false;
+    }
+
+    final normalizedStatus = (json['item_status'] ?? json['status'] ?? '').toString().trim().toLowerCase();
+    return normalizedStatus == 'scanned' || normalizedStatus == 'sorted' || normalizedStatus == 'تم الفرز';
+  }
 
   factory OrderMatch.fromJson(Map<String, dynamic> json) => OrderMatch(
         itemId: int.tryParse(json['item_id'].toString()) ?? 0,
@@ -81,7 +98,8 @@ class OrderMatch {
         orderNumber: json['order_number'] ?? '',
         customerName: json['customer_name'] ?? '',
         customerMobile: json['customer_mobile'] ?? '',
-        status: json['status'] ?? '',
+        status: (json['item_status'] ?? json['status'] ?? '').toString(),
+        isSorted: _parseIsSorted(json),
         totalSkus: int.tryParse((json['total_skus'] ?? '0').toString()) ?? 0,
       );
 }

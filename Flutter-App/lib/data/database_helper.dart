@@ -40,6 +40,7 @@ class LocalOrderMatch {
   final String customerName;
   final String customerMobile;
   final String status;
+  final bool isSorted;
   final String sku;
   final String productName;
   final String productImage;
@@ -52,6 +53,7 @@ class LocalOrderMatch {
     required this.customerName,
     required this.customerMobile,
     required this.status,
+    required this.isSorted,
     required this.sku,
     required this.productName,
     required this.productImage,
@@ -228,8 +230,8 @@ class DatabaseHelper {
   Future<List<LocalOrderMatch>> findOrdersBySku(String sku, {bool sorted = false}) async {
     final db = await database;
     final rows = await db.rawQuery('''
-      SELECT i.item_id, i.order_id, i.sku, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status, o.total_skus
+      SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
+             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status, o.total_skus
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -244,7 +246,8 @@ class DatabaseHelper {
       orderNumber: (r['order_number'] ?? '').toString(), 
       customerName: (r['customer_name'] ?? '').toString(), 
       customerMobile: (r['customer_mobile'] ?? '').toString(), 
-      status: (r['status'] ?? '').toString(),
+      status: ((r['is_sorted'] as int? ?? 0) == 1) ? 'scanned' : 'pending',
+      isSorted: (r['is_sorted'] as int? ?? 0) == 1,
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
       totalSkus: r['total_skus'] as int? ?? 0,
@@ -254,8 +257,8 @@ class DatabaseHelper {
   Future<List<LocalOrderMatch>> findUnsortedOrdersBySku(String sku) async {
     final db = await database;
     final rows = await db.rawQuery('''
-      SELECT i.item_id, i.order_id, i.sku, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status, o.total_skus
+      SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
+             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status, o.total_skus
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -270,7 +273,8 @@ class DatabaseHelper {
       orderNumber: (r['order_number'] ?? '').toString(),
       customerName: (r['customer_name'] ?? '').toString(),
       customerMobile: (r['customer_mobile'] ?? '').toString(),
-      status: (r['status'] ?? '').toString(),
+      status: ((r['is_sorted'] as int? ?? 0) == 1) ? 'scanned' : 'pending',
+      isSorted: (r['is_sorted'] as int? ?? 0) == 1,
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
       totalSkus: r['total_skus'] as int? ?? 0,
