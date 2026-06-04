@@ -35,7 +35,12 @@ $query = "
         pc.created_at,
         COUNT(DISTINCT pb.id) as transactions_count,
         COALESCE(SUM(pb.final_amount), 0) as total_used,
-        (COALESCE(pc.card_purchase_amount,0) - COALESCE(pc.initial_balance,0)) as profit_amount
+        (COALESCE(pc.card_purchase_amount,0) - COALESCE(pc.initial_balance,0)) as profit_amount,
+        CASE
+            WHEN COALESCE(pc.card_purchase_amount,0) > 0
+            THEN ((COALESCE(pc.card_purchase_amount,0) - COALESCE(pc.initial_balance,0)) / COALESCE(pc.card_purchase_amount,0)) * 100
+            ELSE 0
+        END as profit_percentage
     FROM purchase_cards pc
     LEFT JOIN purchase_baskets pb ON pc.id = pb.payment_source_id
         AND pb.payment_source_type = 'purchase_card'
@@ -72,7 +77,7 @@ try {
     $total_added = array_sum(array_column($cards, 'total_added'));
     $total_purchase = array_sum(array_column($cards, 'card_purchase_amount')); // Corrected this line
     $total_transactions = array_sum(array_column($cards, 'transactions_count'));
-    $avg_profit_percentage = 0;
+    $avg_profit_percentage = $total_purchase > 0 ? (($total_purchase - $total_added) / $total_purchase) * 100 : 0;
 
 } catch (PDOException $e) {
     $error = $e->getMessage();

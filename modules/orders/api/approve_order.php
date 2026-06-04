@@ -93,6 +93,8 @@ try {
     foreach ($final_data['items'] as $item) {
         $subtotal_amount += floatval($item['total'] ?? 0);
     }
+
+    $final_data['automatic_discount_amount'] = round($subtotal_amount * ($final_data['automatic_discount_percentage'] / 100), 2);
     
     $total_discount_amount = $final_data['automatic_discount_amount'] + $final_data['coupon_discount_amount'];
     $total_amount_before_shipping = $subtotal_amount - $total_discount_amount;

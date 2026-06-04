@@ -93,6 +93,7 @@ function getStatusClass($status) {
         'cancelled' => 'bg-red-100 text-red-800',
         'rejected' => 'bg-red-100 text-red-800',
         'returned' => 'bg-gray-100 text-gray-800',
+        'under_review' => 'bg-amber-100 text-amber-800',
     ];
     return $colors[$status] ?? 'bg-gray-100 text-gray-800';
 }
@@ -104,7 +105,6 @@ try {
                 COALESCE(NULLIF(co.status, ''), 'new') AS display_status_key,
                 COALESCE(NULLIF(cos.status_name_ar, ''), NULLIF(co.status, ''), 'جديد') AS display_status_label,
                 COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = co.id), 0) AS total_quantity,
-                (SELECT GROUP_CONCAT(invoice_number SEPARATOR ', ') FROM customer_invoices ci WHERE ci.order_id = co.id) AS invoice_numbers,
                 co.automatic_discount_percentage AS display_discount_percentage,
                 (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = co.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) AS first_product_link,
                 EXISTS(SELECT 1 FROM order_approvals oa WHERE oa.final_order_id = co.id) AS is_self_order
@@ -140,13 +140,6 @@ try {
     error_log("Portal Error: " . $e->getMessage());
 }
 
-// --- PHP FOR SUBMITTED ORDERS SECTION ---
-$approvals = [];
-$submitted_stats = [
-    'total_orders' => 0,
-    'total_spent' => 0,
-    'total_items' => 0
-];
 $currency = $customer['currency'] ?? 'YER'; 
 
 function getSubmittedStatusDetails($status) {
@@ -163,48 +156,70 @@ function getSubmittedStatusDetails($status) {
 
 if ($customer['enable_create_self_order'] === 'active') {
     try {
-        // MODIFICATION: Filter out 'approved' orders and fetch necessary columns for display
         $query_approvals = "SELECT
                     oa.id,
                     oa.created_at,
                     oa.status,
-                    oa.payment_proof_path,
                     oa.subtotal_amount,
                     oa.shipping_cost,
-                    oa.coupon_code,
                     oa.coupon_discount_amount,
                     oa.automatic_discount_percentage,
                     oa.automatic_discount_amount,
                     oa.paid_amount,
                     oa.total_after_discounts,
-                    oa.rejection_reason,
                     oa.notes,
                     COALESCE((SELECT SUM(oai.item_count) FROM order_approval_items oai WHERE oai.approval_id = oa.id), 0) AS total_quantity,
-                    co.order_number AS final_order_number,
-                    COALESCE(NULLIF(TRIM(co.order_link), ''),
-                        (SELECT TRIM(oai.product_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.product_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1)
-                    ) AS display_order_link,
-                    COALESCE(NULLIF(TRIM(co.additional_link), ''),
-                        (SELECT TRIM(oai.additional_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.additional_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1)
-                    ) AS display_additional_link
+                    (SELECT TRIM(oai.product_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.product_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1) AS display_order_link,
+                    (SELECT TRIM(oai.additional_link) FROM order_approval_items oai WHERE oai.approval_id = oa.id AND TRIM(COALESCE(oai.additional_link,'')) <> '' ORDER BY oai.id ASC LIMIT 1) AS display_additional_link
                 FROM order_approvals oa
-                LEFT JOIN customer_orders co ON oa.final_order_id = co.id
                 WHERE oa.customer_id = ?
-                AND oa.status != 'approved'
+                AND oa.status = 'pending'
                 ORDER BY oa.created_at DESC";
 
         $stmt_approvals = $db->prepare($query_approvals);
         $stmt_approvals->execute([$customer_id]);
-        $approvals = $stmt_approvals->fetchAll(PDO::FETCH_ASSOC);
+        $pending_approvals = $stmt_approvals->fetchAll(PDO::FETCH_ASSOC);
 
-        foreach ($approvals as $approval) {
-            $submitted_stats['total_orders']++;
-            $submitted_stats['total_items'] += $approval['total_quantity'];
-            $submitted_stats['total_spent'] += $approval['paid_amount'];
+        foreach ($pending_approvals as $approval) {
+            $total_discount_amount = (float)($approval['coupon_discount_amount'] ?? 0) + (float)($approval['automatic_discount_amount'] ?? 0);
+            $final_amount = (float)($approval['total_after_discounts'] ?? 0) + (float)($approval['shipping_cost'] ?? 0);
+            $paid_amount = (float)($approval['paid_amount'] ?? 0);
+            $subtotal_amount = (float)($approval['subtotal_amount'] ?? 0);
+
+            $orders[] = [
+                'id' => null,
+                'approval_id' => (int)$approval['id'],
+                'order_number' => 'SA-' . (int)$approval['id'],
+                'created_at' => $approval['created_at'],
+                'display_status_key' => 'under_review',
+                'display_status_label' => 'Under Review',
+                'total_quantity' => (float)$approval['total_quantity'],
+                'order_link' => $approval['display_order_link'],
+                'first_product_link' => $approval['display_order_link'],
+                'additional_link' => $approval['display_additional_link'],
+                'subtotal_amount' => $subtotal_amount,
+                'discount_amount' => $total_discount_amount,
+                'display_discount_percentage' => $subtotal_amount > 0 ? ($total_discount_amount / $subtotal_amount) * 100 : 0,
+                'damaged_amount' => 0,
+                'final_amount' => $final_amount,
+                'paid_amount' => $paid_amount,
+                'notes' => $approval['notes'],
+                'is_self_order' => 1,
+                'is_pending_self_order' => 1,
+            ];
+
+            $order_status_options['under_review'] = 'Under Review';
+            $total_customer_orders++;
+            $total_quantity += (float)$approval['total_quantity'];
+            $total_subtotal += $subtotal_amount;
+            $total_discount += $total_discount_amount;
+            $total_final += $final_amount;
+            $total_paid += $paid_amount;
+            $total_remaining += ($final_amount - $paid_amount);
+            $total_all_discounts += $total_discount_amount;
         }
 
     } catch (PDOException $e) {
-        $approvals = [];
         error_log("Submitted Orders Portal Error: " . $e->getMessage());
     }
 }
@@ -580,10 +595,25 @@ if ($customer['enable_create_self_order'] === 'active') {
                                 $status_text = $order['display_status_label'] ?? $display_status_key;
                                 $status_class = getStatusClass($display_status_key);
                             ?>
-                            <tr class="hover:bg-gray-50 transition" data-status="<?php echo htmlspecialchars($display_status_key); ?>">
+                            <tr class="hover:bg-gray-50 transition"
+                                data-status="<?php echo htmlspecialchars($display_status_key); ?>"
+                                data-quantity="<?php echo (float)$order['total_quantity']; ?>"
+                                data-subtotal="<?php echo (float)$order['subtotal_amount']; ?>"
+                                data-discount="<?php echo (float)$order['discount_amount']; ?>"
+                                data-damaged="<?php echo (float)($order['damaged_amount'] ?? 0); ?>"
+                                data-final="<?php echo (float)$order['final_amount']; ?>"
+                                data-paid="<?php echo (float)$order['paid_amount']; ?>"
+                                data-remaining="<?php echo (float)$remaining; ?>">
                                 <td class="px-4 py-3 whitespace-nowrap">
-                                    <div class="flex items-center gap-2">
-                                        <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a><div class="text-xs text-gray-400 mt-1"><?php echo date('Y-m-d', strtotime($order['created_at'])); ?></div>
+                                    <div class="flex items-start gap-2">
+                                        <div>
+                                            <?php if (!empty($order['id'])): ?>
+                                                <a href="order_details.php?token=<?php echo $token; ?>&order_id=<?php echo (int)$order['id']; ?>" class="text-blue-600 font-bold hover:underline"><?php echo htmlspecialchars($order['order_number']); ?></a>
+                                            <?php else: ?>
+                                                <span class="text-blue-600 font-bold"><?php echo htmlspecialchars($order['order_number']); ?></span>
+                                            <?php endif; ?>
+                                            <div class="text-xs text-gray-400 mt-1"><?php echo date('Y-m-d', strtotime($order['created_at'])); ?></div>
+                                        </div>
                                         <?php if (!empty($order['is_self_order'])): ?>
                                             <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200" title="طلب ذاتي (من نظام المراجعة)">
                                                 <i class="fas fa-user-edit ml-1"></i> ذاتي
@@ -642,15 +672,15 @@ if ($customer['enable_create_self_order'] === 'active') {
                     <tfoot class="bg-gray-100 font-bold border-t-2 border-gray-300">
                         <tr>
                             <td class="px-4 py-3 whitespace-nowrap">الإجمالي العام</td>
-                            <td class="px-4 py-3 text-center whitespace-nowrap"><?php echo number_format($total_quantity); ?></td>
-                            <td colspan="2"></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-blue-500"><?php echo number_format($total_subtotal); ?></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-green-500"><?php echo number_format($total_discount); ?></td>
+                            <td id="ordersTotalQuantity" class="px-4 py-3 text-center whitespace-nowrap"><?php echo number_format($total_quantity); ?></td>
+                            <td colspan="3"></td>
+                            <td id="ordersTotalSubtotal" class="px-4 py-3 whitespace-nowrap text-blue-500"><?php echo number_format($total_subtotal); ?></td>
+                            <td id="ordersTotalDiscount" class="px-4 py-3 whitespace-nowrap text-green-500"><?php echo number_format($total_discount); ?></td>
                             <td></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-red-500"><?php echo number_format($total_damaged); ?></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-emerald-600"><?php echo number_format($total_final); ?></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-blue-600"><?php echo number_format($total_paid); ?></td>
-                            <td class="px-4 py-3 whitespace-nowrap text-red-600"><?php echo number_format($total_remaining); ?></td>
+                            <td id="ordersTotalDamaged" class="px-4 py-3 whitespace-nowrap text-red-500"><?php echo number_format($total_damaged); ?></td>
+                            <td id="ordersTotalFinal" class="px-4 py-3 whitespace-nowrap text-emerald-600"><?php echo number_format($total_final); ?></td>
+                            <td id="ordersTotalPaid" class="px-4 py-3 whitespace-nowrap text-blue-600"><?php echo number_format($total_paid); ?></td>
+                            <td id="ordersTotalRemaining" class="px-4 py-3 whitespace-nowrap text-red-600"><?php echo number_format($total_remaining); ?></td>
                             <td></td>
                         </tr>
                     </tfoot>
@@ -669,6 +699,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                 </a>
             </div>
 
+            <?php if (false): ?>
             <!-- SUBMITTED ORDERS SECTION -->
             <div class="mt-12">
                 <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 animate-fade-in delay-1">
@@ -817,6 +848,7 @@ if ($customer['enable_create_self_order'] === 'active') {
                 <?php endif; ?>
             </div>
 
+            <?php endif; ?>
         <?php endif; ?>
         
         <!-- Footer -->
@@ -827,7 +859,41 @@ if ($customer['enable_create_self_order'] === 'active') {
 
     <script>
 
-        function setupPortalTableFilter(searchId, statusId, tbodyId) {
+        function formatPortalNumber(value) {
+            return Math.round(Number(value) || 0).toLocaleString('en-US');
+        }
+
+        function updateOrdersVisibleTotals() {
+            const tbody = document.getElementById('ordersTableBody');
+            if (!tbody) return;
+            const totals = { quantity: 0, subtotal: 0, discount: 0, damaged: 0, final: 0, paid: 0, remaining: 0 };
+            tbody.querySelectorAll('tr[data-status]').forEach(row => {
+                if (row.style.display === 'none') return;
+                totals.quantity += Number(row.dataset.quantity || 0);
+                totals.subtotal += Number(row.dataset.subtotal || 0);
+                totals.discount += Number(row.dataset.discount || 0);
+                totals.damaged += Number(row.dataset.damaged || 0);
+                totals.final += Number(row.dataset.final || 0);
+                totals.paid += Number(row.dataset.paid || 0);
+                totals.remaining += Number(row.dataset.remaining || 0);
+            });
+
+            const map = {
+                ordersTotalQuantity: totals.quantity,
+                ordersTotalSubtotal: totals.subtotal,
+                ordersTotalDiscount: totals.discount,
+                ordersTotalDamaged: totals.damaged,
+                ordersTotalFinal: totals.final,
+                ordersTotalPaid: totals.paid,
+                ordersTotalRemaining: totals.remaining
+            };
+            Object.entries(map).forEach(([id, value]) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = formatPortalNumber(value);
+            });
+        }
+
+        function setupPortalTableFilter(searchId, statusId, tbodyId, afterFilter) {
             const searchInput = document.getElementById(searchId);
             const statusSelect = document.getElementById(statusId);
             const tbody = document.getElementById(tbodyId);
@@ -840,11 +906,13 @@ if ($customer['enable_create_self_order'] === 'active') {
                     const matchesStatus = !status || row.dataset.status === status;
                     row.style.display = (matchesText && matchesStatus) ? '' : 'none';
                 });
+                if (typeof afterFilter === 'function') afterFilter();
             };
             searchInput?.addEventListener('input', applyFilter);
             statusSelect?.addEventListener('change', applyFilter);
+            applyFilter();
         }
-        setupPortalTableFilter('ordersSearch', 'ordersStatusFilter', 'ordersTableBody');
+        setupPortalTableFilter('ordersSearch', 'ordersStatusFilter', 'ordersTableBody', updateOrdersVisibleTotals);
         setupPortalTableFilter('approvalsSearch', 'approvalsStatusFilter', 'approvalsTableBody');
 
         function copyToClipboard(button, textToCopy) {

@@ -496,11 +496,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">إجمالي القطع *</label>
-                                    <input type="number" name="items[0][item_count]" value="0" min="1" class="w-full p-2 border border-gray-300 rounded-md item-quantity" oninput="updateTotals()" required>
+                                    <input type="number" name="items[0][item_count]" min="1" class="w-full p-2 border border-gray-300 rounded-md item-quantity" oninput="updateTotals()" required>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">الإجمالي <?php echo htmlspecialchars($customer_currency); ?> *</label>
-                                    <input type="number" name="items[0][total]" value="0" min="0" step="1" class="w-full p-2 border border-gray-300 rounded-md item-total-input" oninput="updateTotals()" required>
+                                    <input type="number" name="items[0][total]" min="0" step="1" class="w-full p-2 border border-gray-300 rounded-md item-total-input" oninput="updateTotals()" required>
                                 </div>
                             </div>
                         </div>

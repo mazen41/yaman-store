@@ -519,12 +519,13 @@ include '../../includes/header.php';
         const shippingCost = parseFloat(document.getElementById('shipping_cost_admin').value) || 0;
         const paidAmount = parseFloat(document.getElementById('paid_amount_admin').value) || 0;
         
-        // Discount fields are now readonly, fetch their values directly
-        const autoDiscountAmt = parseFloat(document.getElementById('automatic_discount_amount').value) || 0;
+        // Recalculate automatic discount amount from the approved subtotal.
         const couponDiscountAmt = parseFloat(document.getElementById('coupon_discount_amount').value) || 0;
         const autoDiscountPercent = parseFloat(document.getElementById('automatic_discount_percentage').value) || 0;
+        const autoDiscountAmt = subtotal * (autoDiscountPercent / 100);
+        document.getElementById('automatic_discount_amount').value = autoDiscountAmt.toFixed(2);
 
-        let totalDiscount = autoDiscountAmt + couponDiscountAmt + (subtotal * (autoDiscountPercent / 100));
+        let totalDiscount = autoDiscountAmt + couponDiscountAmt;
         let finalAmount = Math.max(0, subtotal - totalDiscount + shippingCost);
         let finalAmountAfterPaid = finalAmount - paidAmount;
 
