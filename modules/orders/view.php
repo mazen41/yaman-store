@@ -79,7 +79,13 @@ try {
     }
 
     // 2. Fetch Order Items and derive real, database-backed sorting status
-    $items_stmt = $db->prepare("SELECT * FROM order_items WHERE order_id = ? ORDER BY id");
+    $items_stmt = $db->prepare("
+        SELECT oi.*, COALESCE(u.full_name, u.username, '') AS sorted_by_name
+        FROM order_items oi
+        LEFT JOIN users u ON u.id = oi.sorted_by
+        WHERE oi.order_id = ?
+        ORDER BY oi.id
+    ");
     $items_stmt->execute([$order_id]);
     $items = $items_stmt->fetchAll(PDO::FETCH_ASSOC);
     $sorting_summary = getOrderSortingSummaryFromItems($items);
@@ -316,7 +322,15 @@ include '../../includes/header.php';
                                         <td class="text-center font-bold bg-gray-50"><?php echo $item['quantity']; ?></td>
                                         <td class="text-center dir-ltr text-gray-600"><?php echo number_format($item['unit_price'], 0, ',', '.'); ?></td>
                                         <td class="text-center dir-ltr font-bold text-indigo-600"><?php echo number_format($item['total_price'], 0, ',', '.'); ?></td>
-                                        <td class="text-center"><?php echo renderProductSortingBadge($item); ?></td>
+                                        <td class="text-center">
+                                            <?php echo renderProductSortingBadge($item); ?>
+                                            <?php if (!empty($item['sorted_by_name'])): ?>
+                                                <div class="text-xs text-gray-500 mt-1">
+                                                    <i class="fas fa-user-check ml-1"></i>
+                                                    <?php echo htmlspecialchars($item['sorted_by_name']); ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                             </tbody>

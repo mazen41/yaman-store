@@ -74,7 +74,8 @@ try {
                oi.status, 
                co.order_number,
                c.name AS customer_name, 
-               COALESCE(c.mobile_number, c.phone, '') AS customer_mobile
+               COALESCE(c.mobile_number, c.phone, '') AS customer_mobile,
+               (SELECT COUNT(*) FROM order_items oi2 WHERE oi2.order_id = co.id) AS total_skus
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
@@ -90,6 +91,7 @@ try {
     $matches = array_map(static function (array $row): array {
         $row['item_id'] = (int) $row['item_id'];
         $row['order_id'] = (int) $row['order_id'];
+        $row['total_skus'] = (int) ($row['total_skus'] ?? 0);
         return $row;
     }, $matches);
 

@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/api_helper.php';
 require_once __DIR__ . '/../includes/shein_helpers.php';
+require_once __DIR__ . '/../includes/sorting_notifications_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     fail('طريقة الطلب غير صالحة. الرجاء استخدام POST.', 405);
@@ -62,7 +63,7 @@ try {
         if ($selectedItemId > 0) {
             // Verify if the specified item matches the SKU
             $stmt = $db->prepare("
-                SELECT oi.id, oi.order_id, oi.status
+                SELECT oi.id, oi.order_id, oi.status, oi.shein_sku, oi.product_name, co.order_number
                 FROM order_items oi
                 JOIN customer_orders co ON co.id = oi.order_id
                 LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
@@ -76,7 +77,7 @@ try {
         } else {
             // Try to find the first pending order item matching the SKU
             $stmt = $db->prepare("
-                SELECT oi.id, oi.order_id, oi.status
+                SELECT oi.id, oi.order_id, oi.status, oi.shein_sku, oi.product_name, co.order_number
                 FROM order_items oi
                 JOIN customer_orders co ON co.id = oi.order_id
                 LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
@@ -105,17 +106,31 @@ try {
         // Update order item status to 'scanned' if not already
         $alreadyScanned = ($item['status'] === 'scanned');
         if (!$alreadyScanned) {
-            $updateStmt = $db->prepare("UPDATE order_items SET status = 'scanned', updated_at = NOW() WHERE id = ?");
-            $updateStmt->execute([$item['id']]);
+            $updateStmt = $db->prepare("UPDATE order_items SET status = 'scanned', sorted_by = ?, sorted_at = NOW(), updated_at = NOW() WHERE id = ?");
+            $updateStmt->execute([$userId, $item['id']]);
+            createSortingItemNotification($db, $item, $userId);
         }
 
+
+        $countsStmt = $db->prepare("
+            SELECT COUNT(*) AS total_items,
+                   SUM(CASE WHEN status = 'scanned' THEN 1 ELSE 0 END) AS scanned_items
+            FROM order_items
+            WHERE order_id = ?
+        ");
+        $countsStmt->execute([$item['order_id']]);
+        $counts = $countsStmt->fetch(PDO::FETCH_ASSOC) ?: ['total_items' => 0, 'scanned_items' => 0];
+        $allDone = ((int)$counts['total_items'] > 0 && (int)$counts['scanned_items'] >= (int)$counts['total_items']);
+        if (!$alreadyScanned && $allDone) {
+            createSortingOrderCompleteNotification($db, $item, $userId);
+        }
 
         $orderStatusStmt = $db->prepare("SELECT status FROM customer_orders WHERE id = ? LIMIT 1");
         $orderStatusStmt->execute([$item['order_id']]);
         $orderStatus = (string)($orderStatusStmt->fetchColumn() ?: '');
         $orderAlreadySorted = trim($orderStatus) === 'تم الفرز';
 
-        if (!$orderAlreadySorted) {
+        if ($allDone && !$orderAlreadySorted) {
             $updateOrderStatusStmt = $db->prepare("UPDATE customer_orders SET status = 'تم الفرز', updated_at = NOW() WHERE id = ?");
             $updateOrderStatusStmt->execute([$item['order_id']]);
         }
@@ -137,7 +152,7 @@ try {
             'success' => true,
             'message' => ($orderAlreadySorted || $alreadyScanned) ? 'هذا الطلب مفروز بالفعل' : 'تم الفرز بنجاح',
             'already_scanned' => ($orderAlreadySorted || $alreadyScanned),
-            'all_done' => false,
+            'all_done' => $allDone,
             'requires_selection' => false,
             'sku' => $sku
         ];

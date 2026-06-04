@@ -24,6 +24,7 @@ require_once '../../config/database.php';
 require_once '../../includes/check_permissions.php';
 require_once '../../includes/shein_helpers.php';
 require_once '../../includes/sorting_status_helpers.php';
+require_once '../../includes/sorting_notifications_helpers.php';
 require_once '../../includes/serpapi_lookup.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -149,14 +150,20 @@ function handle_scan(PDO $db): void
     // ── Update item status ───────────────────────────────────────────────────
     $alreadyScanned = isProductSorted($item);
     if (!$alreadyScanned) {
-        $db->prepare("UPDATE order_items SET status = 'scanned', updated_at = NOW() WHERE id = ?")
-           ->execute([$item['id']]);
+        $db->prepare("UPDATE order_items SET status = 'scanned', sorted_by = ?, sorted_at = NOW(), updated_at = NOW() WHERE id = ?")
+           ->execute([(int)($_SESSION['user_id'] ?? 0), $item['id']]);
         $item['status'] = 'scanned';
+        $item['sorted_by'] = (int)($_SESSION['user_id'] ?? 0);
+        $item['sorted_at'] = date('Y-m-d H:i:s');
+        createSortingItemNotification($db, $item, (int)($_SESSION['user_id'] ?? 0));
     }
 
     // ── Auto-complete order if all items scanned ─────────────────────────────
     $counts     = get_order_counts($db, $item['order_id']);
     $allDone    = ($counts['total_items'] > 0 && $counts['scanned_items'] >= $counts['total_items']);
+    if (!$alreadyScanned && $allDone) {
+        createSortingOrderCompleteNotification($db, $item, (int)($_SESSION['user_id'] ?? 0));
+    }
     $groupInfo  = get_group_info($db, $item['order_id']);
     $allItems   = get_all_items($db, $item['order_id']);
     $orderImages = get_order_images($db, $item['order_id']);
@@ -201,7 +208,7 @@ function handle_unscan(PDO $db): void
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$row) throw new RuntimeException('العنصر غير موجود');
 
-    $db->prepare("UPDATE order_items SET status = 'pending', updated_at = NOW() WHERE id = ?")->execute([$itemId]);
+    $db->prepare("UPDATE order_items SET status = 'pending', sorted_by = NULL, sorted_at = NULL, updated_at = NOW() WHERE id = ?")->execute([$itemId]);
 
     $counts = get_order_counts($db, $row['order_id']);
     echo json_encode(['success' => true, 'message' => 'تم إرجاع الحالة إلى قيد الانتظار', 'counts' => $counts], JSON_UNESCAPED_UNICODE);
@@ -229,27 +236,41 @@ function handle_sort_purchase_group(PDO $db): void
         throw new InvalidArgumentException('purchase_group_id غير صالح');
     }
 
-    $countStmt = $db->prepare("
-        SELECT COUNT(*) AS total_pending
+    $pendingStmt = $db->prepare("
+        SELECT oi.id, oi.order_id, oi.shein_sku, oi.product_name, co.order_number
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         WHERE oi.status != 'scanned'
           AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+        ORDER BY oi.order_id ASC, oi.id ASC
     ");
-    $countStmt->execute([$purchaseGroupId]);
-    $before = (int) (($countStmt->fetch(PDO::FETCH_ASSOC)['total_pending'] ?? 0));
+    $pendingStmt->execute([$purchaseGroupId]);
+    $pendingItems = $pendingStmt->fetchAll(PDO::FETCH_ASSOC);
+    $before = count($pendingItems);
 
     $updateStmt = $db->prepare("
         UPDATE order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
         LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
-        SET oi.status = 'scanned', oi.updated_at = NOW()
+        SET oi.status = 'scanned', oi.sorted_by = ?, oi.sorted_at = NOW(), oi.updated_at = NOW()
         WHERE oi.status != 'scanned'
           AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
     ");
-    $updateStmt->execute([$purchaseGroupId]);
+    $updateStmt->execute([(int)($_SESSION['user_id'] ?? 0), $purchaseGroupId]);
     $sortedItems = (int) $updateStmt->rowCount();
+
+    $notifiedOrders = [];
+    foreach ($pendingItems as $pendingItem) {
+        createSortingItemNotification($db, $pendingItem, (int)($_SESSION['user_id'] ?? 0));
+        $notifiedOrders[(int)$pendingItem['order_id']] = $pendingItem;
+    }
+    foreach ($notifiedOrders as $orderId => $pendingItem) {
+        $counts = get_order_counts($db, (int)$orderId);
+        if ($counts['total_items'] > 0 && $counts['scanned_items'] >= $counts['total_items']) {
+            createSortingOrderCompleteNotification($db, $pendingItem, (int)($_SESSION['user_id'] ?? 0));
+        }
+    }
 
     echo json_encode([
         'success' => true,

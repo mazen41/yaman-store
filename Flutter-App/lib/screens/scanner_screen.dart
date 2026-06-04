@@ -269,7 +269,7 @@ class ScannerScreen extends StatefulWidget {
   State<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
+class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserver {
   CameraController? _cameraController;
   final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
@@ -309,6 +309,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initCamera();
     _refreshBadge();
     _loadSyncMetadata();
@@ -339,10 +340,23 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _connectivityTimer?.cancel();
     _cameraController?.dispose();
     _textRecognizer.close();
     super.dispose();
+  }
+
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _cameraController?.dispose();
+      _cameraController = null;
+      _isProcessing = false;
+    } else if (state == AppLifecycleState.resumed && mounted) {
+      _initCamera();
+    }
   }
 
   Future<void> _refreshBadge() async {
@@ -367,6 +381,10 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _initCamera() async {
+    if (_cameraController != null) {
+      await _cameraController!.dispose();
+      _cameraController = null;
+    }
     final cameras = await availableCameras();
     if (cameras.isEmpty) {
       setState(() => _statusMessage = 'لا توجد كاميرا متوفرة');
@@ -385,7 +403,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
     await _cameraController!.initialize();
     if (!mounted) return;
     setState(() {});
-    _cameraController!.startImageStream(_processFrame);
+    if (!_cameraController!.value.isStreamingImages) {
+      await _cameraController!.startImageStream(_processFrame);
+    }
   }
 
   void _processFrame(CameraImage image) async {
@@ -514,7 +534,10 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final canVibrate = await Vibration.hasVibrator() ?? false;
 
     try {
-      final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(normalizedSku);
+      final matches = [
+        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: false),
+        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: true),
+      ];
       debugPrint('[Scan] fetched local orders count=${matches.length} for SKU="$normalizedSku"');
 
       if (!mounted || requestId != _scanRequestSeq) {
@@ -535,6 +558,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                     customerName: m.customerName,
                     customerMobile: m.customerMobile,
                     status: m.status,
+                    totalSkus: m.totalSkus,
                   ))
               .toList(),
           isMultipleSameSku: matches.length > 1 &&
@@ -775,6 +799,16 @@ class _ScannerScreenState extends State<ScannerScreen> {
         sku: sku,
         matches: matches,
         isMultipleSameSku: isMultipleSameSku,
+        onUndo: (match) async {
+          Navigator.of(context).pop();
+          try {
+            await ApiService.instance.undoSort(match.itemId);
+            await DatabaseHelper.instance.markItemUnsorted(match.itemId);
+            _showSnack('تم إلغاء الفرز للطلب ${match.orderNumber}');
+          } catch (e) {
+            _showSnack('فشل إلغاء الفرز: $e');
+          }
+        },
         onSelect: (match) async {
           Navigator.of(context).pop();
           setState(() {
@@ -1006,6 +1040,26 @@ class _ScannerScreenState extends State<ScannerScreen> {
       _showSnack('تمت المزامنة: $successCount فرز بنجاح. المتبقي: $remaining شحنات');
     } else {
       _showSnack('🎉 تمت مزامنة جميع عمليات الفرز بنجاح!');
+    }
+  }
+
+
+  Future<void> _refreshNotifications() async {
+    try {
+      final lastRaw = await DatabaseHelper.instance.getMetadata('lastSortingNotificationId');
+      final afterId = int.tryParse(lastRaw ?? '0') ?? 0;
+      final response = await ApiService.instance.fetchSortingNotifications(afterId: afterId);
+      final notifications = response['notifications'] as List<dynamic>? ?? const [];
+      final lastId = int.tryParse((response['last_id'] ?? afterId).toString()) ?? afterId;
+      await DatabaseHelper.instance.setMetadata('lastSortingNotificationId', lastId.toString());
+      if (notifications.isEmpty) {
+        _showSnack('لا توجد إشعارات فرز جديدة');
+        return;
+      }
+      final latest = (notifications.last as Map).cast<String, dynamic>();
+      _showSnack('${notifications.length} إشعار جديد: ${latest['message'] ?? ''}');
+    } catch (e) {
+      _showSnack('تعذر تحديث إشعارات الفرز: $e');
     }
   }
 
@@ -1264,10 +1318,21 @@ class _ScannerScreenState extends State<ScannerScreen> {
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('تحديث الطلبات'),
-                        onPressed: _forceRefreshOrders,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('تحديث الطلبات'),
+                            onPressed: _forceRefreshOrders,
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.notifications_active_outlined),
+                            label: const Text('Refresh Notifications'),
+                            onPressed: _refreshNotifications,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -1295,24 +1360,34 @@ class _ScannerScreenState extends State<ScannerScreen> {
 // Order picker bottom sheet component
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _OrderPickerSheet extends StatelessWidget {
+class _OrderPickerSheet extends StatefulWidget {
   final String sku;
   final List<OrderMatch> matches;
   final void Function(OrderMatch) onSelect;
+  final Future<void> Function(OrderMatch)? onUndo;
   final bool isMultipleSameSku;
 
   const _OrderPickerSheet({
     required this.sku,
     required this.matches,
     required this.onSelect,
+    this.onUndo,
     this.isMultipleSameSku = false,
   });
 
   @override
+  State<_OrderPickerSheet> createState() => _OrderPickerSheetState();
+}
+
+class _OrderPickerSheetState extends State<_OrderPickerSheet> {
+  bool _showSorted = false;
+
+  @override
   Widget build(BuildContext context) {
-    final bool sameOrder = isMultipleSameSku || (matches.isNotEmpty && matches.every((m) => m.orderId == matches.first.orderId));
+    final filteredMatches = widget.matches.where((m) => _showSorted ? m.status == 'scanned' : m.status != 'scanned').toList();
+    final bool sameOrder = widget.isMultipleSameSku || (filteredMatches.isNotEmpty && filteredMatches.every((m) => m.orderId == filteredMatches.first.orderId));
     final Map<int, int> perOrderCounter = {};
-    final List<_OrderPickerViewItem> viewItems = matches.map((m) {
+    final List<_OrderPickerViewItem> viewItems = filteredMatches.map((m) {
       final idx = (perOrderCounter[m.orderId] ?? 0) + 1;
       perOrderCounter[m.orderId] = idx;
       return _OrderPickerViewItem(match: m, itemIndexInOrder: idx);
@@ -1337,7 +1412,7 @@ class _OrderPickerSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            isMultipleSameSku
+            widget.isMultipleSameSku
                 ? 'يوجد أكثر من منتج بنفس الـ SKU لهذا الطلب، اختر المنتج المراد فرزه'
                 : 'تم العثور على الباركود في عدة طلبات',
             style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
@@ -1348,7 +1423,7 @@ class _OrderPickerSheet extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                sku,
+                widget.sku,
                 style: const TextStyle(color: Colors.blueAccent, fontSize: 13, fontFamily: 'monospace', fontWeight: FontWeight.bold),
               ),
               Text(
@@ -1358,10 +1433,35 @@ class _OrderPickerSheet extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          Row(
+            textDirection: TextDirection.rtl,
+            children: [
+              ChoiceChip(
+                label: const Text('Not Sorted'),
+                selected: !_showSorted,
+                onSelected: (_) => setState(() => _showSorted = false),
+              ),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Sorted'),
+                selected: _showSorted,
+                onSelected: (_) => setState(() => _showSorted = true),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
-            child: ListView.builder(
+            child: viewItems.isEmpty
+                ? Center(
+                    child: Text(
+                      _showSorted ? 'لا توجد منتجات مفروزة لهذا SKU' : 'لا توجد منتجات غير مفروزة لهذا SKU',
+                      style: const TextStyle(color: Colors.white54),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.builder(
               shrinkWrap: true,
               itemCount: viewItems.length,
               itemBuilder: (context, idx) {
@@ -1370,7 +1470,10 @@ class _OrderPickerSheet extends StatelessWidget {
                   match: item.match,
                   itemIndexInOrder: item.itemIndexInOrder,
                   sameOrderMode: sameOrder,
-                  onTap: () => onSelect(item.match),
+                  onTap: () => widget.onSelect(item.match),
+                  onUndo: item.match.status == 'scanned' && widget.onUndo != null
+                      ? () => widget.onUndo!(item.match)
+                      : null,
                 );
               },
             ),
@@ -1386,12 +1489,14 @@ class _MatchTile extends StatelessWidget {
   final int itemIndexInOrder;
   final bool sameOrderMode;
   final VoidCallback onTap;
+  final VoidCallback? onUndo;
 
   const _MatchTile({
     required this.match,
     required this.itemIndexInOrder,
     required this.sameOrderMode,
     required this.onTap,
+    this.onUndo,
   });
 
   @override
@@ -1428,14 +1533,21 @@ class _MatchTile extends StatelessWidget {
                     )
                   else if (match.customerName.isNotEmpty)
                     Text(
-                      '${match.customerName} | ${match.customerMobile}',
+                      '${match.customerName} | ${match.customerMobile} | SKUs: ${match.totalSkus}',
                       style: const TextStyle(color: Colors.white54, fontSize: 12),
                       textDirection: TextDirection.rtl,
                     ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_left_rounded, color: Colors.white30, size: 20),
+            if (onUndo != null)
+              IconButton(
+                icon: const Icon(Icons.undo_rounded, color: Colors.orangeAccent),
+                tooltip: 'Undo sort',
+                onPressed: onUndo,
+              )
+            else
+              const Icon(Icons.chevron_left_rounded, color: Colors.white30, size: 20),
           ],
         ),
       ),
