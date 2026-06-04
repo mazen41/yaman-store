@@ -576,10 +576,10 @@ class ApiService {
     throw Exception('فشل تحميل مجموعات الشراء: ${response.statusCode}');
   }
 
-  Future<Map<String, dynamic>> fetchSortingNotifications({int afterId = 0}) async {
+  Future<Map<String, dynamic>> fetchSortingNotifications({int afterId = 0, int limit = 100}) async {
     final headers = await _jsonHeaders();
     final response = await http
-        .get(Uri.parse('$_apiSortingNotifications?after_id=$afterId'), headers: headers)
+        .get(Uri.parse('$_apiSortingNotifications?after_id=$afterId&limit=$limit'), headers: headers)
         .timeout(const Duration(seconds: 15));
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
