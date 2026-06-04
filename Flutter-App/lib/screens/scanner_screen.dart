@@ -558,6 +558,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                     customerName: m.customerName,
                     customerMobile: m.customerMobile,
                     status: m.status,
+                    isSorted: m.isSorted,
                     totalSkus: m.totalSkus,
                   ))
               .toList(),
@@ -1384,7 +1385,7 @@ class _OrderPickerSheetState extends State<_OrderPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredMatches = widget.matches.where((m) => _showSorted ? m.status == 'scanned' : m.status != 'scanned').toList();
+    final filteredMatches = widget.matches.where((m) => _showSorted ? m.isSorted : !m.isSorted).toList();
     final bool sameOrder = widget.isMultipleSameSku || (filteredMatches.isNotEmpty && filteredMatches.every((m) => m.orderId == filteredMatches.first.orderId));
     final Map<int, int> perOrderCounter = {};
     final List<_OrderPickerViewItem> viewItems = filteredMatches.map((m) {
@@ -1471,7 +1472,7 @@ class _OrderPickerSheetState extends State<_OrderPickerSheet> {
                   itemIndexInOrder: item.itemIndexInOrder,
                   sameOrderMode: sameOrder,
                   onTap: () => widget.onSelect(item.match),
-                  onUndo: item.match.status == 'scanned' && widget.onUndo != null
+                  onUndo: item.match.isSorted && widget.onUndo != null
                       ? () => widget.onUndo!(item.match)
                       : null,
                 );

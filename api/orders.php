@@ -103,7 +103,8 @@ try {
                     oi.id                                                   AS item_id,
                     oi.order_id,
                     oi.shein_sku                                            AS sku,
-                    CASE WHEN oi.status = 'scanned' THEN 1 ELSE 0 END      AS is_sorted,
+                    oi.status                                               AS item_status,
+                    CASE WHEN oi.status = 'scanned' OR oi.sorted_at IS NOT NULL THEN 1 ELSE 0 END AS is_sorted,
                     COALESCE(sp.name, oi.product_name, '')                  AS product_name,
                     COALESCE(sp.image, '')                                  AS product_image
                 FROM   order_items oi

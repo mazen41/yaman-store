@@ -71,7 +71,8 @@ try {
     $stmt = $db->prepare("
         SELECT oi.id AS item_id, 
                oi.order_id, 
-               oi.status, 
+               oi.status AS item_status,
+               CASE WHEN oi.status = 'scanned' OR oi.sorted_at IS NOT NULL THEN 1 ELSE 0 END AS is_sorted,
                co.order_number,
                c.name AS customer_name, 
                COALESCE(c.mobile_number, c.phone, '') AS customer_mobile,
@@ -92,6 +93,9 @@ try {
         $row['item_id'] = (int) $row['item_id'];
         $row['order_id'] = (int) $row['order_id'];
         $row['total_skus'] = (int) ($row['total_skus'] ?? 0);
+        $row['is_sorted'] = (int) ($row['is_sorted'] ?? 0);
+        // Keep the legacy status key aligned with the item-level sorting status.
+        $row['status'] = $row['item_status'] ?? '';
         return $row;
     }, $matches);
 
