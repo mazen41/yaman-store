@@ -751,23 +751,27 @@ function markItemRowSaved(itemId, sku, inputRef) {
     if (input) {
         input.value = sku;
         input.classList.add('has-value');
-        input.readOnly = true;
-        input.disabled = true;
+        // Keep editable so user can fix typos
+        input.readOnly = false;
+        input.disabled = false;
     }
 
     const btn = row.querySelector('.save-btn');
     if (btn) {
-        btn.disabled = true;
+        btn.disabled = false;
         btn.classList.remove('loading');
-        btn.innerHTML = '<i class="fas fa-check"></i><span class="btn-label">تم الحفظ</span>';
+        btn.innerHTML = '<span class="spinner"></span><span class="btn-label">✏️ تحديث</span>';
     }
 
     const details = row.querySelector('.item-details');
-    if (details && !details.querySelector('.saved-sku-pill')) {
-        const pill = document.createElement('span');
-        pill.className = 'saved-sku-pill';
+    if (details) {
+        let pill = details.querySelector('.saved-sku-pill');
+        if (!pill) {
+            pill = document.createElement('span');
+            pill.className = 'saved-sku-pill';
+            details.appendChild(pill);
+        }
         pill.textContent = `SKU: ${sku}`;
-        details.appendChild(pill);
     }
 
     if (inputRef) focusNextInput(inputRef);

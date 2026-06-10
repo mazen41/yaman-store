@@ -394,17 +394,24 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       setState(() => _statusMessage = 'لا توجد كاميرا متوفرة');
       return;
     }
-    final camera = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
+    // Always use the FIRST back camera (index 0 of back cameras) to avoid
+    // switching between multiple rear cameras (wide/main/telephoto) on
+    // multi-camera phones.
+    final backCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
+    final camera = backCameras.isNotEmpty ? backCameras.first : cameras.first;
     _cameraController = CameraController(
       camera,
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.nv21,
     );
-    await _cameraController!.initialize();
+    try {
+      await _cameraController!.initialize();
+    } catch (e) {
+      debugPrint('[Camera] init failed: $e');
+      if (mounted) setState(() => _statusMessage = 'تعذّر تشغيل الكاميرا');
+      return;
+    }
     if (!mounted) return;
     setState(() {});
     if (!_cameraController!.value.isStreamingImages) {
@@ -871,56 +878,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // ── Manual Entry Form ─────────────────────────────────────────────────────
 
   Future<void> _showManualEntry() async {
-    final ctrl = TextEditingController();
     final entered = await showDialog<String>(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1F2937),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text(
-          'إدخال SKU يدوياً',
-          style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.right,
-        ),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textDirection: TextDirection.ltr,
-          style: const TextStyle(color: Colors.white, letterSpacing: 1.2),
-          decoration: InputDecoration(
-            hintText: 'مثال: SK123456',
-            hintStyle: const TextStyle(color: Colors.white38),
-            filled: true,
-            fillColor: const Color(0xFF374151),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
-            ),
-          ),
-          onSubmitted: (v) => Navigator.of(context).pop(v.trim().toUpperCase()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('إلغاء', style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.of(context).pop(ctrl.text.trim().toUpperCase()),
-            child: const Text('فرز'),
-          ),
-        ],
-      ),
+      builder: (_) => const _ManualSkuDialog(),
     );
-
     if (entered != null && entered.isNotEmpty && !_locked) {
       await _onStableSku(entered);
     }
@@ -1800,6 +1761,144 @@ class _OrderPickerViewItem {
     required this.match,
     required this.itemIndexInOrder,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manual SKU Entry Dialog with live autocomplete
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ManualSkuDialog extends StatefulWidget {
+  const _ManualSkuDialog();
+
+  @override
+  State<_ManualSkuDialog> createState() => _ManualSkuDialogState();
+}
+
+class _ManualSkuDialogState extends State<_ManualSkuDialog> {
+  final _ctrl = TextEditingController();
+  List<String> _suggestions = [];
+  bool _loading = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String value) {
+    final q = value.trim().toUpperCase();
+    _debounce?.cancel();
+    if (q.length < 2) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 300), () => _fetch(q));
+  }
+
+  Future<void> _fetch(String prefix) async {
+    setState(() => _loading = true);
+    try {
+      final results = await DatabaseHelper.instance.searchSkusByPrefix(prefix);
+      if (mounted) setState(() => _suggestions = results);
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  void _submit(String val) {
+    final v = val.trim().toUpperCase();
+    if (v.isNotEmpty) Navigator.of(context).pop(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1F2937),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      title: const Text(
+        'إدخال SKU يدوياً',
+        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+        textAlign: TextAlign.right,
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              textDirection: TextDirection.ltr,
+              textCapitalization: TextCapitalization.characters,
+              style: const TextStyle(color: Colors.white, letterSpacing: 1.2),
+              decoration: InputDecoration(
+                hintText: 'مثال: SK123456',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xFF374151),
+                suffixIcon: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38)),
+                      )
+                    : null,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
+                ),
+              ),
+              onChanged: _onChanged,
+              onSubmitted: _submit,
+            ),
+            if (_suggestions.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(top: 6),
+                constraints: const BoxConstraints(maxHeight: 200),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF374151),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _suggestions.length,
+                  itemBuilder: (_, i) {
+                    final sku = _suggestions[i];
+                    return InkWell(
+                      onTap: () => _submit(sku),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Text(
+                          sku,
+                          style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('إلغاء', style: TextStyle(color: Colors.white54)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF3B82F6),
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onPressed: () => _submit(_ctrl.text),
+          child: const Text('فرز'),
+        ),
+      ],
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

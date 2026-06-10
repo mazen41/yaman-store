@@ -281,9 +281,11 @@ include '../../includes/header.php';
 
                 <!-- Order Items -->
                 <div class="card-box">
-                    <div class="card-header">
+                    <div class="card-header" style="cursor:pointer" onclick="toggleOrderItems()">
                         <h3 class="card-title text-indigo-600"><i class="fas fa-shopping-cart"></i> منتجات الطلب (<?php echo count($items); ?>)</h3>
+                        <span id="orderItemsToggleIcon" class="text-gray-400"><i class="fas fa-chevron-down"></i></span>
                     </div>
+                    <div id="orderItemsBody" style="display:none">
                     <div class="overflow-x-auto">
                         <table class="w-full table-custom">
                             <thead>
@@ -335,6 +337,7 @@ include '../../includes/header.php';
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </div>
                     </div>
                 </div>
 
@@ -593,4 +596,13 @@ function changeOrderGalleryImage(delta) {
 </script>
 <?php endif; ?>
 
+<script>
+function toggleOrderItems() {
+    const body = document.getElementById('orderItemsBody');
+    const icon = document.getElementById('orderItemsToggleIcon');
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    icon.innerHTML = open ? '<i class="fas fa-chevron-down"></i>' : '<i class="fas fa-chevron-up"></i>';
+}
+</script>
 <?php include '../../includes/footer.php'; ?>

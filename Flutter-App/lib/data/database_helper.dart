@@ -392,4 +392,13 @@ class DatabaseHelper {
     final result = await db.rawQuery('SELECT COUNT(*) AS c FROM scan_records WHERE synced = 0'); 
     return result.first['c'] as int; 
   }
+
+  Future<List<String>> searchSkusByPrefix(String prefix) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT DISTINCT shein_sku FROM order_items_cache WHERE shein_sku LIKE ? ORDER BY shein_sku LIMIT 20",
+      ['$prefix%'],
+    );
+    return rows.map((r) => r['shein_sku'].toString()).where((s) => s.isNotEmpty).toList();
+  }
 }
