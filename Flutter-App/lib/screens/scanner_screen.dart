@@ -299,7 +299,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // Stability buffer
   final List<String> _skuHistory = [];
   static const int _stabilityFrames = 3;
-  static const _skuPattern = r'S[KA]-?\d{6,}';
+  static const _skuPattern = r'S[KIAE]-?\d{6,}';
 
   // Dedup within cooldown
   String _lastProcessedSku = '';
@@ -1900,7 +1900,7 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
               textCapitalization: TextCapitalization.characters,
               style: const TextStyle(color: Colors.white, letterSpacing: 1.2),
               decoration: InputDecoration(
-                hintText: 'مثال: SK123456',
+                hintText: 'مثال: SK123456 أو SI123456 أو SA123456 أو SE123456',
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF374151),

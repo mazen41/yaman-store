@@ -87,6 +87,7 @@ try {
 
     ok([
         'access_token' => $newAccessTokenRaw,
+        'token' => $newAccessTokenRaw, // Backward compatibility for older Flutter builds
         'refresh_token' => $newRefreshTokenRaw,
         'expires_in' => 7 * 24 * 60 * 60 // 7 days in seconds
     ]);
