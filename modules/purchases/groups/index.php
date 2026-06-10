@@ -23,6 +23,7 @@ if (!hasPermission($user_id, 'purchase_groups', 'view')) {
 }
 
 // Get permissions
+$can_add_groups = hasPermission($user_id, 'purchase_groups', 'add');
 $can_edit_groups = hasPermission($user_id, 'purchase_groups', 'edit');
 $can_delete_groups = $can_edit_groups;
 $can_create_status = hasPermission($user_id, 'purchase_groups', 'create_status');
@@ -125,7 +126,9 @@ include '../../../includes/header.php';
     <!-- Header -->
     <div class="table-page-header">
         <h2 class="table-page-title"><i class="fas fa-layer-group"></i> <?php echo $page_title; ?></h2>
+        <?php if ($can_add_groups): ?>
         <a href="add.php" class="btn btn-success"><i class="fas fa-plus"></i> إضافة مجموعة يدوية</a>
+        <?php endif; ?>
     </div>
 
     <!-- Statistics -->
@@ -185,7 +188,7 @@ include '../../../includes/header.php';
             <i class="fas fa-folder-open" style="font-size: 48px; color: #d1d5db; margin-bottom: 15px;"></i>
             <h3>لا توجد مجموعات شراء تطابق البحث</h3>
             <p style="margin-bottom: 20px;">يمكنك إضافة مجموعة يدوياً لتنظيم سلال الشراء والطلبات.</p>
-            <?php if ($can_edit_groups): ?>
+            <?php if ($can_add_groups): ?>
                 <a href="add.php" class="btn btn-primary">
                     <i class="fas fa-plus"></i> إنشاء مجموعة يدوية
                 </a>

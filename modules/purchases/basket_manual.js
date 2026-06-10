@@ -1,16 +1,15 @@
 /**
  * Purchase Basket - Manual Entry JS
- * Version: 4.4
- * - Automatically fills the "Final Payment Price" input with the calculated "Grand Total".
- * - The "Final Payment Price" remains editable for manual overrides.
- * - Modified formatMoney function to display numbers in English (en-US locale).
- * - Handles all financial calculations based on direct user input.
- * - Manages dynamic visibility of payment source selectors.
- * - Adds live search/filter functionality for payment source dropdowns.
- * - NEW: No specific JS changes needed for multiple file upload itself, as browser handles input.
+ * Version: 4.7
+ * - Fixed: all inputs start empty (no default 0)
+ * - Fixed: shipping SAR -> YER auto-conversion
+ * - Fixed: points/club discount YER conversion
+ * - Fixed: grand total SAR display
+ * - Fixed: tax amount SAR display
+ * - Fixed: total discount SAR display
  */
 
-console.log('🚀 Basket Manual JS Loaded (v4.5)');
+console.log('🚀 Basket Manual JS Loaded (v4.7)');
 
 // ============================================
 // INITIALIZATION
@@ -19,10 +18,25 @@ console.log('🚀 Basket Manual JS Loaded (v4.5)');
 document.addEventListener('DOMContentLoaded', function () {
     console.log('✅ DOM Content Loaded');
 
+    // --- CLEAR DEFAULT VALUES: make all numeric inputs start empty ---
+    const inputsToClear = [
+        'sarInput', 'subtotalInput', 'shippingCost', 'shippingCostSar',
+        'taxRate', 'manualDiscountInput', 'points_discount', 'club_discount',
+        'totalProductsInput', 'grandTotalDisplay',
+        'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay',
+        'clubDiscountCurrencyDisplay', 'finalPriceOverrideSar', 'final_price_override'
+    ];
+    inputsToClear.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
     // --- FINANCIAL CALCULATION SETUP ---
     const financialInputs = [
-        'sarInput', 'subtotalInput', 'shippingCost', 'taxRate', 'manualDiscountInput',
-        'points_discount', 'club_discount', 'yerExchangeRateInput', 'subtotalCurrencyDisplay', 'shippingCurrencyDisplay', 'taxCurrencyDisplay', 'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay', 'clubDiscountCurrencyDisplay', 'totalDiscountCurrencyDisplay', 'grandTotalDisplay'
+        'sarInput', 'subtotalInput', 'shippingCost', 'shippingCostSar', 'taxRate',
+        'manualDiscountInput', 'points_discount', 'club_discount', 'yerExchangeRateInput',
+        'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay',
+        'clubDiscountCurrencyDisplay', 'grandTotalDisplay'
     ];
     financialInputs.forEach(id => {
         const element = document.getElementById(id);
@@ -34,6 +48,22 @@ document.addEventListener('DOMContentLoaded', function () {
     if (taxIncludedCheckbox) {
         taxIncludedCheckbox.addEventListener('change', updateTotals);
     }
+
+    // --- BIDIRECTIONAL CONVERSION SETUP ---
+    window._biPairs = [
+        { sar: 'manualDiscountInput',  yer: 'manualDiscountCurrencyDisplay',  sarBadge: 'manualDiscount_sarBadge',  yerBadge: 'manualDiscount_yerBadge'  },
+        { sar: 'points_discount',      yer: 'pointsDiscountCurrencyDisplay',  sarBadge: 'pointsDiscount_sarBadge',  yerBadge: 'pointsDiscount_yerBadge'  },
+        { sar: 'club_discount',        yer: 'clubDiscountCurrencyDisplay',    sarBadge: 'clubDiscount_sarBadge',    yerBadge: 'clubDiscount_yerBadge'    },
+        { sar: 'sarInput',             yer: 'subtotalInput',                  sarBadge: 'subtotal_sarBadge',        yerBadge: 'subtotal_yerBadge'        },
+        { sar: 'shippingCostSar',      yer: 'shippingCost',                   sarBadge: 'shipping_sarBadge',        yerBadge: 'shipping_yerBadge'        },
+    ];
+
+    // Inject SAR/YER badge spans next to each field if not already present
+    window._biPairs.forEach(pair => {
+        injectBadge(pair.sar, pair.sarBadge, 'sar');
+        injectBadge(pair.yer, pair.yerBadge, 'yer');
+    });
+
     updateTotals(); // Initial calculation
 
     // --- PAYMENT SOURCE SELECTION LOGIC ---
@@ -179,66 +209,202 @@ if (attachmentInput && previewContainer) {
 // TOTALS CALCULATION ENGINE
 // ============================================
 
-function updateTotals() {
-    const sarInput = document.getElementById('sarInput');
-    const subtotalInput = document.getElementById('subtotalInput');
-    const exchangeInput = document.getElementById('yerExchangeRateInput');
-    const exchangeRate = parseFloat(exchangeInput?.value) || 140;
-    const safeRate = exchangeRate > 0 ? exchangeRate : 140;
-    if (sarInput && document.activeElement === sarInput) {
-        subtotalInput.value = ((parseFloat(sarInput.value) || 0) * safeRate).toFixed(2);
-    }
-    const subtotal = parseFloat(subtotalInput.value) || 0;
-    const shippingCost = parseFloat(document.getElementById('shippingCost').value) || 0;
-    const taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
-    const taxIncluded = document.getElementById('taxIncluded').checked;
-
-    const manualDiscount = parseFloat(document.getElementById('manualDiscountInput').value) || 0;
-    const pointsDiscount = parseFloat(document.getElementById('points_discount').value) || 0;
-    const clubDiscount = parseFloat(document.getElementById('club_discount').value) || 0;
-
-    const totalDiscount = manualDiscount + pointsDiscount + clubDiscount;
-    const baseForTax = subtotal - totalDiscount;
-    let taxAmount = 0;
-    let grandTotal = 0;
-
-    if (taxIncluded) {
-        if ((taxRate + 100) > 0) {
-            taxAmount = (baseForTax * taxRate) / (100 + taxRate);
-        }
-        grandTotal = baseForTax + shippingCost;
-    } else {
-        taxAmount = baseForTax * (taxRate / 100);
-        grandTotal = baseForTax + taxAmount + shippingCost;
-    }
-
-    // --- Update display elements ---
-    document.getElementById('totalDiscountDisplay').textContent = formatMoney(totalDiscount);
-    document.getElementById('taxAmountDisplay').textContent = formatMoney(taxAmount);
-
-    setCurrencyInput('subtotalCurrencyDisplay', subtotal, safeRate);
-    setCurrencyInput('shippingCurrencyDisplay', shippingCost, safeRate);
-    setCurrencyInput('taxCurrencyDisplay', taxAmount, safeRate);
-    setCurrencyInput('manualDiscountCurrencyDisplay', manualDiscount, safeRate);
-    setCurrencyInput('pointsDiscountCurrencyDisplay', pointsDiscount, safeRate);
-    setCurrencyInput('clubDiscountCurrencyDisplay', clubDiscount, safeRate);
-    setCurrencyInput('totalDiscountCurrencyDisplay', totalDiscount, safeRate);
-    setCurrencyInput('grandTotalDisplay', grandTotal, safeRate);
-
-    // --- NEW: Automatically fill the final price input with the grand total ---
-    // The field remains editable for manual overrides.
-    document.getElementById('final_price_override').value = grandTotal.toFixed(2);
+function getRate() {
+    const r = parseFloat(document.getElementById('yerExchangeRateInput')?.value) || 140;
+    return r > 0 ? r : 140;
 }
 
+function updateTotals() {
+    const rate = getRate();
+    const sarInput     = document.getElementById('sarInput');
+    const subtotalInput = document.getElementById('subtotalInput');
+    const shippingCostSarEl = document.getElementById('shippingCostSar');
+    const shippingCostYerEl = document.getElementById('shippingCost');
+
+    // SAR subtotal -> YER subtotal
+    if (sarInput && document.activeElement === sarInput) {
+        const sarVal = parseFloat(sarInput.value) || 0;
+        if (subtotalInput) subtotalInput.value = (sarVal * rate).toFixed(2);
+    }
+    // YER subtotal -> SAR subtotal
+    if (subtotalInput && document.activeElement === subtotalInput) {
+        const yerVal = parseFloat(subtotalInput.value) || 0;
+        if (sarInput) sarInput.value = (yerVal / rate).toFixed(4);
+    }
+
+    // SAR shipping -> YER shipping
+    if (shippingCostSarEl && document.activeElement === shippingCostSarEl) {
+        const sarShip = parseFloat(shippingCostSarEl.value) || 0;
+        if (shippingCostYerEl) shippingCostYerEl.value = (sarShip * rate).toFixed(2);
+    }
+    // YER shipping -> SAR shipping
+    if (shippingCostYerEl && document.activeElement === shippingCostYerEl) {
+        const yerShip = parseFloat(shippingCostYerEl.value) || 0;
+        if (shippingCostSarEl) shippingCostSarEl.value = (yerShip / rate).toFixed(4);
+    }
+
+    // SAR discounts -> YER discounts
+    const discountPairs = [
+        { sar: 'manualDiscountInput', yer: 'manualDiscountCurrencyDisplay' },
+        { sar: 'points_discount',     yer: 'pointsDiscountCurrencyDisplay' },
+        { sar: 'club_discount',       yer: 'clubDiscountCurrencyDisplay'   },
+    ];
+    discountPairs.forEach(({ sar, yer }) => {
+        const sarEl = document.getElementById(sar);
+        const yerEl = document.getElementById(yer);
+        if (!sarEl || !yerEl) return;
+        if (document.activeElement === sarEl) {
+            yerEl.value = ((parseFloat(sarEl.value) || 0) * rate).toFixed(2);
+        } else if (document.activeElement === yerEl) {
+            sarEl.value = ((parseFloat(yerEl.value) || 0) / rate).toFixed(4);
+        }
+    });
+
+    // --- Read current YER values for calculation ---
+    const subtotal       = parseFloat(subtotalInput?.value) || 0;
+    const shippingCostYer = parseFloat(shippingCostYerEl?.value) || 0;
+    const taxRate        = parseFloat(document.getElementById('taxRate')?.value) || 0;
+    const taxIncluded    = document.getElementById('taxIncluded')?.checked;
+
+    const manualDiscountYer = parseFloat(document.getElementById('manualDiscountCurrencyDisplay')?.value) || 0;
+    const pointsDiscountYer = parseFloat(document.getElementById('pointsDiscountCurrencyDisplay')?.value) || 0;
+    const clubDiscountYer   = parseFloat(document.getElementById('clubDiscountCurrencyDisplay')?.value) || 0;
+    const totalDiscountYer  = manualDiscountYer + pointsDiscountYer + clubDiscountYer;
+
+    // SAR equivalents for display
+    const manualDiscountSar = parseFloat(document.getElementById('manualDiscountInput')?.value) || 0;
+    const pointsDiscountSar = parseFloat(document.getElementById('points_discount')?.value) || 0;
+    const clubDiscountSar   = parseFloat(document.getElementById('club_discount')?.value) || 0;
+    const totalDiscountSar  = manualDiscountSar + pointsDiscountSar + clubDiscountSar;
+    const sarVal            = parseFloat(sarInput?.value) || 0;
+    const shippingCostSarVal = parseFloat(shippingCostSarEl?.value) || 0;
+
+    const baseForTaxYer = subtotal - totalDiscountYer;
+    const baseForTaxSar = sarVal - totalDiscountSar;
+    let taxAmountYer = 0, taxAmountSar = 0;
+    let grandTotalYer = 0, grandTotalSar = 0;
+
+    if (taxIncluded) {
+        taxAmountYer  = taxRate > 0 ? (baseForTaxYer * taxRate) / (100 + taxRate) : 0;
+        taxAmountSar  = taxRate > 0 ? (baseForTaxSar * taxRate) / (100 + taxRate) : 0;
+        grandTotalYer = baseForTaxYer + shippingCostYer;
+        grandTotalSar = baseForTaxSar + shippingCostSarVal;
+    } else {
+        taxAmountYer  = baseForTaxYer * (taxRate / 100);
+        taxAmountSar  = baseForTaxSar * (taxRate / 100);
+        grandTotalYer = baseForTaxYer + taxAmountYer + shippingCostYer;
+        grandTotalSar = baseForTaxSar + taxAmountSar + shippingCostSarVal;
+    }
+
+    // --- Update all display elements ---
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+
+    set('taxAmountDisplay',        formatMoney(taxAmountYer));
+    set('taxAmountSarDisplay',     formatSarMoney(taxAmountSar));
+    set('totalDiscountDisplay',    formatMoney(totalDiscountYer));
+    set('totalDiscountSarDisplay', formatSarMoney(totalDiscountSar));
+    set('grandTotalSarDisplay',    grandTotalSar > 0 ? grandTotalSar.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}) : '0.00');
+
+    // Update hidden fields
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el && document.activeElement !== el) el.value = val.toFixed(2); };
+    setVal('taxCurrencyDisplay',          taxAmountYer);
+    setVal('totalDiscountCurrencyDisplay', totalDiscountYer);
+    setVal('grandTotalDisplay',            grandTotalYer);
+
+    // Auto-fill final price override
+    const finalOverrideYer = document.getElementById('final_price_override');
+    if (finalOverrideYer && document.activeElement !== finalOverrideYer) finalOverrideYer.value = grandTotalYer.toFixed(2);
+    const finalOverrideSar = document.getElementById('finalPriceOverrideSar');
+    if (finalOverrideSar && document.activeElement !== finalOverrideSar) finalOverrideSar.value = grandTotalSar.toFixed(2);
+
+    // Update all conversion badges
+    updateAllBadges(rate);
+}
 
 // ============================================
-// UTILITY FUNCTION
+// BIDIRECTIONAL BADGE SYSTEM
 // ============================================
 
 /**
- * MODIFIED: This function now formats numbers using English numerals and adds " YER" as the currency.
- * It also ensures two decimal places for a consistent financial look.
+ * Injects a conversion badge span immediately after an input element.
+ * type: 'sar' means this input holds YER and badge shows SAR equivalent
+ *       'yer' means this input holds SAR and badge shows YER equivalent
  */
+function injectBadge(inputId, badgeId, type) {
+    const input = document.getElementById(inputId);
+    if (!input || document.getElementById(badgeId)) return;
+
+    const badge = document.createElement('span');
+    badge.id = badgeId;
+    badge.className = 'currency-convert-badge';
+    badge.setAttribute('data-type', type);
+    badge.setAttribute('data-for', inputId);
+    badge.style.cssText = [
+        'display:inline-block',
+        'font-size:11px',
+        'font-weight:700',
+        'padding:2px 7px',
+        'border-radius:10px',
+        'margin-top:4px',
+        'white-space:nowrap',
+        'transition:opacity .2s',
+        type === 'sar'
+            ? 'background:#e6f4ea;color:#1d6f42;border:1px solid #b7dfbf'    // green = SAR
+            : 'background:#fef3c7;color:#92400e;border:1px solid #fcd34d',   // amber = YER
+    ].join(';');
+
+    // Insert badge below the input by wrapping it or appending after
+    const parent = input.parentNode;
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;';
+    parent.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+    wrapper.appendChild(badge);
+}
+
+function updateAllBadges(rate) {
+    if (!window._biPairs) return;
+    window._biPairs.forEach(pair => {
+        const sarVal = parseFloat(document.getElementById(pair.sar)?.value) || 0;
+        const yerVal = parseFloat(document.getElementById(pair.yer)?.value) || 0;
+
+        // Badge next to SAR field: show YER equivalent
+        const sarBadge = document.getElementById(pair.sarBadge);
+        if (sarBadge) {
+            const yerEquiv = sarVal * rate;
+            sarBadge.textContent = sarVal > 0 ? `= ${yerEquiv.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})} YER` : '';
+            sarBadge.style.opacity = sarVal > 0 ? '1' : '0';
+        }
+
+        // Badge next to YER field: show SAR equivalent
+        const yerBadge = document.getElementById(pair.yerBadge);
+        if (yerBadge) {
+            const sarEquiv = rate > 0 ? yerVal / rate : 0;
+            yerBadge.textContent = yerVal > 0 ? `= ${sarEquiv.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})} SAR` : '';
+            yerBadge.style.opacity = yerVal > 0 ? '1' : '0';
+        }
+    });
+
+    // Special: main SAR input -> show YER on its own badge
+    const sarMainInput = document.getElementById('sarInput');
+    const sarMainBadge = document.getElementById('sarMain_yerBadge');
+    if (sarMainInput && sarMainBadge) {
+        const v = parseFloat(sarMainInput.value) || 0;
+        sarMainBadge.textContent = v > 0 ? `= ${(v * rate).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})} YER` : '';
+        sarMainBadge.style.opacity = v > 0 ? '1' : '0';
+    }
+}
+
+// Wire up shippingCostSar input (not covered by the main financialInputs array yet)
+document.addEventListener('DOMContentLoaded', function() {
+    const shippingCostSarEl = document.getElementById('shippingCostSar');
+    if (shippingCostSarEl) shippingCostSarEl.addEventListener('input', updateTotals);
+}, { once: true });
+
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
 function formatMoney(amount) {
     if (amount === null || isNaN(amount)) return '0.00 YER';
 

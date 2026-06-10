@@ -211,7 +211,7 @@ include '../../includes/header.php';
 <!-- Load Tajawal font -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;600;700;800&display=swap" rel="stylesheet">
-<!-- OCR handled server-side via ajax_ocr.php using Gemini Vision -->
+<!-- PaddleOCR integration: frames are POSTed to the VPS Python microservice (ocr_service.py) -->
 
 <div id="sortApp">
 
@@ -325,13 +325,12 @@ include '../../includes/header.php';
             </button>
           </div>
 
-          <!-- Manual OCR capture — only fires ONE request on click -->
           <button id="btnCamScan" type="button" class="s-btn s-btn-primary s-btn-full" style="display:none;">
-            <i class="fas fa-camera"></i> مسح SKU الآن
+            <i class="fas fa-camera"></i> قراءة SKU
           </button>
 
           <p style="font-size:.72rem;color:var(--sort-muted);text-align:center;margin:0;">
-            وجّه الكاميرا على ملصق SKU ثم اضغط «مسح SKU الآن»
+            وجّه الكاميرا على ملصق SKU ثم اضغط «قراءة SKU»
           </p>
         </div>
       </div>
@@ -474,18 +473,17 @@ include '../../includes/header.php';
 </div><!-- /sortApp -->
 
 <script>
-// ══════════════════════════════════════════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════════════════════════════════════════
 const state = {
   currentItemId : null,
   currentOrderId: null,
   sessionScanned: 0,
   sessionPending: 0,
   scanLock      : false,
-  lastScanVal   : '',
-  lastScanAt    : 0,
-  camStream     : null,   // active MediaStream (no auto-interval)
+  inputBuffer   : '',
+  inputTimer    : null,
+  lastFiredSku  : '',
+  lastFiredAt   : 0,
+  camStream     : null,
   purchaseGroupId: '',
 };
 
@@ -499,30 +497,31 @@ const purchaseGroupSelect = $('purchaseGroupSelect');
 const emptyState  = $('emptyState');
 const resultArea  = $('resultArea');
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SOUND
-// ══════════════════════════════════════════════════════════════════════════════
+function normalizeSku(raw) {
+  var v = String(raw || '').trim();
+  v = v.replace(/^(SKU|SHEIN\s*SKU|رقم\s*المنتج|كود\s*المنتج)\s*[::#\-]?\s*/iu, '');
+  v = v.replace(/[^A-Za-z0-9_\-]/g, '');
+  return v.toUpperCase();
+}
+
 function beep(type) {
   try {
-    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
+    var ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    var osc  = ctx.createOscillator();
+    var gain = ctx.createGain();
     osc.type = 'sine';
-    const freqs = { success: 880, warning: 550, error: 220 };
+    var freqs = { success: 880, warning: 550, error: 220 };
     osc.frequency.value = freqs[type] || 440;
     gain.gain.value = 0.06;
     osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); setTimeout(() => { osc.stop(); ctx.close(); }, 160);
+    osc.start(); setTimeout(function() { osc.stop(); ctx.close(); }, 160);
   } catch(e) {}
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// MESSAGE BANNER
-// ══════════════════════════════════════════════════════════════════════════════
 function showMsg(text, type) {
   type = type || 'success';
   msgEl.className = 'sort-msg ' + type;
-  const icons = { success: 'check-circle', warning: 'exclamation-triangle', error: 'times-circle' };
+  var icons = { success: 'check-circle', warning: 'exclamation-triangle', error: 'times-circle' };
   msgEl.innerHTML = '<i class="fas fa-' + (icons[type] || 'info-circle') + '"></i><span>' + escH(text) + '</span>';
   msgEl.style.display = 'flex';
 }
@@ -530,29 +529,25 @@ function hideMsg() { msgEl.style.display = 'none'; }
 
 function filterPurchaseGroups() {
   if (!purchaseGroupSelect || !purchaseGroupSearch) return;
-  const needle = (purchaseGroupSearch.value || '').trim().toLowerCase();
+  var needle = (purchaseGroupSearch.value || '').trim().toLowerCase();
   Array.from(purchaseGroupSelect.options).forEach(function(opt, idx) {
     if (idx === 0) { opt.hidden = false; return; }
-    const txt = (opt.textContent || '').toLowerCase();
-    opt.hidden = needle ? txt.indexOf(needle) === -1 : false;
+    opt.hidden = needle ? (opt.textContent || '').toLowerCase().indexOf(needle) === -1 : false;
   });
 }
 
 async function doSortPurchaseGroup() {
-  const groupId = parseInt(state.purchaseGroupId || '0', 10);
-  if (!groupId) {
-    showMsg('اختر مجموعة شراء أولاً ثم اضغط Sort', 'warning');
-    return;
-  }
+  var groupId = parseInt(state.purchaseGroupId || '0', 10);
+  if (!groupId) { showMsg('اختر مجموعة شراء أولاً ثم اضغط Sort', 'warning'); return; }
   if (!confirm('سيتم فرز جميع المنتجات غير المفروزة في هذه المجموعة. هل تريد المتابعة؟')) return;
   try {
     spinner.style.display = 'flex';
-    const res = await fetch('ajax_scan.php', {
+    var res  = await fetch('ajax_scan.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'action=sort_purchase_group&purchase_group_id=' + encodeURIComponent(groupId),
     });
-    const data = await res.json();
+    var data = await res.json();
     if (!data.success) throw new Error(data.message || 'فشل فرز المجموعة');
     showMsg(data.message || 'تم فرز المجموعة بنجاح', 'success');
     if (typeof data.sorted_items !== 'undefined') {
@@ -560,45 +555,37 @@ async function doSortPurchaseGroup() {
     }
     beep('success');
   } catch (err) {
-    showMsg(err.message || 'حدث خطأ أثناء الفرز', 'error');
-    beep('error');
+    showMsg(err.message || 'حدث خطأ أثناء الفرز', 'error'); beep('error');
   } finally {
     spinner.style.display = 'none';
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// CORE SCAN
-// ══════════════════════════════════════════════════════════════════════════════
-async function doScan(value, selectedItemId) {
+async function doScan(rawValue, selectedItemId) {
   selectedItemId = selectedItemId || 0;
-  value = (value || '').trim();
-  if (!value) { showMsg('يرجى إدخال SKU أو رابط صالح', 'error'); return; }
-
-  const now = Date.now();
-  if (value === state.lastScanVal && now - state.lastScanAt < 2500) return;
+  var value = normalizeSku(rawValue);
+  if (!value) { showMsg('يرجى إدخال SKU صالح', 'error'); return; }
+  var now = Date.now();
+  if (selectedItemId === 0 && value === state.lastFiredSku && now - state.lastFiredAt < 1000) return;
   if (state.scanLock) return;
-
   state.scanLock    = true;
-  state.lastScanVal = value;
-  state.lastScanAt  = now;
-
+  state.lastFiredSku = value;
+  state.lastFiredAt  = now;
   spinner.style.display   = 'flex';
   hideMsg();
   inputStatus.textContent = '⏳ بحث...';
   inputStatus.className   = 's-badge warning';
   scanInput.disabled      = true;
-
   try {
-    const res  = await fetch('ajax_scan.php', {
+    var res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body:    'action=scan&scan_input=' + encodeURIComponent(value) + '&selected_item_id=' + selectedItemId + '&purchase_group_id=' + encodeURIComponent(state.purchaseGroupId || ''),
+      body:    'action=scan&scan_input=' + encodeURIComponent(value)
+             + '&selected_item_id=' + selectedItemId
+             + '&purchase_group_id=' + encodeURIComponent(state.purchaseGroupId || ''),
     });
-    const data = await res.json();
-
+    var data = await res.json();
     if (!data.success) throw new Error(data.message || 'فشل البحث');
-
     if (data.requires_selection) {
       renderSkuSelection(data);
       showMsg(data.message || 'اختر الطلب المطلوب', 'warning');
@@ -606,20 +593,13 @@ async function doScan(value, selectedItemId) {
       return;
     }
     $('skuPickWrap').style.display = 'none';
-
     renderResult(data);
     showMsg(data.message, data.already_scanned ? 'warning' : 'success');
     beep(data.already_scanned ? 'warning' : 'success');
-
     state.sessionScanned++;
     $('hdrScanned').textContent = state.sessionScanned;
-
-    if (!data.already_scanned && data.next_item) {
-      setNextPreview(data.next_item);
-    } else if (data.all_done) {
-      $('nextPreviewWrap').style.display = 'none';
-    }
-
+    if (!data.already_scanned && data.next_item) setNextPreview(data.next_item);
+    else if (data.all_done) $('nextPreviewWrap').style.display = 'none';
     scanInput.value = '';
   } catch(err) {
     showMsg(err.message, 'error');
@@ -635,17 +615,17 @@ async function doScan(value, selectedItemId) {
 }
 
 function renderSkuSelection(data) {
-  const list    = $('skuPickList');
-  const matches = Array.isArray(data.matches) ? data.matches : [];
+  var list    = $('skuPickList');
+  var matches = Array.isArray(data.matches) ? data.matches : [];
   list.innerHTML = '';
   $('skuPickWrap').style.display = matches.length ? 'block' : 'none';
   matches.forEach(function(m) {
-    const btn = document.createElement('button');
+    var btn = document.createElement('button');
     btn.type      = 'button';
     btn.className = 'sku-pick-btn';
-    btn.innerHTML = '<strong>' + escH(m.order_number || ('#' + m.order_id)) + '</strong>' +
-      '<div style="font-size:.82rem;color:var(--sort-muted);margin-top:4px;">' +
-      escH(m.customer_name || 'عميل غير محدد') + ' — ' + escH(m.customer_mobile || '—') + '</div>';
+    btn.innerHTML = '<strong>' + escH(m.order_number || ('#' + m.order_id)) + '</strong>'
+      + '<div style="font-size:.82rem;color:var(--sort-muted);margin-top:4px;">'
+      + escH(m.customer_name || 'عميل غير محدد') + ' — ' + escH(m.customer_mobile || '—') + '</div>';
     btn.addEventListener('click', function() {
       doScan(data.sku || scanInput.value, parseInt(m.item_id || 0, 10));
     });
@@ -653,10 +633,7 @@ function renderSkuSelection(data) {
   });
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// RENDER RESULT
-// ══════════════════════════════════════════════════════════════════════════════
-const STATUS_LABELS = {
+var STATUS_LABELS = {
   new:'جديد', pending:'قيد الانتظار', processing:'معالجة',
   scanned:'تم الفرز', shipped:'شُحن', delivered:'تسليم',
   cancelled:'ملغى', returned:'مُرتجع', available:'متاح',
@@ -675,43 +652,35 @@ function escH(s) {
 }
 
 function renderResult(data) {
-  const product = data.product      || {};
-  const item    = data.item         || {};
-  const counts  = data.counts       || {};
-  const imgs    = data.order_images || [];
-  const group   = data.group_info;
-  const cur     = item.currency     || 'ريال';
-
+  var product = data.product      || {};
+  var item    = data.item         || {};
+  var counts  = data.counts       || {};
+  var imgs    = data.order_images || [];
+  var group   = data.group_info;
+  var cur     = item.currency     || 'ريال';
   state.currentItemId  = item.id;
   state.currentOrderId = item.order_id;
-
   emptyState.style.display = 'none';
   resultArea.style.display = 'flex';
-
-  const allDone = data.all_done || (counts.total_items > 0 && counts.scanned_items >= counts.total_items);
+  var allDone = data.all_done || (counts.total_items > 0 && counts.scanned_items >= counts.total_items);
   $('allDoneBanner').style.display = allDone ? 'block' : 'none';
-
-  const imgEl = $('prodImg');
+  var imgEl = $('prodImg');
   imgEl.src = product.image || 'data:image/svg+xml,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">' +
-    '<rect width="100%" height="100%" fill="#f3f4f6"/>' +
-    '<text x="50%" y="50%" fill="#9ca3af" text-anchor="middle" dominant-baseline="middle" font-size="14">No Image</text></svg>'
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">'
+    + '<rect width="100%" height="100%" fill="#f3f4f6"/>'
+    + '<text x="50%" y="50%" fill="#9ca3af" text-anchor="middle" dominant-baseline="middle" font-size="14">No Image</text></svg>'
   );
   $('prodName').textContent = product.name || item.product_name || ('SKU: ' + (product.shein_sku || item.shein_sku || ''));
   $('prodSku').textContent  = product.shein_sku || item.shein_sku || '';
-
-  const linkEl = $('prodLink');
+  var linkEl = $('prodLink');
   if (product.link) { linkEl.href = product.link; linkEl.style.display = 'inline-flex'; }
   else              { linkEl.style.display = 'none'; }
-
-  const badge = $('itemBadge');
+  var badge = $('itemBadge');
   if (data.already_scanned) { badge.textContent = '⚠️ مفروز مسبقاً'; badge.className = 's-badge warning'; }
   else                      { badge.textContent = '✅ تم الفرز';       badge.className = 's-badge scanned'; }
-
   inputStatus.textContent = '✅ تم';
   inputStatus.className   = 's-badge scanned';
-
-  const orderId = item.order_id || '';
+  var orderId = item.order_id || '';
   $('orderViewLink').href    = '../../modules/orders/view.php?id=' + orderId;
   $('oNumber').textContent   = item.order_number    || ('#' + orderId);
   $('oCustomer').textContent = item.customer_name   || '—';
@@ -721,63 +690,53 @@ function renderResult(data) {
   $('oTotal').textContent    = currency(item.final_amount,  cur);
   $('oDate').textContent     = fmtDate(item.order_date);
   $('oCounts').textContent   = counts.scanned_items + ' / ' + counts.total_items;
-
-  const pct = counts.total_items > 0 ? Math.round(counts.scanned_items / counts.total_items * 100) : 0;
+  var pct = counts.total_items > 0 ? Math.round(counts.scanned_items / counts.total_items * 100) : 0;
   $('progressBar').style.width    = pct + '%';
   $('progressText').textContent   = pct + '%';
-
-  const nw = $('oNotesWrap');
+  var nw = $('oNotesWrap');
   if (item.order_notes && item.order_notes.trim()) {
-    $('oNotes').textContent = item.order_notes;
-    nw.style.display = 'block';
+    $('oNotes').textContent = item.order_notes; nw.style.display = 'block';
   } else { nw.style.display = 'none'; }
-
-  const gb = $('groupBanner');
+  var gb = $('groupBanner');
   if (group && group.id) {
     $('groupName').textContent   = group.group_name   || ('مجموعة #' + group.id);
     $('groupNumber').textContent = group.group_number || '';
     gb.style.display = 'flex';
   } else { gb.style.display = 'none'; }
-
-  const listEl     = $('itemsList');
+  var listEl     = $('itemsList');
   listEl.innerHTML = '';
-  const allItems   = data.all_items || [];
-  const currentSku = product.shein_sku || item.shein_sku || '';
+  var allItems   = data.all_items || [];
+  var currentSku = product.shein_sku || item.shein_sku || '';
   if (!allItems.length) {
     listEl.innerHTML = '<p style="padding:20px;text-align:center;color:var(--sort-muted);font-size:.83rem;">لا توجد منتجات</p>';
   } else {
     allItems.forEach(function(it) {
-      const isCur = it.shein_sku && it.shein_sku === currentSku;
-      const sc    = it.status === 'scanned';
-      const div   = document.createElement('div');
+      var isCur = it.shein_sku && it.shein_sku === currentSku;
+      var sc    = it.status === 'scanned';
+      var div   = document.createElement('div');
       div.className = 'item-row' + (isCur ? ' current' : '');
       div.innerHTML =
-        '<img class="th" src="' + escH(it.sp_image||'') + '" onerror="this.style.visibility=\'hidden\'" alt="">' +
-        '<div class="nm"><p>' + escH(it.sp_name || it.product_name || ('SKU ' + (it.shein_sku||''))) + '</p>' +
-        '<small>' + escH(it.shein_sku||'—') + '</small></div>' +
-        '<span class="s-badge ' + (sc ? 'scanned' : 'pending') + '">' + statusLabel(it.status) + '</span>';
+        '<img class="th" src="' + escH(it.sp_image||'') + '" onerror="this.style.visibility=\'hidden\'" alt="">'
+        + '<div class="nm"><p>' + escH(it.sp_name || it.product_name || ('SKU ' + (it.shein_sku||''))) + '</p>'
+        + '<small>' + escH(it.shein_sku||'—') + '</small></div>'
+        + '<span class="s-badge ' + (sc ? 'scanned' : 'pending') + '">' + statusLabel(it.status) + '</span>';
       listEl.appendChild(div);
     });
   }
-
-  const ic = $('imagesCard'), ig = $('imagesGrid');
+  var ic = $('imagesCard'), ig = $('imagesGrid');
   ig.innerHTML = '';
   if (imgs.length) {
     ic.style.display = 'block';
     imgs.forEach(function(img) {
-      const src = '/uploads/' + (img.image_path || '').replace(/^\/?(?:uploads\/)?/, '');
-      const a   = document.createElement('a'); a.href = src; a.target = '_blank';
+      var src = '/uploads/' + (img.image_path || '').replace(/^\/?(?:uploads\/)?/, '');
+      var a   = document.createElement('a'); a.href = src; a.target = '_blank';
       a.innerHTML = '<img src="' + escH(src) + '" alt="' + escH(img.image_name||'') + '" loading="lazy">';
       ig.appendChild(a);
     });
   } else { ic.style.display = 'none'; }
-
   $('hdrPending').textContent = Math.max(0, (counts.total_items||0) - (counts.scanned_items||0));
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// NEXT ITEM PREVIEW
-// ══════════════════════════════════════════════════════════════════════════════
 function setNextPreview(next) {
   if (!next) { $('nextPreviewWrap').style.display = 'none'; return; }
   $('nextPreviewWrap').style.display = 'block';
@@ -787,56 +746,77 @@ function setNextPreview(next) {
   $('btnAutoScanNext').dataset.sku = next.shein_sku || '';
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// UNSCAN
-// ══════════════════════════════════════════════════════════════════════════════
 async function doUnscan() {
   if (!state.currentItemId) return;
   try {
-    const res  = await fetch('ajax_scan.php', {
+    var res  = await fetch('ajax_scan.php', {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body:    'action=unscan&item_id=' + state.currentItemId,
     });
-    const data = await res.json();
+    var data = await res.json();
     if (data.success) {
       showMsg('تم إلغاء الفرز — الحالة: قيد الانتظار', 'warning');
       beep('warning');
       $('itemBadge').textContent = '⏳ قيد الانتظار';
       $('itemBadge').className   = 's-badge pending';
-      const c = data.counts || {};
+      var c = data.counts || {};
       $('oCounts').textContent = c.scanned_items + ' / ' + c.total_items;
-      const pct = c.total_items > 0 ? Math.round(c.scanned_items / c.total_items * 100) : 0;
+      var pct = c.total_items > 0 ? Math.round(c.scanned_items / c.total_items * 100) : 0;
       $('progressBar').style.width    = pct + '%';
       $('progressText').textContent   = pct + '%';
     }
   } catch(e) { showMsg(e.message, 'error'); }
 }
 
-// ======================================================
-// CAMERA - manual-only, NO auto-interval
-// ======================================================
-async function captureFrameBase64(video) {
-  var canvas = document.createElement('canvas');
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+// ══════════════════════════════════════════════════════════════════════════════
+// CAMERA — PaddleOCR on VPS (72.61.177.197:5050)
+// ══════════════════════════════════════════════════════════════════════════════
+var OCR_SERVICE_URL = 'ocr_proxy.php';
+
+function captureFrameBlob(video) {
+  return new Promise(function(resolve, reject) {
+    var canvas = document.createElement('canvas');
+    canvas.width  = video.videoWidth  || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(function(blob) {
+      if (blob) resolve(blob);
+      else reject(new Error('فشل التقاط الصورة من الكاميرا'));
+    }, 'image/jpeg', 0.92);
+  });
+}
+
+function extractSkuFromText(text) {
+  var clean  = String(text || '').replace(/[\s\r\n]+/g, '').toUpperCase();
+  var spaced = String(text || '').replace(/[\r\n]+/g, ' ').replace(/  +/g, ' ').toUpperCase();
+  var m = clean.match(/S[KA][A-Z0-9_\-]{6,20}/);
+  if (m) return m[0];
+  m = spaced.replace(/ /g,'').match(/S[KA][A-Z0-9_\-]{6,20}/);
+  if (m) return m[0];
+  var fixed = clean
+    .replace(/^5K/, 'SK').replace(/SKK/, 'SK').replace(/5K(?=[A-Z0-9])/, 'SK').replace(/^5A/, 'SA').replace(/SAA/, 'SA').replace(/5A(?=[A-Z0-9])/, 'SA')
+    .replace(/[Il|](?=[0-9])/g, '1')
+    .replace(/O(?=[0-9])/g,     '0')
+    .replace(/(?<=[0-9])O/g,    '0');
+  m = fixed.match(/S[KA][A-Z0-9_\-]{6,20}/);
+  if (m) return m[0];
+  return null;
 }
 
 async function startCamera() {
   try {
     state.camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' }
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
-    const video = $('scannerVideo');
+    var video = $('scannerVideo');
     video.srcObject = state.camStream;
     await video.play();
-
     $('btnCamScan').style.display = 'block';
     $('camStatus').textContent    = '🟢 يعمل';
     $('camStatus').className      = 's-badge scanned';
-    showMsg('الكاميرا تعمل — اضغط «مسح SKU الآن» عند جهوز الملصق', 'success');
+    showMsg('الكاميرا تعمل — وجّه الكاميرا على ملصق SKU ثم اضغط «قراءة SKU»', 'success');
+    fetch(OCR_SERVICE_URL.replace('/ocr', '/ping')).catch(function(){});
   } catch(err) {
     showMsg('تعذر تشغيل الكاميرا: ' + err.message, 'error');
   }
@@ -855,46 +835,61 @@ function stopCamera() {
 }
 
 async function doOcrCapture() {
-  var video = document.getElementById('scannerVideo');
+  var video = $('scannerVideo');
   if (!state.camStream || !video || video.videoWidth < 20) {
     showMsg('الكاميرا غير نشطة — شغّلها أولاً', 'error');
     return;
   }
-
-  var btn = document.getElementById('btnCamScan');
+  var btn = $('btnCamScan');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارِ الإرسال إلى Gemini...';
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> جارٍ قراءة SKU...';
   hideMsg();
-
-  captureFrameBase64(video).then(function(imageBase64) {
-    return fetch('ajax_ocr.php', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ image: imageBase64 }),
-    });
-  }).then(function(res) {
-    return res.json();
-  }).then(function(data) {
-    if (!data.success) throw new Error(data.message || 'فشل استخراج SKU');
-    var sku = data.sku;
-    document.getElementById('scanInput').value = sku;
-    showMsg('✅ SKU تم اكتشافه: ' + sku + ' — جارٍ الفرز...', 'success');
-    return doScan(sku);
-  }).catch(function(err) {
-    showMsg('❌ ' + (err.message || 'فشل استخراج SKU'), 'error');
-    console.error('[doOcrCapture]', err);
-  }).finally(function() {
+  try {
+    var blob = await captureFrameBlob(video);
+    var form = new FormData();
+    form.append('image', blob, 'frame.jpg');
+    var res;
+    try {
+      res = await fetch(OCR_SERVICE_URL, { method: 'POST', body: form });
+    } catch(netErr) {
+      throw new Error('خدمة OCR غير متاحة — تأكد أن ocr_service.py تعمل على VPS. (' + netErr.message + ')');
+    }
+    if (!res.ok) {
+      var errText = await res.text().catch(function(){ return ''; });
+      throw new Error('خطأ من خدمة OCR (' + res.status + '): ' + errText.slice(0, 120));
+    }
+    var data = await res.json();
+    var sku = data.sku || extractSkuFromText(data.raw_text || data.text || '');
+    if (!sku) {
+      var preview = (data.raw_text || data.text || '').replace(/\n/g, ' ').trim().slice(0, 100);
+      throw new Error('لم يُعثر على SKU. PaddleOCR قرأ: «' + (preview || 'لا شيء') + '» — قرّب الكاميرا من الملصق وتأكد من الإضاءة الجيدة');
+    }
+    scanInput.value = sku;
+    showMsg('✅ SKU: ' + sku + ' — جارٍ الفرز...', 'success');
+    doScan(sku);
+  } catch(err) {
+    showMsg('❌ ' + err.message, 'error');
+    beep('error');
+  } finally {
     btn.disabled  = false;
-    btn.innerHTML = '<i class="fas fa-camera"></i> مسح SKU الآن';
-  });
+    btn.innerHTML = '<i class="fas fa-camera"></i> قراءة SKU';
+  }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// EVENT BINDINGS
-// ══════════════════════════════════════════════════════════════════════════════
+function fireFromInput() {
+  var raw = scanInput.value.trim();
+  if (!raw) return;
+  raw = raw.replace(/[\r\n]/g, '').trim();
+  doScan(raw);
+}
+
+function keepFocus() {
+  if (document.activeElement && ['INPUT','SELECT','TEXTAREA','BUTTON','A'].indexOf(document.activeElement.tagName) !== -1) return;
+  scanInput.focus();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   scanInput.focus();
-
   if (purchaseGroupSelect) {
     purchaseGroupSelect.addEventListener('change', function() {
       state.purchaseGroupId = this.value || '';
@@ -902,38 +897,58 @@ document.addEventListener('DOMContentLoaded', function() {
       hideMsg();
     });
   }
-  if (purchaseGroupSearch) {
-    purchaseGroupSearch.addEventListener('input', filterPurchaseGroups);
-  }
-
+  if (purchaseGroupSearch) purchaseGroupSearch.addEventListener('input', filterPurchaseGroups);
   scanInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); doScan(scanInput.value); }
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      clearTimeout(state.inputTimer);
+      fireFromInput();
+    }
   });
-
+  scanInput.addEventListener('input', function() {
+    clearTimeout(state.inputTimer);
+    var val = scanInput.value.trim();
+    if (/[\r\n]/.test(scanInput.value)) {
+      scanInput.value = val.replace(/[\r\n]/g, '');
+      fireFromInput();
+      return;
+    }
+    if (val.length >= 4) {
+      state.inputTimer = setTimeout(function() {
+        if (scanInput.value.trim() === val && !state.scanLock) fireFromInput();
+      }, 400);
+    }
+  });
   scanInput.addEventListener('paste', function() {
-    setTimeout(function() { if (scanInput.value.length >= 6) doScan(scanInput.value); }, 80);
+    clearTimeout(state.inputTimer);
+    setTimeout(function() {
+      var val = scanInput.value.trim();
+      if (val.length >= 3) fireFromInput();
+    }, 80);
   });
-
-  $('btnScan').addEventListener('click', function() { doScan(scanInput.value); });
+  $('btnScan').addEventListener('click', function() { fireFromInput(); });
   $('btnSortGroup').addEventListener('click', doSortPurchaseGroup);
   $('btnClear').addEventListener('click', function() {
-    scanInput.value = ''; hideMsg(); scanInput.focus();
-    inputStatus.textContent = 'جاهز'; inputStatus.className = 's-badge other';
+    scanInput.value = '';
+    clearTimeout(state.inputTimer);
+    hideMsg();
+    scanInput.focus();
+    inputStatus.textContent = 'جاهز';
+    inputStatus.className   = 's-badge other';
   });
   $('btnUnscan').addEventListener('click', doUnscan);
   $('btnCamStart').addEventListener('click', startCamera);
   $('btnCamStop').addEventListener('click', stopCamera);
   $('btnCamScan').addEventListener('click', doOcrCapture);
-
   $('btnAutoScanNext').addEventListener('click', function() {
-    const sku = this.dataset.sku;
+    var sku = this.dataset.sku;
     if (sku) { scanInput.value = sku; doScan(sku); }
   });
-
   document.addEventListener('click', function(e) {
-    if (!e.target.closest('button,a,select,input:not(#scanInput),video')) {
-      scanInput.focus();
-    }
+    if (!e.target.closest('button,a,select,input,textarea,video')) scanInput.focus();
+  });
+  scanInput.addEventListener('blur', function() {
+    setTimeout(keepFocus, 150);
   });
 });
 </script>

@@ -107,7 +107,8 @@ try {
                 COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = co.id), 0) AS total_quantity,
                 co.automatic_discount_percentage AS display_discount_percentage,
                 (SELECT oi.product_link FROM order_items oi WHERE oi.order_id = co.id AND oi.product_link IS NOT NULL AND oi.product_link <> '' ORDER BY oi.id LIMIT 1) AS first_product_link,
-                EXISTS(SELECT 1 FROM order_approvals oa WHERE oa.final_order_id = co.id) AS is_self_order
+                EXISTS(SELECT 1 FROM order_approvals oa WHERE oa.final_order_id = co.id) AS is_self_order,
+                (SELECT COALESCE(SUM(odi.price), 0) FROM order_damaged_items odi WHERE odi.order_id = co.id) AS damaged_amount
             FROM customer_orders co
             LEFT JOIN customer_order_statuses cos ON co.status = cos.status_key
             WHERE co.customer_id = ? 

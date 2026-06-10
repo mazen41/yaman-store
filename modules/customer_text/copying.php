@@ -23,12 +23,13 @@ if (!hasPermission($_SESSION['user_id'], 'calculations', 'view')) {
 // Determine if the user has 'edit' permission for calculations
 $canEditCalculations = hasPermission($_SESSION['user_id'], 'calculations', 'edit');
 
-
-$page_title = 'حاسبة المحاسبة يمان';
+$page_title = 'حاسبه يمان';
 include '../../includes/header.php';
 
 // Initialize variables
-$percentage = 11;
+$percentage  = 11;
+$percentage2 = 11;
+$percentage3 = 11;
 $price_sr = '';
 $quantity = null;
 $cut_date = "2026-02-23";
@@ -40,47 +41,59 @@ $button3_template = '';
 $current_exchange_rate = 140;
 
 try {
+    // Ensure per-button percentage columns exist (safe migration)
+    foreach (['percentage2', 'percentage3'] as $col) {
+        try {
+            $db->exec("ALTER TABLE calculation_settings ADD COLUMN `$col` DECIMAL(8,4) NOT NULL DEFAULT 11");
+        } catch (PDOException $e) {
+            // Column already exists — ignore
+        }
+    }
+
     $stmt = $db->query("SELECT * FROM calculation_settings LIMIT 1");
     $settings = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($settings) {
-        $percentage = (float)$settings['percentage'];
-        $price_sr = empty($settings['price_sr']) ? '' : (float)$settings['price_sr'];
-        $quantity = empty($settings['quantity']) ? '' : (int)$settings['quantity'];
-        $cut_date = $settings['cut_date'];
-        $amount_paid_yr = empty($settings['amount_paid_yr']) ? '' : (float)$settings['amount_paid_yr'];
-        $button1_template = $settings['button1_text_template'];
-        $button2_template = $settings['button2_text_template'];
-        $button3_template = $settings['button3_text_template'];
+        $percentage  = (float)$settings['percentage'];
+        $percentage2 = isset($settings['percentage2']) ? (float)$settings['percentage2'] : $percentage;
+        $percentage3 = isset($settings['percentage3']) ? (float)$settings['percentage3'] : $percentage;
+        $price_sr    = empty($settings['price_sr'])        ? '' : (float)$settings['price_sr'];
+        $quantity    = empty($settings['quantity'])        ? '' : (int)$settings['quantity'];
+        $cut_date    = $settings['cut_date'];
+        $amount_paid_yr      = empty($settings['amount_paid_yr']) ? '' : (float)$settings['amount_paid_yr'];
+        $button1_template    = $settings['button1_text_template'];
+        $button2_template    = $settings['button2_text_template'];
+        $button3_template    = $settings['button3_text_template'];
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'save_calculation') {
-        // Permission check for saving settings
         if (!$canEditCalculations) {
             $_SESSION['error_message'] = 'ليس لديك صلاحية لتعديل إعدادات الحسابات.';
-            header('Location: calculate_page.php'); // Redirect back to the same page
+            header('Location: copying.php');
             exit();
         }
 
-        $percentage = filter_input(INPUT_POST, 'percentage', FILTER_VALIDATE_FLOAT) ?? 0.00;
-        $price_sr = filter_input(INPUT_POST, 'price_sr', FILTER_VALIDATE_FLOAT) ?? 0.00;
-        $quantity = filter_input(INPUT_POST, 'quantity', FILTER_VALIDATE_INT) ?? 0;
-        $cut_date = filter_input(INPUT_POST, 'cut_date', FILTER_SANITIZE_STRING);
-        $amount_paid_yr = filter_input(INPUT_POST, 'amount_paid_yr', FILTER_VALIDATE_FLOAT) ?? 0.00;
+        $percentage  = filter_input(INPUT_POST, 'percentage',  FILTER_VALIDATE_FLOAT) ?? 11;
+        $percentage2 = filter_input(INPUT_POST, 'percentage2', FILTER_VALIDATE_FLOAT) ?? 11;
+        $percentage3 = filter_input(INPUT_POST, 'percentage3', FILTER_VALIDATE_FLOAT) ?? 11;
+        $price_sr    = filter_input(INPUT_POST, 'price_sr',    FILTER_VALIDATE_FLOAT) ?? 0;
+        $quantity    = filter_input(INPUT_POST, 'quantity',    FILTER_VALIDATE_INT)   ?? 0;
+        $cut_date    = filter_input(INPUT_POST, 'cut_date',    FILTER_SANITIZE_STRING);
+        $amount_paid_yr = filter_input(INPUT_POST, 'amount_paid_yr', FILTER_VALIDATE_FLOAT) ?? 0;
 
         $button1_template = $_POST['button1_template'] ?? '';
         $button2_template = $_POST['button2_template'] ?? '';
         $button3_template = $_POST['button3_template'] ?? '';
 
         if ($settings) {
-            $update_stmt = $db->prepare("UPDATE calculation_settings SET percentage = ?, price_sr = ?, quantity = ?, cut_date = ?, amount_paid_yr = ?, button1_text_template = ?, button2_text_template = ?, button3_text_template = ? WHERE id = ?");
-            $update_stmt->execute([$percentage, $price_sr, $quantity, $cut_date, $amount_paid_yr, $button1_template, $button2_template, $button3_template, $settings['id']]);
+            $update_stmt = $db->prepare("UPDATE calculation_settings SET percentage = ?, percentage2 = ?, percentage3 = ?, price_sr = ?, quantity = ?, cut_date = ?, amount_paid_yr = ?, button1_text_template = ?, button2_text_template = ?, button3_text_template = ? WHERE id = ?");
+            $update_stmt->execute([$percentage, $percentage2, $percentage3, $price_sr, $quantity, $cut_date, $amount_paid_yr, $button1_template, $button2_template, $button3_template, $settings['id']]);
         } else {
-            $insert_stmt = $db->prepare("INSERT INTO calculation_settings (percentage, price_sr, quantity, cut_date, amount_paid_yr, button1_text_template, button2_text_template, button3_text_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $insert_stmt->execute([$percentage, $price_sr, $quantity, $cut_date, $amount_paid_yr, $button1_template, $button2_template, $button3_template]);
+            $insert_stmt = $db->prepare("INSERT INTO calculation_settings (percentage, percentage2, percentage3, price_sr, quantity, cut_date, amount_paid_yr, button1_text_template, button2_text_template, button3_text_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $insert_stmt->execute([$percentage, $percentage2, $percentage3, $price_sr, $quantity, $cut_date, $amount_paid_yr, $button1_template, $button2_template, $button3_template]);
         }
         $_SESSION['success_message'] = 'تم حفظ الإعدادات بنجاح.';
-        header('Location: calculate_page.php');
+        header('Location: copying.php');
         exit();
     }
 } catch (PDOException $e) {
@@ -111,7 +124,6 @@ $generated_id = 'CALC-' . time();
         padding-bottom: 80px;
     }
 
-    /* Top Black Header */
     .app-header {
         background-color: #000;
         color: white;
@@ -136,10 +148,7 @@ $generated_id = 'CALC-' . time();
         text-decoration: none;
     }
 
-    /* Input Grid System */
-    .content-padding {
-        padding: 20px;
-    }
+    .content-padding { padding: 20px; }
 
     .input-row {
         display: grid;
@@ -148,10 +157,7 @@ $generated_id = 'CALC-' . time();
         margin-bottom: 20px;
     }
 
-    .input-group {
-        display: flex;
-        flex-direction: column;
-    }
+    .input-group { display: flex; flex-direction: column; }
 
     .input-group label {
         font-size: 18px;
@@ -180,7 +186,6 @@ $generated_id = 'CALC-' . time();
         width: 100%;
     }
 
-    /* Add style for readonly inputs */
     .field-container input[readonly] {
         background-color: #e9ecef;
         cursor: not-allowed;
@@ -198,32 +203,22 @@ $generated_id = 'CALC-' . time();
         font-weight: bold;
     }
 
-    /* Full Width Input (Paid Amount) */
-    .full-width-group {
-        margin-top: 10px;
-    }
+    .full-width-group { margin-top: 10px; }
 
-    .full-width-group .field-container {
-        flex-direction: row-reverse;
-    }
+    .full-width-group .field-container { flex-direction: row-reverse; }
 
     .full-width-group .icon-box {
         border-left: none;
         border-right: 2px solid #d1d5db;
     }
 
-    /* Divider with Arrow */
     .divider-container {
         display: flex;
         align-items: center;
         margin: 30px 0;
     }
 
-    .line {
-        flex: 1;
-        height: 3px;
-        background: #000;
-    }
+    .line { flex: 1; height: 3px; background: #000; }
 
     .arrow-circle {
         width: 40px;
@@ -236,12 +231,7 @@ $generated_id = 'CALC-' . time();
         margin: 0 10px;
     }
 
-    /* Action Buttons */
-    .button-stack {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-    }
+    .button-stack { display: flex; flex-direction: column; gap: 12px; }
 
     .action-btn {
         background-color: #000;
@@ -256,11 +246,8 @@ $generated_id = 'CALC-' . time();
         transition: opacity 0.2s;
     }
 
-    .action-btn:active {
-        opacity: 0.8;
-    }
+    .action-btn:active { opacity: 0.8; }
 
-    /* Toast Notification (Bottom) */
     .toast-copy {
         position: fixed;
         bottom: 20px;
@@ -279,9 +266,6 @@ $generated_id = 'CALC-' . time();
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
 
-    /* =========================================
-       NEW DESIGN FOR ADMIN SETTINGS (TEMPLATES)
-       ========================================= */
     .admin-settings {
         background: #ffffff;
         padding: 20px;
@@ -306,10 +290,7 @@ $generated_id = 'CALC-' . time();
         font-family: inherit;
     }
 
-    .template-group {
-        margin-top: 20px;
-        margin-bottom: 15px;
-    }
+    .template-group { margin-top: 20px; margin-bottom: 15px; }
 
     .template-group label {
         display: block;
@@ -321,7 +302,7 @@ $generated_id = 'CALC-' . time();
 
     .template-textarea {
         width: 100%;
-        min-height: 120px; 
+        min-height: 120px;
         padding: 15px;
         border: 2px solid #e5e7eb;
         border-radius: 10px;
@@ -330,14 +311,11 @@ $generated_id = 'CALC-' . time();
         line-height: 1.6;
         color: #1f2937;
         resize: vertical;
-        box-sizing: border-box; 
+        box-sizing: border-box;
         transition: border-color 0.2s;
     }
 
-    .template-textarea:focus {
-        outline: none;
-        border-color: #4f46e5;
-    }
+    .template-textarea:focus { outline: none; border-color: #4f46e5; }
 
     .save-settings-btn {
         background-color: #4f46e5;
@@ -353,9 +331,7 @@ $generated_id = 'CALC-' . time();
         transition: background-color 0.2s;
     }
 
-    .save-settings-btn:hover {
-        background-color: #4338ca;
-    }
+    .save-settings-btn:hover { background-color: #4338ca; }
 
     .variables-hint {
         background: #f3f4f6;
@@ -366,13 +342,57 @@ $generated_id = 'CALC-' . time();
         margin-bottom: 15px;
         line-height: 1.8;
     }
-    
+
     .variables-hint code {
         background: #e5e7eb;
         padding: 2px 5px;
         border-radius: 4px;
         color: #111827;
         font-family: monospace;
+    }
+
+    /* Percentage settings row */
+    .pct-settings-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin: 15px 0;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 15px;
+    }
+    .pct-item { display: flex; flex-direction: column; gap: 5px; }
+    .pct-item label { font-size: 13px; font-weight: bold; color: #374151; }
+    .pct-item .pct-field {
+        display: flex;
+        align-items: center;
+        border: 2px solid #d1d5db;
+        border-radius: 8px;
+        overflow: hidden;
+        height: 42px;
+    }
+    .pct-item .pct-field input {
+        border: none;
+        flex: 1;
+        padding: 0 8px;
+        font-size: 16px;
+        font-weight: bold;
+        text-align: center;
+        outline: none;
+        width: 100%;
+        color: #1f2937;
+    }
+    .pct-item .pct-field .pct-icon {
+        width: 30px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-right: 2px solid #d1d5db;
+        font-weight: bold;
+        color: #6b7280;
+        font-size: 14px;
     }
 
     .hidden { display: none !important; }
@@ -382,8 +402,8 @@ $generated_id = 'CALC-' . time();
     <!-- Header -->
     <div class="app-header">
         <a href="#" class="header-icon" onclick="clearFields(); return false;"><i class="fas fa-trash"></i></a>
-        <h1>حاسبة يمان</h1>
-        <div style="width: 24px;"></div> <!-- Spacer for balance -->
+        <h1>حاسبه يمان</h1>
+        <div style="width: 24px;"></div>
     </div>
 
     <form method="POST" id="calcForm">
@@ -393,9 +413,8 @@ $generated_id = 'CALC-' . time();
             <!-- Row 1: Percentage and Price -->
             <div class="input-row">
                 <div class="input-group">
-                    <label>النسبة</label>
+                    <label>النسبة (العميل %)</label>
                     <div class="field-container">
-                        <!-- Percentage field is strictly readonly to lock the automated rules -->
                         <input type="number" step="0.01" name="percentage" id="percentage" value="<?php echo $percentage; ?>" readonly>
                         <div class="icon-box">%</div>
                     </div>
@@ -448,42 +467,73 @@ $generated_id = 'CALC-' . time();
             <!-- Main Copy Buttons -->
             <div class="button-stack">
                 <button type="button" class="action-btn" onclick="copyText('button1')">العميل</button>
-                <button type="button" class="action-btn" onclick="copyText('button2')">مندوب SR</button>
-                <button type="button" class="action-btn" onclick="copyText('button3')">مندوب YR</button>
+                <button type="button" class="action-btn" onclick="copyText('button2')">مندوب RS</button>
+                <button type="button" class="action-btn" onclick="copyText('button3')">مندوب RY</button>
             </div>
 
-            <!-- Admin Section (For Templates) - Only visible if user has edit permission -->
+            <!-- Admin Settings Section -->
             <?php if ($canEditCalculations): ?>
                 <div class="admin-settings">
                     <button type="button" onclick="document.getElementById('templates').classList.toggle('hidden')" class="settings-toggle-btn">
-                        <i class="fas fa-sliders-h" style="margin-left: 8px;"></i> إعدادات القوالب والحفظ
+                        <i class="fas fa-sliders-h" style="margin-left: 8px;"></i> الإعدادات
                     </button>
-                    
+
                     <div id="templates" class="hidden">
+
+                        <!-- Per-button Discount Percentages -->
+                        <div style="margin-top: 15px;">
+                            <label style="display:block; font-size:15px; font-weight:bold; color:#374151; margin-bottom:8px;">
+                                <i class="fas fa-percent" style="margin-left:5px; color:#4f46e5;"></i> نسبة الخصم لكل زر
+                            </label>
+                            <div class="pct-settings-row">
+                                <div class="pct-item">
+                                    <label>العميل</label>
+                                    <div class="pct-field">
+                                        <div class="pct-icon">%</div>
+                                        <input type="number" step="0.01" min="0" max="100" name="percentage" id="percentage_setting" value="<?php echo $percentage; ?>">
+                                    </div>
+                                </div>
+                                <div class="pct-item">
+                                    <label>مندوب RS</label>
+                                    <div class="pct-field">
+                                        <div class="pct-icon">%</div>
+                                        <input type="number" step="0.01" min="0" max="100" name="percentage2" id="percentage2_setting" value="<?php echo $percentage2; ?>">
+                                    </div>
+                                </div>
+                                <div class="pct-item">
+                                    <label>مندوب RY</label>
+                                    <div class="pct-field">
+                                        <div class="pct-icon">%</div>
+                                        <input type="number" step="0.01" min="0" max="100" name="percentage3" id="percentage3_setting" value="<?php echo $percentage3; ?>">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Message Templates -->
                         <div class="template-group">
                             <label>قالب رسالة العميل</label>
                             <textarea name="button1_template" class="template-textarea" placeholder="اكتب قالب رسالة العميل هنا..."><?php echo htmlspecialchars($button1_template); ?></textarea>
                         </div>
-                        
+
                         <div class="template-group">
-                            <label>قالب رسالة مندوب SR</label>
-                            <textarea name="button2_template" class="template-textarea" placeholder="اكتب قالب رسالة مندوب SR هنا..."><?php echo htmlspecialchars($button2_template); ?></textarea>
-                        </div>
-                        
-                        <div class="template-group">
-                            <label>قالب رسالة مندوب YR</label>
-                            <textarea name="button3_template" class="template-textarea" placeholder="اكتب قالب رسالة مندوب YR هنا..."><?php echo htmlspecialchars($button3_template); ?></textarea>
+                            <label>قالب رسالة مندوب RS</label>
+                            <textarea name="button2_template" class="template-textarea" placeholder="اكتب قالب رسالة مندوب RS هنا..."><?php echo htmlspecialchars($button2_template); ?></textarea>
                         </div>
 
-                        <!-- Expanded Variables Hint -->
+                        <div class="template-group">
+                            <label>قالب رسالة مندوب RY</label>
+                            <textarea name="button3_template" class="template-textarea" placeholder="اكتب قالب رسالة مندوب RY هنا..."><?php echo htmlspecialchars($button3_template); ?></textarea>
+                        </div>
+
                         <div class="variables-hint">
-                            <strong>المتغيرات المتاحة للاستخدام في القوالب:</strong><br>
+                            <strong>المتغيرات المتاحة في القوالب:</strong><br>
                             <span dir="ltr">
-                                <code>{PRICE_SR}</code> <code>{PRICE_YR}</code> (Total before discount)<br>
-                                <code>{DISCOUNT_SR}</code> <code>{DISCOUNT_YR}</code> (Discount amount)<br>
-                                <code>{TOTAL_SR}</code> <code>{TOTAL_YR}</code> (Total after discount)<br>
-                                <code>{PAID_YR}</code> <code>{AMOUNT_PAID}</code> <code>{AMOUNT_PAID_YR}</code> (Amount paid)<br>
-                                <code>{REMAINING_YR}</code> (Remaining YR balance)<br>
+                                <code>{PRICE_SR}</code> <code>{PRICE_YR}</code> (السعر قبل الخصم)<br>
+                                <code>{DISCOUNT_SR}</code> <code>{DISCOUNT_YR}</code> (مبلغ الخصم)<br>
+                                <code>{TOTAL_SR}</code> <code>{TOTAL_YR}</code> (الإجمالي بعد الخصم)<br>
+                                <code>{PAID_YR}</code> <code>{AMOUNT_PAID_YR}</code> (المبلغ المدفوع)<br>
+                                <code>{REMAINING_YR}</code> (المتبقي)<br>
                                 <code>{PERCENTAGE}</code> <code>{QUANTITY}</code> <code>{CUT_DATE}</code>
                             </span>
                         </div>
@@ -499,24 +549,36 @@ $generated_id = 'CALC-' . time();
 </div>
 
 <!-- Toast -->
-<div id="toast" class="toast-copy">تم نسخ رسالة العميل إلى الحافظة</div>
+<div id="toast" class="toast-copy">تم النسخ</div>
 
 <script>
     const EXCHANGE_RATE = <?php echo $current_exchange_rate; ?>;
-    const defaultPercentage = <?php echo $settings['percentage'] ?? 11; ?>; 
-    
-    // PHP variables mapped directly so variables operate properly even for non-admins
+
+    // Per-button percentages loaded from DB
+    const dbPercentages = {
+        button1: <?php echo (float)$percentage; ?>,
+        button2: <?php echo (float)$percentage2; ?>,
+        button3: <?php echo (float)$percentage3; ?>
+    };
+
     const phpTemplates = {
         button1: <?php echo json_encode($button1_template); ?>,
         button2: <?php echo json_encode($button2_template); ?>,
         button3: <?php echo json_encode($button3_template); ?>
     };
 
-    // Auto-update discount rules automatically applies for ALL users (Admin/non-Admin alike)
+    // Keep the main visible percentage field (العميل) in sync with the settings input
+    const pctSettingInput = document.getElementById('percentage_setting');
+    if (pctSettingInput) {
+        pctSettingInput.addEventListener('input', function() {
+            document.getElementById('percentage').value = this.value;
+        });
+    }
+
+    // Auto-update discount rules (price-based triggers) — applies to العميل percentage only
     document.getElementById('price_sr').addEventListener('input', function() {
         const price_sr_val = parseFloat(this.value);
         const percentage_input = document.getElementById('percentage');
-
         if (price_sr_val === 100) {
             percentage_input.value = 10;
         } else if (price_sr_val === 500) {
@@ -524,108 +586,122 @@ $generated_id = 'CALC-' . time();
         } else if (price_sr_val === 1000) {
             percentage_input.value = 1;
         } else {
-            // Revert to the default percentage if no rule applies
-            percentage_input.value = defaultPercentage;
+            percentage_input.value = dbPercentages.button1;
         }
+        if (pctSettingInput) pctSettingInput.value = percentage_input.value;
     });
 
+    function getButtonPercentage(buttonType) {
+        if (buttonType === 'button1') {
+            return parseFloat(document.getElementById('percentage').value) || 0;
+        } else if (buttonType === 'button2') {
+            const el = document.getElementById('percentage2_setting');
+            return el ? (parseFloat(el.value) || 0) : dbPercentages.button2;
+        } else if (buttonType === 'button3') {
+            const el = document.getElementById('percentage3_setting');
+            return el ? (parseFloat(el.value) || 0) : dbPercentages.button3;
+        }
+        return 0;
+    }
+
     function copyText(buttonType) {
-        const percentage = parseFloat(document.getElementById('percentage').value) || 0;
-        const price_sr = parseFloat(document.getElementById('price_sr').value) || 0;
-        const quantity = parseInt(document.getElementById('quantity').value) || 0;
-        const cut_date = document.getElementById('cut_date').value;
-        
-        // Calculations
+        const percentage = getButtonPercentage(buttonType);
+        const price_sr   = parseFloat(document.getElementById('price_sr').value) || 0;
+        const quantity   = parseInt(document.getElementById('quantity').value) || 0;
+        const cut_date   = document.getElementById('cut_date').value;
+
         const discount_amount_sr = price_sr * (percentage / 100);
-        const total_sr = price_sr - discount_amount_sr;
-        const total_yr = total_sr * EXCHANGE_RATE;
-        const price_yr = price_sr * EXCHANGE_RATE;
+        const total_sr           = price_sr - discount_amount_sr;
+        const total_yr           = total_sr * EXCHANGE_RATE;
+        const price_yr           = price_sr * EXCHANGE_RATE;
         const discount_amount_yr = discount_amount_sr * EXCHANGE_RATE;
 
-        let amount_paid_yr_str = document.getElementById('amount_paid_yr').value;
-        let amount_paid_yr = parseFloat(amount_paid_yr_str);
-        const hasPaidInput = amount_paid_yr_str.trim() !== '' && !isNaN(amount_paid_yr);
+        const amount_paid_yr_str = document.getElementById('amount_paid_yr').value;
+        const amount_paid_yr_val = parseFloat(amount_paid_yr_str);
+        const hasPaidInput       = amount_paid_yr_str.trim() !== '' && !isNaN(amount_paid_yr_val);
 
-        let remaining_yr = hasPaidInput ? (total_yr - amount_paid_yr) : null;
-        let paid_yr_display = hasPaidInput ? amount_paid_yr.toFixed(2).replace('.', ',') : ''; // Yemeni formatting (,)
-        let remaining_yr_display = hasPaidInput ? remaining_yr.toFixed(2).replace('.', ',') : '';
+        const remaining_yr = hasPaidInput ? (total_yr - amount_paid_yr_val) : null;
 
-        // Apply distinct formatting (Saudi = . and Yemeni = ,)
-        const price_sr_format = price_sr.toFixed(2);
-        const total_sr_format = total_sr.toFixed(2);
+        // Saudi format (.) / Yemeni format (,)
+        const price_sr_format    = price_sr.toFixed(2);
+        const total_sr_format    = total_sr.toFixed(2);
         const discount_sr_format = discount_amount_sr.toFixed(2);
-
-        const price_yr_format = price_yr.toFixed(2).replace('.', ',');
-        const total_yr_format = total_yr.toFixed(2).replace('.', ',');
+        const price_yr_format    = price_yr.toFixed(2).replace('.', ',');
+        const total_yr_format    = total_yr.toFixed(2).replace('.', ',');
         const discount_yr_format = discount_amount_yr.toFixed(2).replace('.', ',');
 
-        let template = "";
-        let btnName = "";
+        const paid_yr_display      = hasPaidInput ? amount_paid_yr_val.toFixed(2).replace('.', ',') : '';
+        const remaining_yr_display = hasPaidInput ? remaining_yr.toFixed(2).replace('.', ',') : '';
 
-        const button1TemplateElem = document.querySelector('textarea[name="button1_template"]');
-        const button2TemplateElem = document.querySelector('textarea[name="button2_template"]');
-        const button3TemplateElem = document.querySelector('textarea[name="button3_template"]');
+        let template = '';
+        let btnName  = '';
+
+        const t1 = document.querySelector('textarea[name="button1_template"]');
+        const t2 = document.querySelector('textarea[name="button2_template"]');
+        const t3 = document.querySelector('textarea[name="button3_template"]');
 
         if (buttonType === 'button1') {
-            template = button1TemplateElem ? button1TemplateElem.value : phpTemplates.button1;
-            if(!template) template = "طلب جديد\nالسعر: {TOTAL_SR} SR\nالمتبقي: {REMAINING_YR} YR";
-            btnName = "العميل";
+            template = t1 ? t1.value : phpTemplates.button1;
+            if (!template) template = "طلب جديد\nالسعر: {TOTAL_SR} SR\nالمتبقي: {REMAINING_YR} YR";
+            btnName = 'العميل';
         } else if (buttonType === 'button2') {
-            template = button2TemplateElem ? button2TemplateElem.value : phpTemplates.button2;
-            if(!template) template = "تقرير المندوب SR: {TOTAL_SR}";
-            btnName = "مندوب SR";
+            template = t2 ? t2.value : phpTemplates.button2;
+            if (!template) template = "تقرير مندوب RS: {TOTAL_SR}";
+            btnName = 'مندوب RS';
         } else if (buttonType === 'button3') {
-            template = button3TemplateElem ? button3TemplateElem.value : phpTemplates.button3;
-            if(!template) template = "تقرير المندوب YR: {TOTAL_YR}";
-            btnName = "مندوب YR";
+            template = t3 ? t3.value : phpTemplates.button3;
+            if (!template) template = "تقرير مندوب RY: {TOTAL_YR}";
+            btnName = 'مندوب RY';
         }
 
-        // Fully expanded replacements mapping
-        const replacements = {
-            '{ID}': '<?php echo $generated_id; ?>',
-            '{PERCENTAGE}': percentage,
-            '{PRICE_SR}': price_sr_format,
-            '{PRICE_YR}': price_yr_format,
-            '{TOTAL_BEFORE_DISCOUNT_SR}': price_sr_format,
-            '{TOTAL_BEFORE_DISCOUNT_YR}': price_yr_format,
-            '{DISCOUNT_SR}': discount_sr_format,
-            '{DISCOUNT_YR}': discount_yr_format,
-            '{QUANTITY}': quantity,
-            '{CUT_DATE}': cut_date,
-            '{TOTAL_SR}': total_sr_format,
-            '{TOTAL_YR}': total_yr_format,
-            '{PAID_YR}': paid_yr_display,
-            '{AMOUNT_PAID}': paid_yr_display,
-            '{AMOUNT_PAID_YR}': paid_yr_display, // <-- تم إضافة هذا السطر لحل المشكلة
-            '{REMAINING_YR}': remaining_yr_display
-        };
-
+        // If no paid amount entered, strip paid/remaining placeholders entirely from message
         if (!hasPaidInput) {
-            // Keep paid/remaining placeholders empty when no paid amount is entered
-            template = template.replace(/\{PAID_YR\}|\{AMOUNT_PAID\}|\{AMOUNT_PAID_YR\}|\{REMAINING_YR\}/g, "");
+            template = template.replace(/\{PAID_YR\}|\{AMOUNT_PAID\}|\{AMOUNT_PAID_YR\}|\{REMAINING_YR\}/g, '');
         }
+
+        const replacements = {
+            '{ID}'                       : '<?php echo $generated_id; ?>',
+            '{PERCENTAGE}'               : percentage,
+            '{PRICE_SR}'                 : price_sr_format,
+            '{PRICE_YR}'                 : price_yr_format,
+            '{TOTAL_BEFORE_DISCOUNT_SR}' : price_sr_format,
+            '{TOTAL_BEFORE_DISCOUNT_YR}' : price_yr_format,
+            '{DISCOUNT_SR}'              : discount_sr_format,
+            '{DISCOUNT_YR}'              : discount_yr_format,
+            '{QUANTITY}'                 : quantity,
+            '{CUT_DATE}'                 : cut_date,
+            '{TOTAL_SR}'                 : total_sr_format,
+            '{TOTAL_YR}'                 : total_yr_format,
+            '{PAID_YR}'                  : paid_yr_display,
+            '{AMOUNT_PAID}'              : paid_yr_display,
+            '{AMOUNT_PAID_YR}'           : paid_yr_display,
+            '{REMAINING_YR}'             : remaining_yr_display
+        };
 
         let finalMsg = template;
         for (const key in replacements) {
-            finalMsg = finalMsg.replace(new RegExp(key, 'g'), replacements[key]);
+            finalMsg = finalMsg.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), replacements[key]);
         }
 
         navigator.clipboard.writeText(finalMsg).then(() => {
             const toast = document.getElementById('toast');
-            toast.textContent = `تم نسخ رسالة ${btnName} إلى الحافظة`;
+            toast.textContent = `تم نسخ رسالة ${btnName}`;
             toast.style.display = 'block';
             setTimeout(() => { toast.style.display = 'none'; }, 2500);
         });
     }
 
-    window.addEventListener('load', () => { clearFields(); });
-
     function clearFields() {
-        document.getElementById('percentage').value = defaultPercentage; 
-        document.getElementById('price_sr').value = '';
-        document.getElementById('quantity').value = '';
+        document.getElementById('percentage').value     = dbPercentages.button1;
+        document.getElementById('price_sr').value       = '';
+        document.getElementById('quantity').value       = '';
         document.getElementById('amount_paid_yr').value = '';
+        if (pctSettingInput) pctSettingInput.value = dbPercentages.button1;
     }
+
+    // NOTE: clearFields() is NOT called on page load.
+    // All fields load with their saved DB values.
+    // Use the trash icon (top-left) to manually reset all fields.
 </script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -295,7 +295,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // Stability buffer
   final List<String> _skuHistory = [];
   static const int _stabilityFrames = 3;
-  static const _skuPattern = r'SK-?\d{6,}';
+  static const _skuPattern = r'S[KA]-?\d{6,}';
 
   // Dedup within cooldown
   String _lastProcessedSku = '';

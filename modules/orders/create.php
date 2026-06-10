@@ -746,19 +746,7 @@ include '../../includes/header.php';
                                 <textarea name="items[0][notes]" class="form-input" rows="2" placeholder="أضف ملاحظات..."></textarea>
                             </div>
 
-                            <div class="bg-white border border-purple-200 rounded-xl p-4">
-                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                                    <div>
-                                        <h4 class="font-bold text-purple-800 flex items-center gap-2">
-                                            <i class="fas fa-barcode"></i>
-                                            ربط منتجات SHEIN حسب SKU
-                                        </h4>
-                                        <p class="text-xs text-gray-500 mt-1">يتم إنشاء حقول SKU تلقائياً حسب عدد القطع، ويتم جلب بيانات المنتج من SHEIN باستخدام SKU فقط.</p>
-                                    </div>
-                                    <span id="sheinGroupsCount" class="text-xs bg-purple-100 text-purple-800 px-3 py-1 rounded-full">0 منتج</span>
-                                </div>
-                                <div id="sheinProductGroups" class="space-y-3"></div>
-                            </div>
+                            <!-- SKU input section removed: SKU will be saved as NULL/empty -->
                         </div>
                     </div>
 
