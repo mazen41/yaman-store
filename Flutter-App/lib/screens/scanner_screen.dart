@@ -599,7 +599,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
 
       setState(() {
-        _statusMessage = 'No matching orders found';
+        _statusMessage = 'هذا الـ SKU غير موجود في أي طلب';
         _statusType = StatusType.error;
       });
       if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
@@ -1776,7 +1776,7 @@ class _ManualSkuDialog extends StatefulWidget {
 
 class _ManualSkuDialogState extends State<_ManualSkuDialog> {
   final _ctrl = TextEditingController();
-  List<String> _suggestions = [];
+  List<Map<String, String>> _suggestions = [];
   bool _loading = false;
   Timer? _debounce;
 
@@ -1861,18 +1861,42 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: Colors.white12),
                 ),
-                child: ListView.builder(
+                child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
                   itemBuilder: (_, i) {
-                    final sku = _suggestions[i];
+                    final item = _suggestions[i];
+                    final sku = item['sku'] ?? '';
+                    final orderNumber = item['order_number'] ?? '';
+                    final customerName = item['customer_name'] ?? '';
                     return InkWell(
                       onTap: () => _submit(sku),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        child: Text(
-                          sku,
-                          style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1),
+                        child: Row(
+                          textDirection: TextDirection.rtl,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    sku,
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1, fontWeight: FontWeight.bold),
+                                  ),
+                                  if (orderNumber.isNotEmpty || customerName.isNotEmpty)
+                                    Text(
+                                      [if (orderNumber.isNotEmpty) '#$orderNumber', if (customerName.isNotEmpty) customerName].join(' | '),
+                                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                      textDirection: TextDirection.rtl,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(Icons.chevron_left_rounded, color: Colors.white30, size: 18),
+                          ],
                         ),
                       ),
                     );

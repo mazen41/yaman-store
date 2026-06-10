@@ -393,12 +393,20 @@ class DatabaseHelper {
     return result.first['c'] as int; 
   }
 
-  Future<List<String>> searchSkusByPrefix(String prefix) async {
+  Future<List<Map<String, String>>> searchSkusByPrefix(String prefix) async {
     final db = await database;
-    final rows = await db.rawQuery(
-      "SELECT DISTINCT shein_sku FROM order_items_cache WHERE shein_sku LIKE ? ORDER BY shein_sku LIMIT 20",
-      ['$prefix%'],
-    );
-    return rows.map((r) => r['shein_sku'].toString()).where((s) => s.isNotEmpty).toList();
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT i.sku, o.order_number, o.customer_name
+      FROM order_items_cache i
+      JOIN orders_cache o ON o.order_id = i.order_id
+      WHERE i.sku LIKE ?
+      ORDER BY i.sku
+      LIMIT 20
+    ''', ['${prefix.toUpperCase()}%']);
+    return rows.map((r) => {
+      'sku': (r['sku'] ?? '').toString(),
+      'order_number': (r['order_number'] ?? '').toString(),
+      'customer_name': (r['customer_name'] ?? '').toString(),
+    }).where((m) => m['sku']!.isNotEmpty).toList();
   }
 }
