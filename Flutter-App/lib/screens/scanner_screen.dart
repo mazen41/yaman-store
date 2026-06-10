@@ -289,6 +289,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   int _sortingUnreadCount = 0;
   bool _loadingSortingNotifications = false;
 
+  // Camera switching support
+  List<CameraDescription> _backCameras = [];
+  int _currentCameraIndex = 0;
+
   // Periodic timer for connectivity monitoring & background sync
   Timer? _connectivityTimer;
 
@@ -384,7 +388,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
   }
 
-  Future<void> _initCamera() async {
+  Future<void> _initCamera({int cameraIndex = 0}) async {
     if (_cameraController != null) {
       await _cameraController!.dispose();
       _cameraController = null;
@@ -394,11 +398,18 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       setState(() => _statusMessage = 'لا توجد كاميرا متوفرة');
       return;
     }
-    // Always use the FIRST back camera (index 0 of back cameras) to avoid
-    // switching between multiple rear cameras (wide/main/telephoto) on
-    // multi-camera phones.
     final backCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
-    final camera = backCameras.isNotEmpty ? backCameras.first : cameras.first;
+    if (backCameras.isEmpty) {
+      setState(() => _statusMessage = 'لا توجد كاميرا خلفية متوفرة');
+      return;
+    }
+    // Store all back cameras for switching
+    if (_backCameras.isEmpty) {
+      _backCameras = backCameras;
+    }
+    final idx = cameraIndex.clamp(0, _backCameras.length - 1);
+    _currentCameraIndex = idx;
+    final camera = _backCameras[idx];
     _cameraController = CameraController(
       camera,
       ResolutionPreset.high,
@@ -420,6 +431,13 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     if (!_cameraController!.value.isStreamingImages) {
       await _cameraController!.startImageStream(_processFrame);
     }
+  }
+
+  Future<void> _switchCamera() async {
+    if (_backCameras.length < 2) return;
+    final nextIndex = (_currentCameraIndex + 1) % _backCameras.length;
+    _showSnack('تبديل الكاميرا ${nextIndex + 1}/${_backCameras.length}');
+    await _initCamera(cameraIndex: nextIndex);
   }
 
   void _processFrame(CameraImage image) async {
