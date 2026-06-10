@@ -308,6 +308,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   int _scanRequestSeq = 0;
 
+  // Frame throttle — only process one frame per interval to reduce CPU/heat
+  DateTime _lastFrameProcessed = DateTime.fromMillisecondsSinceEpoch(0);
+  static const _frameThrottleInterval = Duration(milliseconds: 400);
+
   String _normalizeSku(String? value) {
     if (value == null) return '';
     return value.trim().toUpperCase().replaceAll(RegExp(r'[-\s\u00A0\u200B\u200C\u200D]'), '');
@@ -442,6 +446,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   void _processFrame(CameraImage image) async {
     if (_isProcessing || _locked) return;
+    // Throttle frame processing to reduce CPU usage and heat
+    final now = DateTime.now();
+    if (now.difference(_lastFrameProcessed) < _frameThrottleInterval) return;
+    _lastFrameProcessed = now;
     _isProcessing = true;
     try {
       final inputImage = _buildInputImage(image);
@@ -578,20 +586,22 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
 
       if (matches.isNotEmpty) {
-        debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
-        _locked = false;
-        await _showOrderPicker(
-          normalizedSku,
-          matches
-              .map<OrderMatch>((m) => OrderMatch(
-                    itemId: m.itemId,
-                    orderId: m.orderId,
-                    orderNumber: m.orderNumber,
-                    customerName: m.customerName,
-                    customerMobile: m.customerMobile,
-                    status: m.status,
-                    isSorted: m.isSorted,
-                    totalSkus: m.totalSkus,
+      debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
+      _locked = false;
+      await _showOrderPicker(
+      normalizedSku,
+      matches
+      .map<OrderMatch>((m) => OrderMatch(
+      itemId: m.itemId,
+      orderId: m.orderId,
+      orderNumber: m.orderNumber,
+      customerName: m.customerName,
+      customerMobile: m.customerMobile,
+      status: m.status,
+      isSorted: m.isSorted,
+      totalSkus: m.totalSkus,
+        purchaseGroupId: m.purchaseGroupId,
+            purchaseGroupNumber: m.purchaseGroupNumber,
                   ))
               .toList(),
           isMultipleSameSku: matches.length > 1 &&
@@ -1720,6 +1730,18 @@ class _MatchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Build the details line — always show customer + mobile + skus + group
+    final List<String> detailParts = [];
+    if (match.customerName.isNotEmpty) detailParts.add(match.customerName);
+    if (match.customerMobile.isNotEmpty) detailParts.add(match.customerMobile);
+    if (match.totalSkus > 0) detailParts.add('SKUs: ${match.totalSkus}');
+    final String customerLine = detailParts.join(' | ');
+
+    // Purchase group badge text
+    final String groupLabel = match.purchaseGroupNumber.isNotEmpty
+        ? 'مجموعة #${match.purchaseGroupNumber}'
+        : (match.purchaseGroupId > 0 ? 'مجموعة #${match.purchaseGroupId}' : '');
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1739,23 +1761,47 @@ class _MatchTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // Order number / name
                   Text(
                     match.orderNumber.isNotEmpty ? match.orderNumber : '#${match.orderId}',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                   ),
                   const SizedBox(height: 4),
-                  if (sameOrderMode)
+                  // Always show customer info when available
+                  if (customerLine.isNotEmpty)
                     Text(
-                      'منتج #$itemIndexInOrder',
+                      customerLine,
                       style: const TextStyle(color: Colors.white70, fontSize: 12),
                       textDirection: TextDirection.rtl,
-                    )
-                  else if (match.customerName.isNotEmpty)
-                    Text(
-                      '${match.customerName} | ${match.customerMobile} | SKUs: ${match.totalSkus}',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      textDirection: TextDirection.rtl,
                     ),
+                  // In same-order mode also show which item index this is
+                  if (sameOrderMode) ...
+                    [
+                      const SizedBox(height: 2),
+                      Text(
+                        'منتج #$itemIndexInOrder',
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                        textDirection: TextDirection.rtl,
+                      ),
+                    ],
+                  // Purchase group badge
+                  if (groupLabel.isNotEmpty) ...
+                    [
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.deepPurpleAccent.withOpacity(0.5)),
+                        ),
+                        child: Text(
+                          groupLabel,
+                          style: const TextStyle(color: Colors.deepPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                          textDirection: TextDirection.rtl,
+                        ),
+                      ),
+                    ],
                 ],
               ),
             ),
