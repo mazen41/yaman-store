@@ -152,6 +152,9 @@ class ApiService {
 
   VoidCallback? onSessionExpired;
 
+  String _extractAccessToken(Map<String, dynamic> json) =>
+      (json['access_token'] ?? json['token'] ?? '').toString();
+
   Future<Map<String, String>> _jsonHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token') ?? '';
@@ -188,7 +191,9 @@ class ApiService {
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
         if (json['success'] == true) {
-          await prefs.setString('auth_token', json['token'] ?? '');
+          final accessToken = _extractAccessToken(json);
+          if (accessToken.isEmpty) return false;
+          await prefs.setString('auth_token', accessToken);
           if (json['refresh_token'] != null) {
             await prefs.setString('refresh_token', json['refresh_token']);
           }
@@ -209,8 +214,12 @@ class ApiService {
     if (response.statusCode == 200) {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       if (json['success'] == true) {
+        final accessToken = _extractAccessToken(json);
+        if (accessToken.isEmpty) {
+          return ScanResponse(success: false, message: 'لم يرسل الخادم رمز دخول صالح.');
+        }
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('auth_token', json['token'] ?? '');
+        await prefs.setString('auth_token', accessToken);
         if (json['refresh_token'] != null) {
           await prefs.setString('refresh_token', json['refresh_token']);
         }
