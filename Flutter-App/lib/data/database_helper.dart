@@ -45,6 +45,8 @@ class LocalOrderMatch {
   final String productName;
   final String productImage;
   final int totalSkus;
+  final int purchaseGroupId;
+  final String purchaseGroupNumber;
 
   LocalOrderMatch({
     required this.itemId,
@@ -58,6 +60,8 @@ class LocalOrderMatch {
     required this.productName,
     required this.productImage,
     this.totalSkus = 0,
+    this.purchaseGroupId = 0,
+    this.purchaseGroupNumber = '',
   });
 }
 
@@ -77,7 +81,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'yaman_scanner.db');
-    return openDatabase(path, version: 6, onCreate: (db, version) async {
+    return openDatabase(path, version: 7, onCreate: (db, version) async {
       await _createTables(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 4) {
@@ -102,6 +106,14 @@ class DatabaseHelper {
           await db.execute('ALTER TABLE orders_cache ADD COLUMN total_skus INTEGER NOT NULL DEFAULT 0');
         } catch (_) {}
       }
+      if (oldVersion < 7) {
+        try {
+          await db.execute('ALTER TABLE orders_cache ADD COLUMN purchase_group_id INTEGER NOT NULL DEFAULT 0');
+        } catch (_) {}
+        try {
+          await db.execute('ALTER TABLE orders_cache ADD COLUMN purchase_group_number TEXT NOT NULL DEFAULT ""');
+        } catch (_) {}
+      }
     });
   }
 
@@ -119,6 +131,8 @@ class DatabaseHelper {
       customer_mobile TEXT, 
       status TEXT,
       total_skus INTEGER NOT NULL DEFAULT 0,
+      purchase_group_id INTEGER NOT NULL DEFAULT 0,
+      purchase_group_number TEXT NOT NULL DEFAULT "",
       updated_at INTEGER NOT NULL
     )''');
     await db.execute('''CREATE TABLE IF NOT EXISTS order_items_cache (
@@ -166,6 +180,8 @@ class DatabaseHelper {
           'customer_mobile': order['customer_mobile'],
           'status': order['status'],
           'total_skus': order['total_skus'] ?? 0,
+          'purchase_group_id': order['purchase_group_id'] ?? 0,
+          'purchase_group_number': order['purchase_group_number'] ?? '',
           'updated_at': order['updated_at'] ?? now,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -203,6 +219,8 @@ class DatabaseHelper {
             'customer_mobile': order['customer_mobile'],
             'status': order['status'],
             'total_skus': order['total_skus'] ?? 0,
+            'purchase_group_id': order['purchase_group_id'] ?? 0,
+            'purchase_group_number': order['purchase_group_number'] ?? '',
             'updated_at': order['updated_at'] ?? now,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -231,7 +249,8 @@ class DatabaseHelper {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status, o.total_skus
+             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
+             o.total_skus, o.purchase_group_id, o.purchase_group_number
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -251,6 +270,8 @@ class DatabaseHelper {
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
       totalSkus: r['total_skus'] as int? ?? 0,
+      purchaseGroupId: r['purchase_group_id'] as int? ?? 0,
+      purchaseGroupNumber: (r['purchase_group_number'] ?? '').toString(),
     )).toList();
   }
 
@@ -258,7 +279,8 @@ class DatabaseHelper {
     final db = await database;
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
-             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status, o.total_skus
+             o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
+             o.total_skus, o.purchase_group_id, o.purchase_group_number
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -278,6 +300,8 @@ class DatabaseHelper {
       productName: (r['product_name'] ?? '').toString(),
       productImage: (r['product_image'] ?? '').toString(),
       totalSkus: r['total_skus'] as int? ?? 0,
+      purchaseGroupId: r['purchase_group_id'] as int? ?? 0,
+      purchaseGroupNumber: (r['purchase_group_number'] ?? '').toString(),
     )).toList();
   }
 
