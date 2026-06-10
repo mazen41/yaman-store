@@ -407,6 +407,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     );
     try {
       await _cameraController!.initialize();
+      // Force minimum zoom to avoid telephoto lens on multi-camera phones
+      final minZoom = await _cameraController!.getMinZoomLevel();
+      await _cameraController!.setZoomLevel(minZoom);
     } catch (e) {
       debugPrint('[Camera] init failed: $e');
       if (mounted) setState(() => _statusMessage = 'تعذّر تشغيل الكاميرا');
