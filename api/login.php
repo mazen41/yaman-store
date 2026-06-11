@@ -87,6 +87,7 @@ try {
     // Return tokens and user metadata
     ok([
         'access_token' => $accessTokenRaw,
+        'token' => $accessTokenRaw, // Backward compatibility for older Flutter builds
         'refresh_token' => $refreshTokenRaw,
         'expires_in' => 7 * 24 * 60 * 60, // 7 days in seconds
         'user' => [
