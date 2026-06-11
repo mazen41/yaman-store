@@ -47,6 +47,7 @@ class LocalOrderMatch {
   final int totalSkus;
   final int purchaseGroupId;
   final String purchaseGroupNumber;
+  final String purchaseGroupName;
 
   LocalOrderMatch({
     required this.itemId,
@@ -62,6 +63,7 @@ class LocalOrderMatch {
     this.totalSkus = 0,
     this.purchaseGroupId = 0,
     this.purchaseGroupNumber = '',
+    this.purchaseGroupName = '',
   });
 }
 
@@ -81,7 +83,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'yaman_scanner.db');
-    return openDatabase(path, version: 7, onCreate: (db, version) async {
+    return openDatabase(path, version: 8, onCreate: (db, version) async {
       await _createTables(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 4) {
@@ -114,6 +116,11 @@ class DatabaseHelper {
           await db.execute('ALTER TABLE orders_cache ADD COLUMN purchase_group_number TEXT NOT NULL DEFAULT ""');
         } catch (_) {}
       }
+      if (oldVersion < 8) {
+        try {
+          await db.execute('ALTER TABLE orders_cache ADD COLUMN purchase_group_name TEXT NOT NULL DEFAULT ""');
+        } catch (_) {}
+      }
     });
   }
 
@@ -133,6 +140,7 @@ class DatabaseHelper {
       total_skus INTEGER NOT NULL DEFAULT 0,
       purchase_group_id INTEGER NOT NULL DEFAULT 0,
       purchase_group_number TEXT NOT NULL DEFAULT "",
+      purchase_group_name TEXT NOT NULL DEFAULT "",
       updated_at INTEGER NOT NULL
     )''');
     await db.execute('''CREATE TABLE IF NOT EXISTS order_items_cache (
@@ -182,6 +190,7 @@ class DatabaseHelper {
           'total_skus': order['total_skus'] ?? 0,
           'purchase_group_id': order['purchase_group_id'] ?? 0,
           'purchase_group_number': order['purchase_group_number'] ?? '',
+          'purchase_group_name': order['purchase_group_name'] ?? '',
           'updated_at': order['updated_at'] ?? now,
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
@@ -221,6 +230,7 @@ class DatabaseHelper {
             'total_skus': order['total_skus'] ?? 0,
             'purchase_group_id': order['purchase_group_id'] ?? 0,
             'purchase_group_number': order['purchase_group_number'] ?? '',
+            'purchase_group_name': order['purchase_group_name'] ?? '',
             'updated_at': order['updated_at'] ?? now,
           }, conflictAlgorithm: ConflictAlgorithm.replace);
         }
@@ -250,7 +260,7 @@ class DatabaseHelper {
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
              o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
-             o.total_skus, o.purchase_group_id, o.purchase_group_number
+             o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -272,6 +282,7 @@ class DatabaseHelper {
       totalSkus: r['total_skus'] as int? ?? 0,
       purchaseGroupId: r['purchase_group_id'] as int? ?? 0,
       purchaseGroupNumber: (r['purchase_group_number'] ?? '').toString(),
+      purchaseGroupName: (r['purchase_group_name'] ?? '').toString(),
     )).toList();
   }
 
@@ -280,7 +291,7 @@ class DatabaseHelper {
     final rows = await db.rawQuery('''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
              o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
-             o.total_skus, o.purchase_group_id, o.purchase_group_number
+             o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
@@ -302,6 +313,7 @@ class DatabaseHelper {
       totalSkus: r['total_skus'] as int? ?? 0,
       purchaseGroupId: r['purchase_group_id'] as int? ?? 0,
       purchaseGroupNumber: (r['purchase_group_number'] ?? '').toString(),
+      purchaseGroupName: (r['purchase_group_name'] ?? '').toString(),
     )).toList();
   }
 

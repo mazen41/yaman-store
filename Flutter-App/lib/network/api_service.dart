@@ -67,6 +67,7 @@ class OrderMatch {
   final int totalSkus;
   final int purchaseGroupId;
   final String purchaseGroupNumber;
+  final String purchaseGroupName;
 
   OrderMatch({
     required this.itemId,
@@ -79,6 +80,7 @@ class OrderMatch {
     this.totalSkus = 0,
     this.purchaseGroupId = 0,
     this.purchaseGroupNumber = '',
+    this.purchaseGroupName = '',
   });
 
   static bool _parseIsSorted(Map<String, dynamic> json) {
@@ -107,6 +109,7 @@ class OrderMatch {
         totalSkus: int.tryParse((json['total_skus'] ?? '0').toString()) ?? 0,
         purchaseGroupId: int.tryParse((json['purchase_group_id'] ?? '0').toString()) ?? 0,
         purchaseGroupNumber: (json['purchase_group_number'] ?? json['group_number'] ?? '').toString(),
+        purchaseGroupName: (json['purchase_group_name'] ?? json['group_name'] ?? '').toString(),
       );
 }
 

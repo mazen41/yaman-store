@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -299,7 +299,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // Stability buffer
   final List<String> _skuHistory = [];
   static const int _stabilityFrames = 3;
-  static const _skuPattern = r'S[KA]-?\d{6,}';
+  // FIX: expanded from S[KA] to S[A-Z] to match SK, SA, SI, SE and all other S? formats
+  static const _skuPattern = r'S[A-Z]-?\d{6,}';
 
   // Dedup within cooldown
   String _lastProcessedSku = '';
@@ -586,22 +587,23 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
 
       if (matches.isNotEmpty) {
-      debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
-      _locked = false;
-      await _showOrderPicker(
-      normalizedSku,
-      matches
-      .map<OrderMatch>((m) => OrderMatch(
-      itemId: m.itemId,
-      orderId: m.orderId,
-      orderNumber: m.orderNumber,
-      customerName: m.customerName,
-      customerMobile: m.customerMobile,
-      status: m.status,
-      isSorted: m.isSorted,
-      totalSkus: m.totalSkus,
-        purchaseGroupId: m.purchaseGroupId,
-            purchaseGroupNumber: m.purchaseGroupNumber,
+        debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
+        _locked = false;
+        await _showOrderPicker(
+          normalizedSku,
+          matches
+              .map<OrderMatch>((m) => OrderMatch(
+                    itemId: m.itemId,
+                    orderId: m.orderId,
+                    orderNumber: m.orderNumber,
+                    customerName: m.customerName,
+                    customerMobile: m.customerMobile,
+                    status: m.status,
+                    isSorted: m.isSorted,
+                    totalSkus: m.totalSkus,
+                    purchaseGroupId: m.purchaseGroupId,
+                    purchaseGroupNumber: m.purchaseGroupNumber,
+                    purchaseGroupName: m.purchaseGroupName,
                   ))
               .toList(),
           isMultipleSameSku: matches.length > 1 &&
@@ -650,14 +652,20 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         await _handleOfflineCacheMiss(normalizedSku, canVibrate);
       }
     } finally {
-      await Future.delayed(const Duration(milliseconds: 1800));
-      if (mounted && requestId == _scanRequestSeq && !_locked) {
-        setState(() {
-          _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
-          _statusType = StatusType.idle;
-        });
+      // FIX: Only run the idle-reset delay when still on the error/not-found path
+      // (_locked still true). When _showOrderPicker handled things it already set
+      // _locked = false before we reach here — skip the delay so the next scan
+      // is immediately available instead of waiting a spurious 1800ms.
+      if (_locked) {
+        await Future.delayed(const Duration(milliseconds: 1800));
+        if (mounted && requestId == _scanRequestSeq) {
+          setState(() {
+            _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+            _statusType = StatusType.idle;
+          });
+        }
+        _locked = false;
       }
-      _locked = false;
     }
   }
 
@@ -1730,17 +1738,21 @@ class _MatchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build the details line — always show customer + mobile + skus + group
+    // Build the details line — always show customer + mobile + skus
     final List<String> detailParts = [];
     if (match.customerName.isNotEmpty) detailParts.add(match.customerName);
     if (match.customerMobile.isNotEmpty) detailParts.add(match.customerMobile);
     if (match.totalSkus > 0) detailParts.add('SKUs: ${match.totalSkus}');
     final String customerLine = detailParts.join(' | ');
 
-    // Purchase group badge text
-    final String groupLabel = match.purchaseGroupNumber.isNotEmpty
-        ? 'مجموعة #${match.purchaseGroupNumber}'
-        : (match.purchaseGroupId > 0 ? 'مجموعة #${match.purchaseGroupId}' : '');
+    // FIX: Show group_name first, fall back to group_number, then group id
+    final String groupLabel = match.purchaseGroupName.isNotEmpty
+        ? match.purchaseGroupName
+        : (match.purchaseGroupNumber.isNotEmpty
+            ? 'مجموعة #${match.purchaseGroupNumber}'
+            : (match.purchaseGroupId > 0 ? 'مجموعة #${match.purchaseGroupId}' : ''));
+    // FIX: Track whether there is no purchase group at all
+    final bool noGroup = match.purchaseGroupId == 0;
 
     return GestureDetector(
       onTap: onTap,
@@ -1767,41 +1779,54 @@ class _MatchTile extends StatelessWidget {
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                   ),
                   const SizedBox(height: 4),
-                  // Always show customer info when available
+                  // Customer info line
                   if (customerLine.isNotEmpty)
                     Text(
                       customerLine,
                       style: const TextStyle(color: Colors.white70, fontSize: 12),
                       textDirection: TextDirection.rtl,
                     ),
-                  // In same-order mode also show which item index this is
-                  if (sameOrderMode) ...
-                    [
-                      const SizedBox(height: 2),
-                      Text(
-                        'منتج #$itemIndexInOrder',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  // In same-order mode show which item index this is
+                  if (sameOrderMode) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'منتج #$itemIndexInOrder',
+                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ],
+                  // FIX: Purchase group name badge OR "no purchase order" indicator
+                  if (groupLabel.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.deepPurpleAccent.withOpacity(0.5)),
+                      ),
+                      child: Text(
+                        groupLabel,
+                        style: const TextStyle(color: Colors.deepPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold),
                         textDirection: TextDirection.rtl,
                       ),
-                    ],
-                  // Purchase group badge
-                  if (groupLabel.isNotEmpty) ...
-                    [
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.deepPurple.withOpacity(0.35),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: Colors.deepPurpleAccent.withOpacity(0.5)),
-                        ),
-                        child: Text(
-                          groupLabel,
-                          style: const TextStyle(color: Colors.deepPurpleAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                          textDirection: TextDirection.rtl,
-                        ),
+                    ),
+                  ] else if (noGroup) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
                       ),
-                    ],
+                      child: const Text(
+                        'لا يوجد أمر شراء مرتبط',
+                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                        textDirection: TextDirection.rtl,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

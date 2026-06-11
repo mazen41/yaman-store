@@ -78,7 +78,8 @@ try {
             COALESCE(c.mobile_number, c.phone, '')                                    AS customer_mobile,
             (SELECT COUNT(*) FROM order_items oi2 WHERE oi2.order_id = co.id)         AS total_skus,
             COALESCE(co.purchase_group_id, pb.purchase_group_id)                      AS purchase_group_id,
-            COALESCE(pg.group_number, '')                                              AS purchase_group_number
+            COALESCE(pg.group_number, '')                                              AS purchase_group_number,
+            COALESCE(pg.group_name,   '')                                              AS purchase_group_name
         FROM order_items oi
         JOIN  customer_orders   co  ON co.id          = oi.order_id
         LEFT JOIN purchase_baskets  pb  ON pb.id          = co.basket_id
@@ -99,6 +100,7 @@ try {
         $row['is_sorted']            = (int) ($row['is_sorted']          ?? 0);
         $row['purchase_group_id']    = (int) ($row['purchase_group_id']  ?? 0);
         $row['purchase_group_number'] = (string)($row['purchase_group_number'] ?? '');
+        $row['purchase_group_name']   = (string)($row['purchase_group_name']   ?? '');
         $row['status']               = $row['item_status'] ?? '';
         return $row;
     }, $matches);
