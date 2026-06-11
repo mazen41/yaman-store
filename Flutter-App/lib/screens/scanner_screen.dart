@@ -305,7 +305,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // Dedup within cooldown
   String _lastProcessedSku = '';
   DateTime _lastProcessedAt = DateTime.fromMillisecondsSinceEpoch(0);
-  static const _dedupCooldown = Duration(seconds: 4);
+  static const _dedupCooldown = Duration(seconds: 2);
 
   int _scanRequestSeq = 0;
 
@@ -441,7 +441,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   Future<void> _switchCamera() async {
     if (_backCameras.length < 2) return;
     final nextIndex = (_currentCameraIndex + 1) % _backCameras.length;
-    _showSnack('تبديل الكاميرا ${nextIndex + 1}/${_backCameras.length}');
+    _skuHistory.clear();
+        _showSnack('تبديل الكاميرا ${nextIndex + 1}/${_backCameras.length}');
     await _initCamera(cameraIndex: nextIndex);
   }
 
@@ -564,6 +565,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     final int requestId = ++_scanRequestSeq;
     _locked = true;
+    _skuHistory.clear();
     if (!mounted) return;
     setState(() {
       _detectedSku = normalizedSku;
@@ -1187,8 +1189,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             onTap: () => Navigator.pop(context, {'id': 0, 'label': 'كل المجموعات'}),
           ),
           ..._purchaseGroups.map((g) => ListTile(
-                title: Text((g['label'] ?? '').toString(), style: const TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(context, {'id': g['id'] ?? 0, 'label': g['label'] ?? ''}),
+                title: Text((g['group_name'] ?? g['label'] ?? '').toString(), style: const TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, {'id': g['id'] ?? 0, 'label': (g['group_name'] ?? g['label'] ?? '').toString()}),
               )),
         ],
       ),
