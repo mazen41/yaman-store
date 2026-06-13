@@ -83,7 +83,7 @@ class DatabaseHelper {
 
   Future<Database> _initDB() async {
     final path = join(await getDatabasesPath(), 'yaman_scanner.db');
-    return openDatabase(path, version: 8, onCreate: (db, version) async {
+    return openDatabase(path, version: 9, onCreate: (db, version) async {
       await _createTables(db);
     }, onUpgrade: (db, oldVersion, newVersion) async {
       if (oldVersion < 4) {
@@ -121,6 +121,15 @@ class DatabaseHelper {
           await db.execute('ALTER TABLE orders_cache ADD COLUMN purchase_group_name TEXT NOT NULL DEFAULT ""');
         } catch (_) {}
       }
+      if (oldVersion < 9) {
+        try {
+          await db.execute('ALTER TABLE order_items_cache ADD COLUMN sku_normalized TEXT NOT NULL DEFAULT ""');
+        } catch (_) {}
+        try {
+          await db.execute("UPDATE order_items_cache SET sku_normalized = UPPER(REPLACE(REPLACE(REPLACE(TRIM(sku), '-', ''), ' ', ''), CHAR(9), ''))");
+        } catch (_) {}
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_items_sku_normalized ON order_items_cache(sku_normalized)');
+      }
     });
   }
 
@@ -147,12 +156,14 @@ class DatabaseHelper {
       item_id INTEGER PRIMARY KEY, 
       order_id INTEGER NOT NULL, 
       sku TEXT NOT NULL, 
+      sku_normalized TEXT NOT NULL DEFAULT "",
       is_sorted INTEGER NOT NULL DEFAULT 0, 
       product_name TEXT DEFAULT "",
       product_image TEXT DEFAULT "",
       FOREIGN KEY(order_id) REFERENCES orders_cache(order_id) ON DELETE CASCADE
     )''');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_items_sku ON order_items_cache(sku)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_items_sku_normalized ON order_items_cache(sku_normalized)');
     await db.execute('CREATE INDEX IF NOT EXISTS idx_items_unsorted ON order_items_cache(is_sorted)');
   }
 
@@ -199,6 +210,7 @@ class DatabaseHelper {
           'item_id': item['item_id'],
           'order_id': item['order_id'],
           'sku': item['sku'],
+          'sku_normalized': _normalizeSku((item['sku'] ?? '').toString()),
           'is_sorted': item['is_sorted'],
           'product_name': item['product_name'] ?? '',
           'product_image': item['product_image'] ?? '',
@@ -246,6 +258,7 @@ class DatabaseHelper {
             'item_id': item['item_id'],
             'order_id': item['order_id'],
             'sku': item['sku'],
+            'sku_normalized': _normalizeSku((item['sku'] ?? '').toString()),
             'is_sorted': item['is_sorted'],
             'product_name': item['product_name'] ?? '',
             'product_image': item['product_image'] ?? '',
@@ -263,7 +276,7 @@ class DatabaseHelper {
              o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
-      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
+      WHERE i.sku_normalized = ?
         AND COALESCE(i.is_sorted, 0) = ?
         AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
     ''', [_normalizeSku(sku), sorted ? 1 : 0]);
@@ -294,7 +307,7 @@ class DatabaseHelper {
              o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
-      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(i.sku), '-', ''), ' ', ''), '\t', '')) = ?
+      WHERE i.sku_normalized = ?
         AND COALESCE(i.is_sorted, 0) = 0
         AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
     ''', [_normalizeSku(sku)]);
@@ -322,7 +335,7 @@ class DatabaseHelper {
     final result = await db.rawQuery('''
       SELECT COUNT(*) AS c
       FROM order_items_cache
-      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(sku), '-', ''), ' ', ''), '\t', '')) = ?
+      WHERE sku_normalized = ?
     ''', [_normalizeSku(sku)]);
     return (result.first['c'] as int? ?? 0) > 0;
   }

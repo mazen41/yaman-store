@@ -410,10 +410,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
             $log_notes = implode("\n\n", $all_log_parts);
 
             $log_stmt = $db->prepare("
-                INSERT INTO order_status_history (order_id, old_status, new_status, changed_by, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, NOW())
+                INSERT INTO order_status_history (order_id, status, notes, created_by, created_at)
+                VALUES (?, ?, ?, ?, NOW())
             ");
-            $log_stmt->execute([$order_id, $order['status'], $order_status, $_SESSION['user_id'], $log_notes]);
+            $log_stmt->execute([$order_id, $order_status, $log_notes, $_SESSION['user_id']]);
 
             $db->commit();
 

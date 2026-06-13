@@ -28,8 +28,7 @@ try {
     // This query is identical to the one in daily_financial_report.php to ensure consistency.
     $absolute_grand_total_remaining = (float) $db->query("
         SELECT COALESCE(SUM(final_amount - paid_amount), 0)
-        FROM customer_orders 
-        WHERE (final_amount - paid_amount) > 0.01
+        FROM customer_orders
     ")->fetchColumn();
     // --- END NEW ---
 

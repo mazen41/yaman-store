@@ -159,6 +159,7 @@ include '../../includes/header.php';
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الرصيد الحالي</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الربح من البطاقة</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نسبة الربح</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">نسبة الخصم/العمولة من الرصيد الأولي</th>
                         <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">تاريخ الإنشاء</th>
                         <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">الإجراءات</th>
                     </tr>
@@ -192,6 +193,7 @@ include '../../includes/header.php';
                             // Calculate profit for this card
                             $profit = $initial_balance - $card_purchase_amount;
                             $profit_percentage = ($card_purchase_amount > 0) ? ($profit / $card_purchase_amount) * 100 : 0;
+                            $discount_commission_percentage = ($initial_balance > 0) ? ($profit / $initial_balance) * 100 : 0;
 
                             $total_card_purchase_amount += $card_purchase_amount;
                             $total_initial_balance += $initial_balance;
@@ -220,6 +222,9 @@ include '../../includes/header.php';
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $profit_percentage >= 0 ? 'text-green-600' : 'text-red-600'; ?>">
                                 <?php echo number_format($profit_percentage, 2); ?>%
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold <?php echo $discount_commission_percentage >= 0 ? 'text-green-600' : 'text-red-600'; ?>">
+                                <?php echo number_format($discount_commission_percentage, 2); ?>%
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                                 <?php echo date('Y-m-d H:i', strtotime($item['created_at'])); ?>
@@ -262,7 +267,7 @@ include '../../includes/header.php';
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-teal-700">
                             <?php echo number_format($total_profit, 0); ?> <?php echo $currency_symbol; ?>
                         </td>
-                        <td class="px-6 py-4" colspan="2"></td>
+                        <td class="px-6 py-4" colspan="3"></td>
                     </tr>
                 </tfoot>
                 <?php endif; ?>
