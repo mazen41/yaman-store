@@ -1,0 +1,1546 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تعديل الطلب - Yaman Accounting Calculator</title>
+
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'arabic': ['Cairo', 'Arial', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts for Arabic -->
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Custom CSS for RTL -->
+    <style>
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                opacity: 0.8;
+            }
+
+            70% {
+                transform: scale(1.1);
+                opacity: 0.4;
+            }
+
+            100% {
+                transform: scale(1.2);
+                opacity: 0;
+            }
+        }
+
+        @keyframes spin-once {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .animate-spin-once {
+            animation: spin-once 0.3s ease-in-out;
+        }
+
+        .sidebar-animation-in {
+            animation: slide-in-right 0.5s ease-out forwards;
+        }
+
+        .sidebar-animation-out {
+            animation: slide-out-right 0.3s ease-in forwards;
+        }
+
+        @keyframes slide-in-right {
+            0% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            100% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slide-out-right {
+            0% {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        .pulse-animation::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.3);
+            animation: pulse-ring 2s infinite;
+            z-index: -1;
+        }
+
+        body {
+            font-family: 'Cairo', Arial, sans-serif;
+        }
+
+        .rtl {
+            direction: rtl;
+            text-align: right;
+        }
+
+        .ltr {
+            direction: ltr;
+            text-align: left;
+        }
+
+        .btn-primary {
+            @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.7s;
+        }
+
+        .btn-primary:hover::before {
+            left: 100%;
+        }
+
+        .btn-secondary {
+            @apply bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(75, 85, 99, 0.3);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(75, 85, 99, 0.4);
+        }
+
+        .btn-secondary:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 2px rgba(75, 85, 99, 0.3);
+        }
+
+        .btn-success {
+            @apply text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            background-color: #C7A46D;
+
+            &:hover {
+                background-color: #B8956A;
+            }
+
+            box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(22, 163, 74, 0.4);
+        }
+
+        .btn-danger {
+            @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-6 rounded-lg transition-all duration-300;
+            box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(220, 38, 38, 0.4);
+        }
+
+        .form-input {
+            @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+        }
+
+        .table-responsive {
+            @apply overflow-x-auto shadow-lg rounded-lg;
+        }
+
+        .sidebar-link {
+            @apply flex items-center px-4 py-2 text-gray-700 transition duration-200 mb-3;
+
+            &:hover {
+                color: #C7A46D;
+            }
+
+            position: relative;
+            font-weight: 500;
+            font-size: 0.95rem;
+        }
+
+        .sidebar-link::before {
+            content: '';
+            position: absolute;
+            right: -3px;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background-color: #C7A46D;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .sidebar-link:hover {
+            color: #C7A46D;
+            background-color: #f0fdf4;
+        }
+
+        .sidebar-link:hover::before {
+            opacity: 0.7;
+        }
+
+        .sidebar-link.active {
+            color: #C7A46D;
+            font-weight: 600;
+            background-color: #f0fdf4;
+        }
+
+        .sidebar-link.active::before {
+            opacity: 1;
+        }
+
+        .sidebar-icon {
+            @apply text-lg mr-3;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4b5563;
+            transition: all 0.2s ease;
+            background-color: #f3f4f6;
+            border-radius: 6px;
+            padding: 6px;
+        }
+
+        .sidebar-link:hover .sidebar-icon {
+            color: #C7A46D;
+            background-color: #d1fae5;
+            transform: scale(1.05);
+        }
+
+        .sidebar-link.active .sidebar-icon {
+            color: #C7A46D;
+            background-color: #d1fae5;
+        }
+
+        .main-content {
+            transition: margin-right 0.3s;
+        }
+
+        @media (min-width: 768px) {
+            .sidebar-open {
+                margin-right: 16rem;
+            }
+        }
+
+        .gradient-bg {
+            background: #ffffff;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .sidebar-link.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-right: 4px solid white;
+        }
+    </style>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Phone RTL Support -->
+    <link rel="stylesheet"
+        href="../../assets/css/phone-rtl.css">
+</head>
+
+<body class="bg-gray-100 font-arabic">
+
+    <!-- Left Sidebar -->
+    <aside id="sidebar"
+        class="fixed top-0 right-0 z-40 w-64 h-screen transition-transform translate-x-full sm:translate-x-0">
+        <div class="h-full gradient-bg shadow-lg flex flex-col">
+            <!-- Logo and System Name -->
+            <div class="px-5 py-6 border-b border-gray-200"
+                style="background: linear-gradient(to left, #C7A46D, #B8956A);">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <img src="/assets/images/yamman_logo.png" alt="يمان" class="h-10 w-auto mr-2">
+                    </div>
+                    <button id="closeSidebarButton"
+                        class="w-10 h-10 flex items-center justify-center bg-gray-100 text-gray-500 hover:bg-gray-200 rounded-full transition-all duration-300 transform hover:scale-110 focus:outline-none md:hidden">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+
+            <!-- User Info -->
+                            <div class="px-5 py-4 border-b border-gray-200 bg-gray-50">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shadow-sm"
+                            style="background-color: #C7A46D;">
+                            U                        </div>
+                        <div class="mr-3">
+                            <p class="text-sm font-semibold text-gray-800">
+                                المستخدم</p>
+                            <p class="text-xs font-medium" style="color: #C7A46D;">
+                                مدير النظام                            </p>
+                        </div>
+                    </div>
+                </div>
+            
+            <!-- Navigation Links -->
+            <nav class="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+                <!-- Main Menu Section -->
+                <div class="mb-4">
+                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                        القائمة الرئيسية</h3>
+
+                    <div class="space-y-3">
+                        <a href="/index.php"
+                            class="sidebar-link block w-full ">
+                            <i class="fas fa-home sidebar-icon"></i>
+                            <span>الرئيسية</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Modules Section -->
+                <div class="mb-4">
+                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                        الوحدات</h3>
+
+                    
+<!-- Dynamic Sidebar -->
+<div class="space-y-3">
+    <!-- Main Section -->
+                        <a href="/index.php"
+               class="sidebar-link block w-full ">
+                <i class="fas fa-home sidebar-icon"></i>
+                <span>الصفحة الرئيسية</span>
+            </a>
+            
+    <!-- Shop Management Section (Dropdown) -->
+                    <div class="pt-3 mt-3 border-t border-gray-200 sidebar-dropdown-wrapper">
+            <button type="button"
+                    class="flex items-center justify-between w-full p-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    onclick="toggleDropdown('shop-management-dropdown')">
+                <div class="flex items-center">
+                    <i class="fas fa-store sidebar-icon mr-3"></i> <!-- Icon for Shop Management -->
+                    <span>إدارة المتجر</span>
+                </div>
+                <i class="fas fa-chevron-right dropdown-icon transform transition-transform duration-200 "></i>
+            </button>
+            <div id="shop-management-dropdown" class="mt-2 space-y-2 hidden sidebar-dropdown-content">
+                                    <a href="/modules/settings/checkout_template_admin.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-file-invoice sidebar-icon text-sm"></i>
+                        <span>رساله تأكيد المتجر</span>
+                    </a>
+                                    <a href="/modules/colors/index.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-palette sidebar-icon text-sm"></i>
+                        <span>الألوان</span>
+                    </a>
+                                    <a href="/modules/orders/shop_orders_manage.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-shopping-basket sidebar-icon text-sm"></i>
+                        <span>إدارة طلبات المتجر</span>
+                    </a>
+                                    <a href="/modules/products/index.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-box sidebar-icon text-sm"></i>
+                        <span>المنتجات</span>
+                    </a>
+                                    <a href="/modules/categories/index.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-tags sidebar-icon text-sm"></i>
+                        <span>تصنيفات المنتجات</span>
+                    </a>
+                                    <a href="/modules/attributes/index.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-sliders-h sidebar-icon text-sm"></i>
+                        <span>سمات المنتجات</span>
+                    </a>
+                                    <a href="/modules/settings/product_slides.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-images sidebar-icon text-sm"></i>
+                        <span>سلايدر المنتجات</span>
+                    </a>
+                                    <a href="/modules/shop_coupons/index.php"
+                       class="sidebar-link block w-full pl-8 ">
+                        <i class="fas fa-ticket-alt sidebar-icon text-sm"></i>
+                        <span>كوبونات المتجر</span>
+                    </a>
+                            </div>
+        </div>
+    
+    <!-- Modules Section -->
+            <div class="pt-3 mt-3 border-t border-gray-200">
+            <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">الوحدات</h3>
+                            <a href="/modules/customers/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-users sidebar-icon"></i>
+                    <span>إدارة العملاء</span>
+                </a>
+                            <a href="/modules/customers/customer_types.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-users-cog sidebar-icon"></i>
+                    <span>أنواع العملاء</span>
+                </a>
+                            <a href="/modules/customers/cities.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-city sidebar-icon"></i>
+                    <span>المدن</span>
+                </a>
+                            <a href="/modules/orders/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-shopping-bag sidebar-icon"></i>
+                    <span>طلبات العملاء</span>
+                </a>
+                            <a href="/modules/orders/skus.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-barcode sidebar-icon"></i>
+                    <span>Orders SKUs</span>
+                </a>
+                            <a href="/modules/sorting/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-qrcode sidebar-icon"></i>
+                    <span>إدارة الفرز</span>
+                </a>
+                            <a href="/modules/customers/customer_cards.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-id-card sidebar-icon"></i>
+                    <span>بطاقات العملاء</span>
+                </a>
+                            <a href="/modules/orders/approvals.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-check-circle sidebar-icon"></i>
+                    <span>الموافقات</span>
+                </a>
+                            <a href="/modules/customer_text/copying.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-copy sidebar-icon"></i>
+                    <span>حاسبه يمان</span>
+                </a>
+                            <a href="/modules/settings/client_message_template.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-whatsapp sidebar-icon"></i>
+                    <span>رسالة التأكيد</span>
+                </a>
+                            <a href="/modules/orders/financial_review.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-file-invoice-dollar sidebar-icon"></i>
+                    <span>المراجعة المالية</span>
+                </a>
+                            <a href="/modules/purchases/groups/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-layer-group sidebar-icon"></i>
+                    <span>مجموعات الشراء</span>
+                </a>
+                            <a href="/modules/purchases/show_baskets.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-shopping-basket sidebar-icon"></i>
+                    <span>سلات الشراء</span>
+                </a>
+                            <a href="/modules/purchase_cards/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-credit-card sidebar-icon"></i>
+                    <span>إدارة بطاقات الشراء</span>
+                </a>
+                            <a href="/modules/loyalty-cards/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-gift sidebar-icon"></i>
+                    <span>بطاقات الهدية</span>
+                </a>
+                            <a href="/modules/shipping/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-shipping-fast sidebar-icon"></i>
+                    <span>إدارة الشحن</span>
+                </a>
+                            <a href="/modules/whatsapp/send.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fab fa-whatsapp sidebar-icon"></i>
+                    <span>رسائل الواتساب</span>
+                </a>
+                            <a href="/modules/manage_status/manage_status.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-tasks sidebar-icon"></i>
+                    <span>إداره الحالات</span>
+                </a>
+                            <a href="/modules/financial/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-coins sidebar-icon"></i>
+                    <span>الحسابات المالية</span>
+                </a>
+                            <a href="/modules/payments/bank_accounts.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-university sidebar-icon"></i>
+                    <span>إدارة الحسابات البنكية</span>
+                </a>
+                            <a href="/modules/financial/employee-manage.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-users-cog sidebar-icon"></i>
+                    <span>إدارة الموظفين</span>
+                </a>
+                            <a href="/modules/financial/employee-permissions.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-user-shield sidebar-icon"></i>
+                    <span>صلاحيات الموظفين</span>
+                </a>
+                            <a href="/modules/expenses/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-money-bill-wave sidebar-icon"></i>
+                    <span>إدارة المصروفات</span>
+                </a>
+                            <a href="/modules/coupons/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-ticket-alt sidebar-icon"></i>
+                    <span>إدارة الكوبونات</span>
+                </a>
+                            <a href="/modules/backup/backup.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-database sidebar-icon"></i>
+                    <span>نسخة احتياطية للنظام</span>
+                </a>
+                            <a href="/modules/financial/universal_transfer.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-database sidebar-icon"></i>
+                    <span>تحويلات</span>
+                </a>
+                    </div>
+    
+    <!-- Accounting Section -->
+            <div class="pt-3 mt-3 border-t border-gray-200">
+            <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">الحسابات</h3>
+                            <a href="/modules/accounting/journal.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-book sidebar-icon"></i>
+                    <span>القيود اليومية</span>
+                </a>
+                            <a href="/modules/accounting/settings.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-cogs sidebar-icon"></i>
+                    <span>إعدادات الحسابات</span>
+                </a>
+                    </div>
+    
+    <!-- Reports Section -->
+            <div class="pt-3 mt-3 border-t border-gray-200">
+            <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">التقارير</h3>
+                            <a href="/modules/reports/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-chart-bar sidebar-icon"></i>
+                    <span>التقارير والطباعة</span>
+                </a>
+                    </div>
+    
+    <!-- Settings Section -->
+            <div class="pt-3 mt-3 border-t border-gray-200">
+            <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">الإعدادات</h3>
+                            <a href="/modules/settings/index.php"
+                   class="sidebar-link block w-full ">
+                    <i class="fas fa-cog sidebar-icon"></i>
+                    <span>إعدادات النظام</span>
+                </a>
+                    </div>
+    
+    </div>
+
+<!-- JavaScript for Dropdown Functionality -->
+<script>
+    function toggleDropdown(dropdownId) {
+        const dropdownContent = document.getElementById(dropdownId);
+        const dropdownButton = dropdownContent.previousElementSibling; // The button itself
+        const dropdownIcon = dropdownButton.querySelector('.dropdown-icon');
+
+        dropdownContent.classList.toggle('hidden');
+        dropdownIcon.classList.toggle('rotate-90');
+    }
+
+    // This script ensures that if a child link is active, its parent dropdown is open on page load.
+    document.addEventListener('DOMContentLoaded', () => {
+        const dropdownWrappers = document.querySelectorAll('.sidebar-dropdown-wrapper');
+
+        dropdownWrappers.forEach(wrapper => {
+            const dropdownContent = wrapper.querySelector('.sidebar-dropdown-content');
+            if (dropdownContent) {
+                let hasActiveChild = false;
+                const links = dropdownContent.querySelectorAll('.sidebar-link');
+                links.forEach(link => {
+                    // Check if the current link has the 'active' class
+                    if (link.classList.contains('active')) {
+                        hasActiveChild = true;
+                    }
+                });
+
+                if (hasActiveChild) {
+                    // If an active child is found, ensure the dropdown content is visible
+                    dropdownContent.classList.remove('hidden');
+                    // Also, rotate the dropdown icon to indicate it's open
+                    const dropdownIcon = wrapper.querySelector('.dropdown-icon');
+                    if (dropdownIcon && !dropdownIcon.classList.contains('rotate-90')) {
+                        dropdownIcon.classList.add('rotate-90');
+                    }
+                }
+            }
+        });
+    });
+</script>
+                                                    <div class="mt-4 pt-4 border-t border-gray-100">
+                                    <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3">إدارة البوابة</h3>
+                                    <div class="space-y-3">
+                                        <a href="/modules/settings/portal_slides.php"
+                                            class="sidebar-link block w-full ">
+                                            <span class="sidebar-icon">
+                                                <i class="fas fa-images"></i>
+                                            </span>
+                                            <span>سلايدر بوابة العملاء</span>
+                                        </a>
+                                    </div>
+                                </div>
+                            
+                    <!-- User Section -->
+                    <div class="pt-4 mt-4 border-t border-gray-100">
+                        <h3 class="text-xs uppercase text-gray-600 font-bold px-3 mb-3 border-b border-gray-100 pb-2">
+                            الحساب</h3>
+
+                        <div class="space-y-3">
+                                                            <a href="/profile.php" class="sidebar-link block w-full">
+                                    <i class="fas fa-user-edit sidebar-icon"></i>
+                                    <span>الملف الشخصي</span>
+                                </a>
+                                <a href="/logout.php" class="sidebar-link block w-full">
+                                    <i class="fas fa-sign-out-alt sidebar-icon"></i>
+                                    <span>تسجيل الخروج</span>
+                                </a>
+                                                    </div>
+                    </div>
+            </nav>
+
+            <!-- Footer -->
+            <div class="px-5 py-3 text-center text-xs border-t border-gray-200 bg-gray-50">
+                <p class="font-medium" style="color: #C7A46D;">© 2026 Yaman Accounting Calculator</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Top Navigation Bar -->
+    <nav class="shadow-md fixed w-full z-30" style="background: linear-gradient(to left, #C7A46D, #B8956A);">
+        <div class="px-4 py-3 flex items-center justify-between">
+            <!-- Mobile Menu Button with Tooltip -->
+            <div class="group relative">
+                <button id="openSidebarButton"
+                    class="w-10 h-10 flex items-center justify-center bg-white bg-opacity-20 text-white hover:bg-opacity-30 rounded-full transition-all duration-200 focus:outline-none relative overflow-hidden shadow-md">
+                    <div class="relative z-10 flex items-center justify-center">
+                        <i class="fas fa-bars text-lg"></i>
+                    </div>
+                </button>
+                <div
+                    class="absolute left-0 top-full mt-2 w-auto bg-black bg-opacity-80 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
+                    فتح القائمة الجانبية
+                </div>
+            </div>
+
+            <!-- Page Title -->
+            <h1 class="text-lg font-bold text-white shadow-sm">تعديل الطلب</h1>
+
+            <!-- Right Side Actions -->
+            <div class="flex items-center space-x-4 space-x-reverse">
+                <!-- Notifications -->
+                <div class="relative" id="notifContainer">
+                    <button id="notifButton"
+                        class="w-9 h-9 flex items-center justify-center bg-white bg-opacity-20 text-white hover:bg-opacity-30 rounded-full transition-all duration-200 shadow-sm">
+                        <i class="fas fa-bell"></i>
+                    </button>
+                    <span id="notifBadge"
+                        class="hidden absolute -top-1 -left-1 min-w-[18px] h-4 px-1 bg-red-500 border-2 border-white rounded-full text-[10px] leading-3 flex items-center justify-center"></span>
+                    <!-- Dropdown -->
+                    <div id="notifDropdown"
+                        class="hidden absolute left-0 mt-2 w-80 bg-white rounded-md shadow-lg py-2 z-50 border border-gray-200">
+                        <div class="px-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+                            <span class="text-sm font-semibold text-gray-700">الإشعارات</span>
+                            <span class="text-xs text-gray-400">عند تحديث الصفحة</span>
+                        </div>
+                        <div id="notifList" class="max-h-96 overflow-auto">
+                            <div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>
+                        </div>
+                        <div class="px-3 pt-2 border-t border-gray-100 text-xs text-gray-500">تعرض إشعارات الفرز المحملة عند تحديث الصفحة فقط</div>
+                    </div>
+                </div>
+
+                <!-- User Menu -->
+                                    <div class="relative">
+                        <button onclick="toggleUserMenu()"
+                            class="flex items-center bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full px-3 py-1.5 transition-all duration-200 shadow-sm">
+                            <span
+                                class="w-7 h-7 rounded-full bg-white flex items-center justify-center font-bold mr-2 shadow-sm"
+                                style="color: #C7A46D;">
+                                U                            </span>
+                            <span class="text-white text-sm font-medium ml-1">
+                                المستخدم                            </span>
+                            <i class="fas fa-chevron-down text-xs text-white ml-2"></i>
+                        </button>
+                        <div id="userMenu"
+                            class="hidden absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 border border-gray-200">
+                            <a href="/profile.php" class="block px-4 py-2 text-sm text-gray-700 hover:bg-amber-50"
+                                style="&:hover { color: #C7A46D; }">
+                                <i class="fas fa-user-edit ml-2" style="color: #C7A46D;"></i>الملف الشخصي
+                            </a>
+                            <a href="/logout.php"
+                                class="block px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700">
+                                <i class="fas fa-sign-out-alt ml-2 text-red-600"></i>تسجيل الخروج
+                            </a>
+                        </div>
+                    </div>
+                            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="mainContent" class="pt-16 main-content sm:mr-64 transition-all duration-300">
+
+        <script>
+            // Toggle user menu dropdown
+            function toggleUserMenu() {
+                document.getElementById('userMenu').classList.toggle('hidden');
+            }
+
+            // Initialize sidebar
+            document.addEventListener('DOMContentLoaded', function () {
+                // Ensure sidebar is visible on desktop
+                if (window.innerWidth >= 640) { // sm breakpoint
+                    document.getElementById('sidebar').classList.remove('translate-x-full');
+                }
+            });
+
+            // Mobile sidebar toggle with animation
+            document.getElementById('openSidebarButton').addEventListener('click', function () {
+                const button = this;
+                const sidebar = document.getElementById('sidebar');
+
+                // Animate button
+                button.classList.add('animate-spin-once');
+                setTimeout(() => {
+                    button.classList.remove('animate-spin-once');
+                }, 300);
+
+                // Show sidebar with animation
+                sidebar.classList.remove('translate-x-full');
+                sidebar.classList.add('sidebar-animation-in');
+                setTimeout(() => {
+                    sidebar.classList.remove('sidebar-animation-in');
+                }, 500);
+            });
+
+            document.getElementById('closeSidebarButton').addEventListener('click', function () {
+                const sidebar = document.getElementById('sidebar');
+
+                // Hide sidebar with animation
+                sidebar.classList.add('sidebar-animation-out');
+                setTimeout(() => {
+                    sidebar.classList.add('translate-x-full');
+                    sidebar.classList.remove('sidebar-animation-out');
+                }, 300);
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function (event) {
+                const userMenu = document.getElementById('userMenu');
+                const userButton = event.target.closest('button');
+
+                if (userMenu && !userMenu.classList.contains('hidden') &&
+                    (!userButton || !userButton.onclick || userButton.onclick.toString().indexOf('toggleUserMenu') === -1)) {
+                    userMenu.classList.add('hidden');
+                }
+            });
+
+            // Handle window resize
+            window.addEventListener('resize', function () {
+                if (window.innerWidth >= 640) { // sm breakpoint
+                    document.getElementById('sidebar').classList.remove('translate-x-full');
+                } else {
+                    document.getElementById('sidebar').classList.add('translate-x-full');
+                }
+            });
+
+            // ================= Sorting Notifications =================
+            const NOTIF_URL = '/modules/notifications/fetch.php';
+            const notifButton = document.getElementById('notifButton');
+            const notifDropdown = document.getElementById('notifDropdown');
+            const notifBadge = document.getElementById('notifBadge');
+            const notifList = document.getElementById('notifList');
+
+            function escapeHtml(value) {
+                return String(value || '').replace(/[&<>'"]/g, function (char) {
+                    return {
+                        '&': '&amp;',
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        "'": '&#39;',
+                        '"': '&quot;'
+                    }[char];
+                });
+            }
+
+            function renderNotifItems(items) {
+                if (!items || items.length === 0) {
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات فرز.</div>';
+                    return;
+                }
+                const html = items.map(function (item) {
+                    const unreadClass = Number(item.is_read || 0) === 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-50';
+                    const typeIcon = item.type === 'order_complete' ? 'fa-check-circle text-green-600' : 'fa-box-open text-blue-600';
+                    const orderNumber = item.order_number ? ('#' + escapeHtml(item.order_number)) : ('طلب #' + escapeHtml(item.order_id));
+                    const sku = item.sku ? (' • SKU: ' + escapeHtml(item.sku)) : '';
+                    const creator = item.created_by_name ? (' • ' + escapeHtml(item.created_by_name)) : '';
+                    return (
+                        '<div class="px-3 py-2 hover:bg-gray-50 border-b ' + unreadClass + '">' +
+                        '<div class="flex items-start justify-between gap-3">' +
+                        '<div class="flex items-start space-x-2 space-x-reverse min-w-0">' +
+                        '<i class="fas ' + typeIcon + ' mt-1 ml-2"></i>' +
+                        '<div class="min-w-0">' +
+                        '<div class="text-sm font-semibold text-gray-800">' + escapeHtml(item.title) + ' - ' + orderNumber + '</div>' +
+                        '<div class="text-xs text-gray-600 mt-1 break-words">' + escapeHtml(item.message) + '</div>' +
+                        '<div class="text-[11px] text-gray-400 mt-1">' + escapeHtml(item.created_at) + sku + creator + '</div>' +
+                        '</div>' +
+                        '</div>' +
+                        (Number(item.is_read || 0) === 0 ? '<span class="text-[10px] px-2 py-0.5 rounded-full text-red-700 bg-red-100">جديد</span>' : '') +
+                        '</div>' +
+                        '<div class="mt-2 flex justify-end text-xs">' +
+                        '<a href="' + escapeHtml(item.view_url) + '" class="text-blue-600 hover:text-blue-800"><i class="fas fa-eye ml-1"></i>تفاصيل الطلب</a>' +
+                        '</div>' +
+                        '</div>'
+                    );
+                }).join('');
+                notifList.innerHTML = html;
+            }
+
+            function updateNotifUI(payload) {
+                const count = (payload && typeof payload.count === 'number') ? payload.count : 0;
+                if (count > 0) {
+                    notifBadge.textContent = count > 99 ? '99+' : String(count);
+                    notifBadge.classList.remove('hidden');
+                } else {
+                    notifBadge.classList.add('hidden');
+                    notifBadge.textContent = '';
+                }
+                renderNotifItems(payload && payload.items ? payload.items : []);
+            }
+
+            async function fetchNotificationsOnPageLoad() {
+                try {
+                    const res = await fetch(NOTIF_URL, { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const data = await res.json();
+                    updateNotifUI(data);
+                } catch (e) {
+                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-red-600">تعذر تحميل إشعارات الفرز.</div>';
+                    notifBadge.classList.add('hidden');
+                }
+            }
+
+            // Load once after a full page refresh. Do not poll or auto-refresh.
+            fetchNotificationsOnPageLoad();
+
+            // Toggle dropdown without refetching.
+            if (notifButton) {
+                notifButton.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    notifDropdown.classList.toggle('hidden');
+                });
+            }
+
+            // Close dropdown on outside click
+            document.addEventListener('click', function (e) {
+                const within = e.target.closest('#notifContainer');
+                if (!within && notifDropdown && !notifDropdown.classList.contains('hidden')) {
+                    notifDropdown.classList.add('hidden');
+                }
+            });
+        </script>
+<style>
+    .case-card { background: #fff; border-radius: 0.75rem; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,.06); overflow: hidden; }
+    .form-input { width: 100%; border: 1px solid #d1d5db; border-radius: 0.375rem; padding: 0.45rem 0.75rem; font-size: 0.9rem; transition: border-color .15s, box-shadow .15s; background: #fff; }
+    .form-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .form-input[readonly] { cursor: default; }
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.9rem; cursor: pointer; border: none; transition: background .15s, transform .1s; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .btn-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+    .btn-danger:hover { background: #dc2626; color: #fff; }
+    .summary-panel { position: sticky; top: 1.5rem; }
+    .dir-ltr { direction: ltr; }
+    .money-input-group { margin-bottom: 0.75rem; }
+    .money-input-group label { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; color: #4b5563; margin-bottom: 0.25rem; font-weight: 600; }
+    .money-input-group .input-wrapper { position: relative; }
+    .money-input-group input { padding-left: 3rem; text-align: left; direction: ltr; font-weight: bold; }
+    .money-input-group .currency { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #9ca3af; font-size: 0.85rem; pointer-events: none; }
+    .btn-delete-row { background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 0.375rem; padding: 0.3rem 0.65rem; font-size: 0.85rem; font-weight: 700; cursor: pointer; line-height: 1; transition: background .15s; }
+    .btn-delete-row:hover { background-color: #dc2626; color: #fff; border-color: #dc2626; }
+</style>
+
+<div class="min-h-screen bg-gray-50 py-8" dir="rtl">
+    <div class="max-w-7xl mx-auto px-4">
+
+        
+        <form method="POST" id="editOrderForm" enctype="multipart/form-data">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+
+                <!-- Right Column: Products & Damaged -->
+                <div class="lg:col-span-2 space-y-8">
+
+                    <!-- 1. Order Items -->
+                    <div class="case-card">
+                        <div class="p-4 border-b flex justify-between items-center" style="cursor:pointer;" onclick="toggleOrderItems(event)">
+                            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-shopping-basket text-indigo-500"></i>منتجات الطلب
+                                <span id="items-count-badge" class="text-xs font-normal bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full"></span>
+                            </h3>
+                            <div class="flex items-center gap-2">
+                <i id="order-items-chevron" class="fas fa-chevron-down text-gray-400" style="transition:transform .2s; transform:rotate(180deg);"></i>
+                                <button type="button" class="btn btn-primary text-sm" onclick="event.stopPropagation(); addItem()">+ إضافة منتج</button>
+                            </div>
+                        </div>
+                        <div id="order-items-body">
+                        <div class="p-4 overflow-x-auto">
+                            <table class="w-full min-w-[600px]">
+                                <thead class="border-b bg-gray-50">
+                                    <tr class="text-sm text-gray-600">
+                                        <th class="py-2 text-right px-2">المنتج</th>
+                                        <th class="p-2 w-24 text-center">الكمية</th>
+                                        <th class="p-2 w-32 text-center">الإجمالي</th>
+                                        <th class="p-2 w-36 text-center">SKU</th>
+                                        <th class="w-16 text-center">حذف</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="items-container">
+                                                                        <tr class="item-row border-b last:border-0">
+                                        <td class="p-2">
+                                            <input type="hidden" name="items[0][id]" value="2351">
+                                            <input type="text" name="items[0][name]" value="Test Product A" class="form-input text-sm" placeholder="اسم المنتج" required>
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name="items[0][quantity]" value="2" min="1" class="form-input text-center item-quantity text-sm">
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="number" name="items[0][total]" value="1000.00" step="0.01" class="form-input text-center dir-ltr item-total text-sm">
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="text" name="items[0][sku]" value="" class="form-input text-sm dir-ltr" placeholder="SKU" autocomplete="off" spellcheck="false">
+                                        </td>
+                                        <td class="p-2 text-center">
+                                            <button type="button" class="btn-delete-row" onclick="removeItem(this)" title="حذف">&#10005;</button>
+                                        </td>
+                                    </tr>
+                                                                    </tbody>
+                            </table>
+                        </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Damaged Items -->
+                    <div class="case-card">
+                        <div class="p-4 border-b flex justify-between items-center">
+                            <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-exclamation-triangle text-red-500"></i>خصم المنتجات التالفة
+                            </h3>
+                            <button type="button" class="btn btn-danger text-sm" onclick="addModificationRow()">+ إضافة منتج تالف</button>
+                        </div>
+                        <div class="p-4 overflow-x-auto">
+                            <table class="w-full min-w-[600px]">
+                                <thead class="border-b bg-gray-50">
+                                    <tr class="text-sm text-gray-600">
+                                        <th class="py-2 text-right px-2">المنتج</th>
+                                        <th class="p-2 w-32">السبب</th>
+                                        <th class="p-2 w-32 text-center">القيمة المخصومة</th>
+                                        <th class="w-16 text-center">حذف</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modification-table-body">
+                                                                                                                    <tr class="modification-row border-b last:border-0">
+                                            <td class="p-2">
+                                                <input type="hidden" name="damaged_items[0][id]" value="999">
+                                                <input type="text" name="damaged_items[0][name]" value="Test Expired Item" class="form-input text-sm" required>
+                                            </td>
+                                            <td class="p-2">
+                                                <select name="damaged_items[0][reason]" class="form-input text-sm" required>
+                                                    <option value="damaged"   >تالف</option>
+                                                    <option value="expired"   selected>منتهي</option>
+                                                    <option value="defective" >مفقود</option>
+                                                </select>
+                                            </td>
+                                            <td class="p-2">
+                                                <input type="number" name="damaged_items[0][price]" value="200.00" step="0.01" min="0" class="form-input text-center dir-ltr damaged-price text-sm" required>
+                                            </td>
+                                            <td class="p-2 text-center">
+                                                <button type="button" class="btn-delete-row" onclick="removeModificationRow(this)" title="حذف">&#10005;</button>
+                                            </td>
+                                        </tr>
+                                                                                                            </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Left Column: Summary & Actions -->
+                <div class="lg:col-span-1">
+                    <div class="summary-panel space-y-6">
+
+                        <!-- Financial Summary -->
+                        <div class="case-card">
+                            <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                                <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                    <i class="fas fa-receipt text-indigo-500"></i>الملخص المالي
+                                </h3>
+                                <button type="button" id="toggleOverrideBtn" onclick="toggleManualOverride()" class="btn text-xs px-3 py-1.5" style="background:#f3f4f6; color:#374151; border:1px solid #d1d5db;">
+                                    <i class="fas fa-lock" id="overrideIcon"></i>
+                                    <span id="overrideBtnText">تفعيل التعديل اليدوي</span>
+                                </button>
+                            </div>
+                            <input type="hidden" name="manual_override"              id="manual_override_flag"             value="0">
+                            <input type="hidden" name="manual_subtotal"              id="manual_subtotal_hidden"            value="0">
+                            <input type="hidden" name="manual_primary_discount"      id="manual_primary_discount_hidden"    value="0">
+                            <input type="hidden" name="manual_total_after_discount"  id="manual_total_after_discount_hidden" value="0">
+                            <input type="hidden" name="manual_final_total"           id="manual_final_total_hidden"         value="0">
+                            <div class="p-5 space-y-1">
+
+                                <div class="money-input-group">
+                                    <label><span>المجموع الفرعي:</span></label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" id="subtotal_input" readonly class="form-input bg-gray-50 text-gray-700 summary-field" value="1000.00">
+                                    </div>
+                                </div>
+
+                                <div class="money-input-group">
+                                    <label><span class="text-red-600">خصم التوالف:</span></label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" id="damaged_total_input" readonly class="form-input bg-red-50 text-red-700 border-red-200 summary-field" value="200.00">
+                                    </div>
+                                </div>
+
+                                <div class="money-input-group">
+                                    <label>
+                                        <span class="text-amber-600">الخصم (تلقائي/كوبون):</span>
+                                                                            </label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" name="primary_discount_amount" id="primary_discount_input"
+                                               data-is-coupon="false"
+                                               data-discount-type="automatic"
+                                               data-discount-value="0.00"
+                                               data-max-discount="0"
+                                               step="0.01" class="form-input bg-amber-50 text-amber-700 border-amber-200 summary-field"
+                                               value="0.00" readonly>
+                                    </div>
+                                                                    </div>
+
+                                <div class="money-input-group">
+                                    <label><span class="text-orange-600">خصم إضافي:</span></label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" name="additional_discount" id="additional_discount_input" step="0.01" class="form-input text-orange-700 border-orange-200 focus:border-orange-500" value="0.00">
+                                    </div>
+                                </div>
+
+                                <hr class="border-gray-200 my-4">
+
+                                <div class="money-input-group">
+                                    <label><span>الإجمالي بعد الخصم:</span></label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" id="total_after_discount" readonly class="form-input bg-gray-50 summary-field" value="800.00">
+                                    </div>
+                                </div>
+
+                                <div class="money-input-group">
+                                    <label><span>تكلفة الشحن:</span></label>
+                                    <div class="input-wrapper">
+                                        <span class="currency">ريال</span>
+                                        <input type="number" name="shipping_cost" id="shipping_cost_input" step="0.01" class="form-input" value="0.00">
+                                    </div>
+                                </div>
+
+                                <div class="pt-3 border-t-2 border-dashed mt-2 bg-indigo-50 -mx-5 px-5 pb-3 mb-[-1.25rem] rounded-b-lg">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="text-xl font-bold text-indigo-700">الإجمالي النهائي:</span>
+                                    </div>
+                                    <div class="input-wrapper">
+                                        <input type="number" id="final_total_display" readonly class="form-input bg-white text-2xl text-indigo-700 border-indigo-200 text-center font-black summary-field" value="800.00">
+                                    </div>
+                                    <div class="text-center text-gray-400 text-xs mt-1">ريال يمني</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="case-card p-5 space-y-4">
+                            <div>
+                                <label for="order_link" class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-link ml-1 text-blue-500"></i> رابط الطلب</label>
+                                <input type="url" id="order_link" name="order_link" value="" class="form-input" placeholder="https://example.com/order">
+                            </div>
+                            <div>
+                                <label for="additional_link" class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-link ml-1 text-purple-500"></i> رابط إضافي</label>
+                                <input type="url" id="additional_link" name="additional_link" value="" class="form-input" placeholder="https://example.com/additional">
+                            </div>
+                            <div>
+                                <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">ملاحظات الطلب</label>
+                                <textarea id="notes" name="notes" rows="3" class="form-input"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="case-card p-5 space-y-4">
+                            <h4 class="font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-images text-purple-600"></i> صور الطلب</h4>
+                                                        <div class="border-t pt-3">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">إضافة صور جديدة</label>
+                                <input type="file" id="order_images" name="order_images[]" multiple accept="image/*" class="form-input text-sm" onchange="previewNewImages(this)">
+                                <div id="newImagePreview" class="grid grid-cols-2 gap-3 mt-3 hidden"></div>
+                            </div>
+                        </div>
+
+                        <div class="case-card p-5 space-y-4">
+                            <div>
+                                <label for="status" class="block text-sm font-medium text-gray-700 mb-1"><i class="fas fa-info-circle text-blue-600 ml-1"></i>حالة الطلب</label>
+                                <select id="status" name="status" class="form-input">
+                                                                            <option value="new" selected>
+                                            جديد                                        </option>
+                                                                            <option value="purchased" >
+                                            تم الشراء                                        </option>
+                                                                            <option value="ready_to_deliver" >
+                                            جاهز للتوصيل                                        </option>
+                                                                            <option value="delivered" >
+                                            تم الاستلام                                        </option>
+                                                                    </select>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-col gap-3">
+                            <button type="submit" class="btn btn-primary w-full justify-center text-lg py-3"><i class="fas fa-save"></i>حفظ التعديلات</button>
+                            <a href="view.php?id=1310" class="btn btn-secondary w-full justify-center text-lg py-3">إلغاء</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let itemIndex        = 1;
+let modificationIndex = 1;
+let manualOverrideActive = false;
+let savedSummaryValues = null;
+
+function toggleOrderItems(e) {
+    if (e && e.target && e.target.closest('button')) return;
+    const body    = document.getElementById('order-items-body');
+    const chevron = document.getElementById('order-items-chevron');
+    const isHidden = body.classList.contains('hidden');
+    body.classList.toggle('hidden', !isHidden);
+    chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+}
+
+function updateItemsBadge() {
+    const count = document.querySelectorAll('#items-container .item-row').length;
+    const badge = document.getElementById('items-count-badge');
+    if (badge) badge.textContent = count + ' منتج';
+}
+
+function toggleManualOverride() {
+    manualOverrideActive = !manualOverrideActive;
+    const btn     = document.getElementById('toggleOverrideBtn');
+    const icon    = document.getElementById('overrideIcon');
+    const btnText = document.getElementById('overrideBtnText');
+    const flag    = document.getElementById('manual_override_flag');
+
+    const summaryFields = [
+        document.getElementById('subtotal_input'),
+        document.getElementById('damaged_total_input'),
+        document.getElementById('primary_discount_input'),
+        document.getElementById('total_after_discount'),
+        document.getElementById('final_total_display')
+    ];
+
+    if (manualOverrideActive) {
+        // Save current values so we can restore them if user cancels
+        savedSummaryValues = {
+            subtotal:           document.getElementById('subtotal_input').value,
+            damaged:            document.getElementById('damaged_total_input').value,
+            primaryDiscount:    document.getElementById('primary_discount_input').value,
+            totalAfterDiscount: document.getElementById('total_after_discount').value,
+            finalTotal:         document.getElementById('final_total_display').value
+        };
+        summaryFields.forEach(f => {
+            f.removeAttribute('readonly');
+            f.classList.remove('bg-gray-50', 'bg-red-50', 'bg-amber-50');
+            f.classList.add('bg-white', 'ring-2', 'ring-yellow-400');
+        });
+        btn.style.background   = '#fef3c7';
+        btn.style.color        = '#92400e';
+        btn.style.borderColor  = '#f59e0b';
+        icon.className         = 'fas fa-lock-open';
+        btnText.textContent    = 'إلغاء التعديل اليدوي';
+        flag.value             = '1';
+        summaryFields.forEach(f => f.addEventListener('input', syncHiddenManualFields));
+        syncHiddenManualFields();
+    } else {
+        summaryFields.forEach(f => {
+            f.setAttribute('readonly', true);
+            f.classList.add('bg-gray-50');
+            f.classList.remove('bg-white', 'ring-2', 'ring-yellow-400');
+        });
+        document.getElementById('damaged_total_input').classList.add('bg-red-50');
+        document.getElementById('primary_discount_input').classList.add('bg-amber-50');
+        btn.style.background   = '#f3f4f6';
+        btn.style.color        = '#374151';
+        btn.style.borderColor  = '#d1d5db';
+        icon.className         = 'fas fa-lock';
+        btnText.textContent    = 'تفعيل التعديل اليدوي';
+        flag.value             = '0';
+        summaryFields.forEach(f => f.removeEventListener('input', syncHiddenManualFields));
+        // Restore original values instead of resetting to zero
+        if (savedSummaryValues) {
+            document.getElementById('subtotal_input').value             = savedSummaryValues.subtotal;
+            document.getElementById('damaged_total_input').value        = savedSummaryValues.damaged;
+            document.getElementById('primary_discount_input').value     = savedSummaryValues.primaryDiscount;
+            document.getElementById('total_after_discount').value       = savedSummaryValues.totalAfterDiscount;
+            document.getElementById('final_total_display').value        = savedSummaryValues.finalTotal;
+            savedSummaryValues = null;
+        } else {
+            updateAllTotals();
+        }
+    }
+}
+
+function syncHiddenManualFields() {
+    document.getElementById('manual_subtotal_hidden').value             = document.getElementById('subtotal_input').value             || '0';
+    document.getElementById('manual_primary_discount_hidden').value     = document.getElementById('primary_discount_input').value     || '0';
+    document.getElementById('manual_total_after_discount_hidden').value = document.getElementById('total_after_discount').value       || '0';
+    document.getElementById('manual_final_total_hidden').value          = document.getElementById('final_total_display').value        || '0';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateItemsBadge();
+    document.getElementById('items-container').addEventListener('input', (e) => { if (!manualOverrideActive && (e.target.classList.contains('item-total') || e.target.classList.contains('item-quantity'))) updateAllTotals(); });
+    document.getElementById('modification-table-body').addEventListener('input', () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('shipping_cost_input').addEventListener('input',     () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('additional_discount_input').addEventListener('input',() => { if (!manualOverrideActive) updateAllTotals(); });
+});
+
+function updateAllTotals() {
+    let subtotal = 0;
+    document.querySelectorAll('#items-container .item-row').forEach(row => {
+        const val = parseFloat(row.querySelector('.item-total').value);
+        subtotal += isNaN(val) ? 0 : val;
+    });
+    document.getElementById('subtotal_input').value = subtotal.toFixed(2);
+
+    let damagedTotal = 0;
+    document.querySelectorAll('#modification-table-body .modification-row').forEach(row => {
+        const val = parseFloat(row.querySelector('.damaged-price').value);
+        damagedTotal += isNaN(val) ? 0 : val;
+    });
+    document.getElementById('damaged_total_input').value = damagedTotal.toFixed(2);
+
+    const discountInput   = document.getElementById('primary_discount_input');
+    const dataset         = discountInput.dataset;
+    let netValueForDiscount = Math.max(0, subtotal - damagedTotal);
+    let calculatedDiscount  = 0;
+
+    if (dataset.isCoupon === 'true') {
+        const discountValue = parseFloat(dataset.discountValue) || 0;
+        if (dataset.discountType === 'percentage') {
+            calculatedDiscount = netValueForDiscount * (discountValue / 100);
+            const maxDiscount  = parseFloat(dataset.maxDiscount) || 0;
+            if (maxDiscount > 0 && calculatedDiscount > maxDiscount) calculatedDiscount = maxDiscount;
+        } else if (dataset.discountType === 'fixed') {
+            calculatedDiscount = Math.min(discountValue, netValueForDiscount);
+        }
+    } else {
+        const discountPercentage = parseFloat(dataset.discountValue) || 0;
+        if (discountPercentage > 0) calculatedDiscount = netValueForDiscount * (discountPercentage / 100);
+    }
+    discountInput.value = calculatedDiscount.toFixed(2);
+
+    const additionalDiscount  = parseFloat(document.getElementById('additional_discount_input').value) || 0;
+    const shippingCost        = parseFloat(document.getElementById('shipping_cost_input').value)       || 0;
+    const totalAfterDeductions = subtotal - calculatedDiscount - damagedTotal - additionalDiscount;
+    const finalTotal           = (totalAfterDeductions > 0 ? totalAfterDeductions : 0) + shippingCost;
+
+    document.getElementById('total_after_discount').value = (totalAfterDeductions > 0 ? totalAfterDeductions : 0).toFixed(2);
+    document.getElementById('final_total_display').value  = finalTotal.toFixed(2);
+}
+
+function addItem() {
+    const container = document.getElementById('items-container');
+    const newRow    = document.createElement('tr');
+    newRow.className = 'item-row border-b last:border-0';
+    newRow.innerHTML = `
+        <td class="p-2">
+            <input type="hidden" name="items[${itemIndex}][id]" value="0">
+            <input type="text" name="items[${itemIndex}][name]" class="form-input text-sm" placeholder="اسم المنتج" required>
+        </td>
+        <td class="p-2"><input type="number" name="items[${itemIndex}][quantity]" value="1" min="1" class="form-input text-center item-quantity text-sm"></td>
+        <td class="p-2"><input type="number" name="items[${itemIndex}][total]" value="0.00" step="0.01" class="form-input text-center dir-ltr item-total text-sm"></td>
+        <td class="p-2"><input type="text" name="items[${itemIndex}][sku]" class="form-input text-sm dir-ltr" placeholder="SKU" autocomplete="off" spellcheck="false"></td>
+        <td class="p-2 text-center"><button type="button" class="btn-delete-row" onclick="removeItem(this)" title="حذف">&#10005;</button></td>
+    `;
+    container.appendChild(newRow);
+    itemIndex++;
+    updateAllTotals();
+    updateItemsBadge();
+}
+
+function removeItem(button) {
+    if (document.querySelectorAll('.item-row').length > 1) {
+        button.closest('.item-row').remove();
+        updateAllTotals();
+        updateItemsBadge();
+    } else {
+        alert('يجب أن يحتوي الطلب على منتج واحد على الأقل.');
+    }
+}
+
+function addModificationRow() {
+    const tbody = document.getElementById('modification-table-body');
+    document.getElementById('no-damaged-row')?.remove();
+    const newRow = document.createElement('tr');
+    newRow.className = 'modification-row border-b last:border-0';
+    newRow.innerHTML = `
+        <td class="p-2">
+            <input type="hidden" name="damaged_items[${modificationIndex}][id]" value="0">
+            <input type="text" name="damaged_items[${modificationIndex}][name]" class="form-input text-sm" required>
+        </td>
+        <td class="p-2">
+            <select name="damaged_items[${modificationIndex}][reason]" class="form-input text-sm" required>
+                <option value="damaged">تالف</option>
+                <option value="expired">منتهي</option>
+                <option value="defective">مفقود</option>
+            </select>
+        </td>
+        <td class="p-2"><input type="number" name="damaged_items[${modificationIndex}][price]" value="0.00" step="0.01" min="0" class="form-input text-center dir-ltr damaged-price text-sm" required></td>
+        <td class="p-2 text-center"><button type="button" class="btn-delete-row" onclick="removeModificationRow(this)" title="حذف">&#10005;</button></td>
+    `;
+    tbody.appendChild(newRow);
+    modificationIndex++;
+    updateAllTotals();
+}
+
+function removeModificationRow(button) {
+    button.closest('.modification-row').remove();
+    if (document.querySelectorAll('.modification-row').length === 0) {
+        document.getElementById('modification-table-body').innerHTML =
+            `<tr id="no-damaged-row"><td colspan="4" class="py-8 text-center text-gray-500 text-sm">لا توجد منتجات تالفة مضافة.</td></tr>`;
+    }
+    updateAllTotals();
+}
+
+function previewNewImages(input) {
+    const container = document.getElementById('newImagePreview');
+    container.innerHTML = '';
+    if (input.files && input.files.length > 0) {
+        container.classList.remove('hidden');
+        Array.from(input.files).forEach(file => {
+            if (!file.type.startsWith('image/')) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                const div = document.createElement('div');
+                div.className = 'relative group bg-gray-100 rounded-lg overflow-hidden h-24 border border-green-300';
+                div.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+                container.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+    } else {
+        container.classList.add('hidden');
+    }
+}
+</script>
+
+    </main> <!-- End of main content -->    
+
+    <!-- Footer -->
+    <footer class="bg-white shadow-inner text-gray-600 py-4 sm:mr-64 transition-all duration-300">
+        <div class="px-6 mx-auto">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <p class="text-sm">&copy; 2026 Yaman Accounting Calculator. جميع الحقوق محفوظة.</p>
+                </div>
+                <div class="flex space-x-4 space-x-reverse">
+                    <a href="#" class="text-gray-500 hover:text-blue-600 transition duration-200">
+                        <i class="fab fa-facebook"></i>
+                    </a>
+                    <a href="#" class="text-gray-500 hover:text-blue-600 transition duration-200">
+                        <i class="fab fa-twitter"></i>
+                    </a>
+                    <a href="#" class="text-gray-500 hover:text-blue-600 transition duration-200">
+                        <i class="fab fa-linkedin"></i>
+                    </a>
+                    <a href="#" class="text-gray-500 hover:text-blue-600 transition duration-200">
+                        <i class="fab fa-instagram"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Loading spinner (hidden by default) -->
+    <div id="loadingSpinner" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <div class="flex items-center">
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>جاري التحميل...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global JavaScript functions -->
+    <script>
+        // Show loading spinner
+        function showLoading() {
+            document.getElementById('loadingSpinner').classList.remove('hidden');
+        }
+
+        // Hide loading spinner
+        function hideLoading() {
+            document.getElementById('loadingSpinner').classList.add('hidden');
+        }
+
+        // Show success message
+        function showSuccess(message) {
+            showNotification(message, 'success');
+        }
+
+        // Show error message
+        function showError(message) {
+            showNotification(message, 'error');
+        }
+
+        // Show notification
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-amber-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            
+            notification.className = `fixed top-4 left-4 ${bgColor} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="mr-2 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Confirm delete dialog
+        function confirmDelete(message = 'هل أنت متأكد من الحذف؟') {
+            return confirm(message);
+        }
+
+        // Format number with Arabic (Yemen) locale
+        function formatNumber(number) {
+            return new Intl.NumberFormat('ar-YE').format(number);
+        }
+
+        // Format currency - always Yemeni Riyal
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('ar-YE', {
+                style: 'currency',
+                currency: 'YER'
+            }).format(amount);
+        }
+
+        // Print function
+        function printDiv(divId) {
+            const printContent = document.getElementById(divId);
+            const originalContent = document.body.innerHTML;
+            
+            document.body.innerHTML = printContent.innerHTML;
+            window.print();
+            document.body.innerHTML = originalContent;
+            location.reload();
+        }
+
+        // Export to Excel function
+        function exportToExcel(tableId, filename = 'export') {
+            const table = document.getElementById(tableId);
+            const workbook = XLSX.utils.table_to_book(table);
+            XLSX.writeFile(workbook, filename + '.xlsx');
+        }
+
+        // Date picker initialization (if needed)
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize any date pickers or other components here
+            
+            // Add click handlers for dropdown menus
+            document.querySelectorAll('[data-dropdown-toggle]').forEach(function(trigger) {
+                trigger.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const targetId = this.getAttribute('data-dropdown-toggle');
+                    const target = document.getElementById(targetId);
+                    target.classList.toggle('hidden');
+                });
+            });
+        });
+    </script>
+</body>
+</html>

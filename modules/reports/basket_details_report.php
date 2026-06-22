@@ -29,21 +29,22 @@ try {
     // --- 3. BUILD THE COMPREHENSIVE & ACCURATE SQL QUERY ---
     // ** FIX START: The query is updated to correctly sum discounts from both manual baskets and order-based baskets. **
     $sql = "
-        SELECT 
+        SELECT
             pb.id, pb.basket_name, pb.basket_code, pb.created_at, pb.purchase_date, pb.total_items,
-            pb.account_number, pb.subtotal_amount, pb.final_amount, pb.status,
+            pb.account_number, pb.subtotal_amount, pb.discount_amount, pb.final_amount, pb.status,
+            pb.sar_amount, pb.yer_exchange_rate, pb.subtotal_amount_yer, pb.grand_total_yer,
             pbs.status_name_ar,
             pb.payment_source_type, pb.payment_source_id, pg.group_name,
-            u.username AS created_by, 
+            u.username AS created_by,
             ba.bank_name, ba.account_number AS source_account_number,
             pc.card_name, pc.card_number,
             (SELECT GROUP_CONCAT(tracking_number SEPARATOR ', ') FROM basket_tracking WHERE basket_id = pb.id) AS tracking_numbers,
-            
+
             -- CORRECTED DISCOUNT LOGIC:
             -- 1. Manual Discount: Combines the value from the manual basket's `discount_amount` field
             --    with any additional discounts from linked customer orders.
             (COALESCE(pb.discount_amount, 0) + (SELECT COALESCE(SUM(co.additional_discount), 0) FROM customer_orders co WHERE co.id IN (SELECT bi.order_id FROM basket_items bi WHERE bi.basket_id = pb.id))) AS total_manual_discount,
-            
+
             -- 2. Coupon Discount: Summed from linked customer orders.
             (SELECT COALESCE(SUM(co.coupon_discount), 0) FROM customer_orders co WHERE co.id IN (SELECT bi.order_id FROM basket_items bi WHERE bi.basket_id = pb.id)) AS total_coupon_discount,
 
@@ -99,22 +100,34 @@ try {
 
     // --- 5. CALCULATE TOTALS ---
     $total_baskets = count($baskets);
-    $total_subtotal = array_sum(array_column($baskets, 'subtotal_amount'));
-    $total_final_amount = array_sum(array_column($baskets, 'final_amount'));
-    
+    $total_subtotal_yer = 0;
+    $total_subtotal_sar = 0;
+    $total_final_yer = 0;
+    $total_final_sar = 0;
+    $total_items = 0;
+
+    foreach ($baskets as $basket) {
+        $total_subtotal_yer += $basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0;
+        $total_subtotal_sar += $basket['sar_amount'] ?? 0;
+        $total_final_yer += $basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0;
+        $total_final_sar += ($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140);
+        $total_items += $basket['total_items'] ?? 0;
+    }
+
     // Discount totals
     $total_manual_discount = array_sum(array_column($baskets, 'total_manual_discount'));
     $total_coupon_discount = array_sum(array_column($baskets, 'total_coupon_discount'));
     $total_club_discount = array_sum(array_column($baskets, 'club_discount'));
     $total_points_discount = array_sum(array_column($baskets, 'points_discount'));
-    
+
     // This is the overall total of all discounts combined
     $total_overall_discount = $total_manual_discount + $total_coupon_discount + $total_club_discount + $total_points_discount;
 
 } catch (PDOException $e) {
     $error = "Database Error: " . $e->getMessage();
     $baskets = [];
-    $total_baskets = $total_subtotal = $total_final_amount = $total_overall_discount = 0;
+    $total_baskets = $total_subtotal_yer = $total_subtotal_sar = $total_final_yer = $total_final_sar = $total_items = 0;
+    $total_overall_discount = 0;
     $total_manual_discount = $total_coupon_discount = $total_club_discount = $total_points_discount = 0;
     $groups = $purchase_cards = $bank_accounts = $all_statuses = [];
 }
@@ -237,9 +250,17 @@ include '../../includes/header.php';
         <!-- Main Statistics -->
         <div class="stats-grid">
             <div class="stat-box" style="border-right-color: #4f46e5;"><p class="text-gray-600 text-sm">إجمالي السلال</p><p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_baskets); ?></p></div>
-            <div class="stat-box" style="border-right-color: #3b82f6;"><p class="text-gray-600 text-sm">الإجمالي قبل الخصم</p><p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_subtotal, 2); ?> ر.ي</p></div>
+            <div class="stat-box" style="border-right-color: #3b82f6;">
+                <p class="text-gray-600 text-sm">الإجمالي قبل الخصم</p>
+                <p class="text-2xl font-bold text-gray-900 mt-2"><?php echo number_format($total_subtotal_yer, 2); ?> YER</p>
+                <p class="text-sm text-gray-500"><?php echo number_format($total_subtotal_sar, 2); ?> SAR</p>
+            </div>
             <div class="stat-box" style="border-right-color: #ef4444;"><p class="text-gray-600 text-sm">إجمالي الخصومات</p><p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_overall_discount, 2); ?> ر.ي</p></div>
-            <div class="stat-box" style="border-right-color: #10b981;"><p class="text-gray-600 text-sm">المبلغ النهائي (الصافي)</p><p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_final_amount, 2); ?> ر.ي</p></div>
+            <div class="stat-box" style="border-right-color: #10b981;">
+                <p class="text-gray-600 text-sm">المبلغ النهائي (الصافي)</p>
+                <p class="text-2xl font-bold text-gray-900 mt-2"><?php echo number_format($total_final_yer, 2); ?> YER</p>
+                <p class="text-sm text-gray-500"><?php echo number_format($total_final_sar, 2); ?> SAR</p>
+            </div>
         </div>
 
         <!-- Data Table -->
@@ -275,13 +296,19 @@ include '../../includes/header.php';
                                     } else { echo "<span>غير محدد</span>"; }
                                     ?>
                                 </td>
-                                <td><?php echo number_format($basket['subtotal_amount'], 2); ?> ر.ي</td>
+                                <td>
+                                    <div><strong><?php echo number_format($basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0, 2); ?> YER</strong></div>
+                                    <small><?php echo number_format($basket['sar_amount'] ?? 0, 2); ?> SAR</small>
+                                </td>
                                 <td class="discount-value"><?php echo number_format($basket['total_manual_discount'], 2); ?> ر.ي</td>
                                 <td class="discount-value"><?php echo number_format($basket['total_coupon_discount'], 2); ?> ر.ي</td>
                                 <td class="discount-value"><?php echo number_format($basket['club_discount'], 2); ?> ر.ي</td>
                                 <td class="discount-value"><?php echo number_format($basket['points_discount'], 2); ?> ر.ي</td>
                                 <td><strong><?php echo number_format($basket_total_discount, 2); ?> ر.ي</strong></td>
-                                <td style="font-weight:bold; color:#10b981;"><?php echo number_format($basket['final_amount'], 2); ?> ر.ي</td>
+                                <td style="font-weight:bold; color:#10b981;">
+                                    <div><strong><?php echo number_format($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0, 2); ?> YER</strong></div>
+                                    <small><?php echo number_format(($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140), 2); ?> SAR</small>
+                                </td>
                                 <td><?php echo htmlspecialchars($basket['created_by']); ?></td>
                             </tr>
                         <?php endforeach; ?>

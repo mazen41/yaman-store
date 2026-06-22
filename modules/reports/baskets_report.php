@@ -36,6 +36,7 @@ try {
             pb.id, pb.basket_name, pb.basket_code, pb.created_at, pb.total_items,
             pb.account_number,
             pb.subtotal_amount, pb.discount_amount, pb.final_amount, pb.status,
+            pb.sar_amount, pb.yer_exchange_rate, pb.subtotal_amount_yer, pb.grand_total_yer,
             pbs.status_name_ar,
             pb.payment_source_type, pb.payment_source_id, pg.group_name,
             u.username AS created_by, ba.bank_name, ba.account_number AS source_account_number,
@@ -84,14 +85,24 @@ try {
 
     // --- 5. CALCULATE TOTALS ---
     $total_baskets = count($baskets);
-    $total_subtotal = array_sum(array_column($baskets, 'subtotal_amount'));
-    $total_final_amount = array_sum(array_column($baskets, 'final_amount'));
-    $total_items = array_sum(array_column($baskets, 'total_items'));
+    $total_subtotal_yer = 0;
+    $total_subtotal_sar = 0;
+    $total_final_yer = 0;
+    $total_final_sar = 0;
+    $total_items = 0;
+
+    foreach ($baskets as $basket) {
+        $total_subtotal_yer += $basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0;
+        $total_subtotal_sar += $basket['sar_amount'] ?? 0;
+        $total_final_yer += $basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0;
+        $total_final_sar += ($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140);
+        $total_items += $basket['total_items'] ?? 0;
+    }
 
 } catch (PDOException $e) {
     $error = "حدث خطأ في جلب البيانات: " . $e->getMessage();
     $baskets = [];
-    $total_baskets = $total_subtotal = $total_final_amount = $total_items = 0;
+    $total_baskets = $total_subtotal_yer = $total_subtotal_sar = $total_final_yer = $total_final_sar = $total_items = 0;
 }
 
 
@@ -270,11 +281,13 @@ include '../../includes/header.php';
             </div>
             <div class="stat-box" style="border-right-color: #3b82f6;">
                 <p class="text-gray-600 text-sm">إجمالي المبلغ (قبل الخصم)</p>
-                <p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_subtotal); ?> ر.ي</p>
+                <p class="text-2xl font-bold text-gray-900 mt-2"><?php echo number_format($total_subtotal_yer, 2); ?> YER</p>
+                <p class="text-sm text-gray-500"><?php echo number_format($total_subtotal_sar, 2); ?> SAR</p>
             </div>
             <div class="stat-box" style="border-right-color: #C7A46D;">
                 <p class="text-gray-600 text-sm">إجمالي المبلغ (النهائي)</p>
-                <p class="text-3xl font-bold text-gray-900 mt-2"><?php echo number_format($total_final_amount); ?> ر.ي</p>
+                <p class="text-2xl font-bold text-gray-900 mt-2"><?php echo number_format($total_final_yer, 2); ?> YER</p>
+                <p class="text-sm text-gray-500"><?php echo number_format($total_final_sar, 2); ?> SAR</p>
             </div>
             <div class="stat-box" style="border-right-color: #10b981;">
                 <p class="text-gray-600 text-sm">إجمالي المنتجات</p>
@@ -326,8 +339,14 @@ include '../../includes/header.php';
                                 <td><strong><?php echo htmlspecialchars($basket['account_number'] ?? '-'); ?></strong></td>
                                 <td><?php echo htmlspecialchars($basket['tracking_numbers'] ?? '-'); ?></td>
                                 <td><?php echo number_format($basket['total_items'] ?? 0); ?></td>
-                                <td><?php echo number_format($basket['subtotal_amount'] ?? 0); ?> ر.ي</td>
-                                <td><strong><?php echo number_format($basket['final_amount'] ?? 0); ?> ر.ي</strong></td>
+                                <td>
+                                    <div><strong><?php echo number_format($basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0, 2); ?> YER</strong></div>
+                                    <small><?php echo number_format($basket['sar_amount'] ?? 0, 2); ?> SAR</small>
+                                </td>
+                                <td>
+                                    <div><strong><?php echo number_format($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0, 2); ?> YER</strong></div>
+                                    <small><?php echo number_format(($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140), 2); ?> SAR</small>
+                                </td>
                                 <td>
                                     <?php
                                     $payment_type = $basket['payment_source_type'] ?? '';

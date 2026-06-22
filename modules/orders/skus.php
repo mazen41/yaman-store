@@ -61,14 +61,15 @@ const ORDERS_PER_PAGE = 20;
 $current_page = max(1, (int)($_GET['page'] ?? 1));
 
 // ── Build WHERE clause ────────────────────────────────────────────────────────
-$sql_conditions = ["TRIM(COALESCE(oi.shein_sku, '')) = ''"];
+$single_order_mode = $target_order_id > 0;
+$sql_conditions = $single_order_mode ? [] : ["TRIM(COALESCE(oi.shein_sku, '')) = ''"];
 $sql_params     = [];
 
 if ($target_order_id > 0) { $sql_conditions[] = 'o.id = ?';               $sql_params[] = $target_order_id; }
 if ($date_from !== '')    { $sql_conditions[] = 'DATE(o.created_at) >= ?'; $sql_params[] = $date_from; }
 if ($date_to   !== '')    { $sql_conditions[] = 'DATE(o.created_at) <= ?'; $sql_params[] = $date_to; }
 
-$where_clause = implode(' AND ', $sql_conditions);
+$where_clause = !empty($sql_conditions) ? implode(' AND ', $sql_conditions) : '1=1';
 
 // ── Step 1: count distinct orders (for pagination) ────────────────────────────
 $count_stmt = $db->prepare("
@@ -110,6 +111,9 @@ $items_by_order = [];
 
 if (!empty($page_order_ids)) {
     $in_placeholders = implode(',', array_fill(0, count($page_order_ids), '?'));
+    
+    // Build the WHERE clause conditionally based on mode
+    $sku_condition = $single_order_mode ? '1=1' : "TRIM(COALESCE(oi.shein_sku, '')) = ''";
 
     $flat_stmt = $db->prepare("
         SELECT
@@ -126,7 +130,7 @@ if (!empty($page_order_ids)) {
         INNER JOIN customer_orders o ON o.id = oi.order_id
         LEFT  JOIN customers       c ON c.id = o.customer_id
         WHERE o.id IN ({$in_placeholders})
-          AND TRIM(COALESCE(oi.shein_sku, '')) = ''
+          AND ({$sku_condition})
         ORDER BY o.id DESC, oi.id ASC
     ");
     $flat_stmt->execute($page_order_ids);
@@ -476,6 +480,7 @@ include '../../includes/header.php';
                     'order_id'     => $oid,
                     'product_name' => $it['product_name'],
                     'quantity'     => (int)($it['quantity'] ?? 1),
+                    'shein_sku'    => $it['shein_sku'] ?? '',
                 ], $all_items), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_QUOT);
             ?>
             <div
@@ -643,6 +648,7 @@ function buildItemRow(item, index) {
     input.placeholder = 'أدخل SKU...';
     input.autocomplete = 'off';
     input.spellcheck = false;
+    if (item.shein_sku) { input.value = item.shein_sku; input.classList.add('has-value'); row.classList.add('saved'); }
     if (!CAN_ADD_SKUS) { input.readOnly = true; input.disabled = true; }
     input.addEventListener('input', () => input.classList.toggle('has-value', input.value.trim().length > 0));
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveSku(item.id); } });

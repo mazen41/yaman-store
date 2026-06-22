@@ -140,7 +140,7 @@ try {
 
     // 3. Purchase baskets
     $baskets_stmt = $db->prepare("
-        SELECT pb.id, pb.basket_code, pb.basket_name, pb.final_amount, pb.status, pbs.status_name_ar, pb.created_at,
+        SELECT pb.id, pb.basket_code, pb.basket_name, pb.final_amount, pb.grand_total_yer, pb.status, pbs.status_name_ar, pb.created_at,
                pb.purchase_date, pb.subtotal_amount, pb.account_number, pb.total_items as items_count,
                (SELECT SUM(bi.quantity) FROM basket_items bi WHERE bi.basket_id = pb.id) as total_quantity,
                (SELECT GROUP_CONCAT(tracking_number SEPARATOR ', ') FROM basket_tracking WHERE basket_id = pb.id) AS tracking_numbers
@@ -208,7 +208,9 @@ try {
     // 5. Financial summary
     $stats = [
         'total_baskets'                  => count($baskets),
-        'total_baskets_amount'           => array_sum(array_column($baskets, 'final_amount')),
+        'total_baskets_amount'           => array_sum(array_map(function($b) {
+            return floatval($b['final_amount'] ?? 0);
+        }, $baskets)),
         'total_customer_orders'          => count($customer_orders),
         'total_customer_orders_amount'   => array_sum(array_column($customer_orders, 'final_amount')),
     ];

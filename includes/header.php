@@ -449,28 +449,6 @@
 
             <!-- Right Side Actions -->
             <div class="flex items-center space-x-4 space-x-reverse">
-                <!-- Notifications -->
-                <div class="relative" id="notifContainer">
-                    <button id="notifButton"
-                        class="w-9 h-9 flex items-center justify-center bg-white bg-opacity-20 text-white hover:bg-opacity-30 rounded-full transition-all duration-200 shadow-sm">
-                        <i class="fas fa-bell"></i>
-                    </button>
-                    <span id="notifBadge"
-                        class="hidden absolute -top-1 -left-1 min-w-[18px] h-4 px-1 bg-red-500 border-2 border-white rounded-full text-[10px] leading-3 flex items-center justify-center"></span>
-                    <!-- Dropdown -->
-                    <div id="notifDropdown"
-                        class="hidden absolute left-0 mt-2 w-80 bg-white rounded-md shadow-lg py-2 z-50 border border-gray-200">
-                        <div class="px-3 pb-2 border-b border-gray-100 flex items-center justify-between">
-                            <span class="text-sm font-semibold text-gray-700">الإشعارات</span>
-                            <span class="text-xs text-gray-400">عند تحديث الصفحة</span>
-                        </div>
-                        <div id="notifList" class="max-h-96 overflow-auto">
-                            <div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات.</div>
-                        </div>
-                        <div class="px-3 pt-2 border-t border-gray-100 text-xs text-gray-500">تعرض إشعارات الفرز المحملة عند تحديث الصفحة فقط</div>
-                    </div>
-                </div>
-
                 <!-- User Menu -->
                 <?php if (isset($_SESSION['user_id'])): ?>
                     <div class="relative">
@@ -567,101 +545,6 @@
                     document.getElementById('sidebar').classList.remove('translate-x-full');
                 } else {
                     document.getElementById('sidebar').classList.add('translate-x-full');
-                }
-            });
-
-            // ================= Sorting Notifications =================
-            const NOTIF_URL = '/modules/notifications/fetch.php';
-            const notifButton = document.getElementById('notifButton');
-            const notifDropdown = document.getElementById('notifDropdown');
-            const notifBadge = document.getElementById('notifBadge');
-            const notifList = document.getElementById('notifList');
-
-            function escapeHtml(value) {
-                return String(value || '').replace(/[&<>'"]/g, function (char) {
-                    return {
-                        '&': '&amp;',
-                        '<': '&lt;',
-                        '>': '&gt;',
-                        "'": '&#39;',
-                        '"': '&quot;'
-                    }[char];
-                });
-            }
-
-            function renderNotifItems(items) {
-                if (!items || items.length === 0) {
-                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-gray-500">لا توجد إشعارات فرز.</div>';
-                    return;
-                }
-                const html = items.map(function (item) {
-                    const unreadClass = Number(item.is_read || 0) === 0 ? 'bg-red-50 border-red-100' : 'bg-white border-gray-50';
-                    const typeIcon = item.type === 'order_complete' ? 'fa-check-circle text-green-600' : 'fa-box-open text-blue-600';
-                    const orderNumber = item.order_number ? ('#' + escapeHtml(item.order_number)) : ('طلب #' + escapeHtml(item.order_id));
-                    const sku = item.sku ? (' • SKU: ' + escapeHtml(item.sku)) : '';
-                    const creator = item.created_by_name ? (' • ' + escapeHtml(item.created_by_name)) : '';
-                    return (
-                        '<div class="px-3 py-2 hover:bg-gray-50 border-b ' + unreadClass + '">' +
-                        '<div class="flex items-start justify-between gap-3">' +
-                        '<div class="flex items-start space-x-2 space-x-reverse min-w-0">' +
-                        '<i class="fas ' + typeIcon + ' mt-1 ml-2"></i>' +
-                        '<div class="min-w-0">' +
-                        '<div class="text-sm font-semibold text-gray-800">' + escapeHtml(item.title) + ' - ' + orderNumber + '</div>' +
-                        '<div class="text-xs text-gray-600 mt-1 break-words">' + escapeHtml(item.message) + '</div>' +
-                        '<div class="text-[11px] text-gray-400 mt-1">' + escapeHtml(item.created_at) + sku + creator + '</div>' +
-                        '</div>' +
-                        '</div>' +
-                        (Number(item.is_read || 0) === 0 ? '<span class="text-[10px] px-2 py-0.5 rounded-full text-red-700 bg-red-100">جديد</span>' : '') +
-                        '</div>' +
-                        '<div class="mt-2 flex justify-end text-xs">' +
-                        '<a href="' + escapeHtml(item.view_url) + '" class="text-blue-600 hover:text-blue-800"><i class="fas fa-eye ml-1"></i>تفاصيل الطلب</a>' +
-                        '</div>' +
-                        '</div>'
-                    );
-                }).join('');
-                notifList.innerHTML = html;
-            }
-
-            function updateNotifUI(payload) {
-                const count = (payload && typeof payload.count === 'number') ? payload.count : 0;
-                if (count > 0) {
-                    notifBadge.textContent = count > 99 ? '99+' : String(count);
-                    notifBadge.classList.remove('hidden');
-                } else {
-                    notifBadge.classList.add('hidden');
-                    notifBadge.textContent = '';
-                }
-                renderNotifItems(payload && payload.items ? payload.items : []);
-            }
-
-            async function fetchNotificationsOnPageLoad() {
-                try {
-                    const res = await fetch(NOTIF_URL, { credentials: 'same-origin' });
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    const data = await res.json();
-                    updateNotifUI(data);
-                } catch (e) {
-                    notifList.innerHTML = '<div class="px-4 py-3 text-sm text-red-600">تعذر تحميل إشعارات الفرز.</div>';
-                    notifBadge.classList.add('hidden');
-                }
-            }
-
-            // Load once after a full page refresh. Do not poll or auto-refresh.
-            fetchNotificationsOnPageLoad();
-
-            // Toggle dropdown without refetching.
-            if (notifButton) {
-                notifButton.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    notifDropdown.classList.toggle('hidden');
-                });
-            }
-
-            // Close dropdown on outside click
-            document.addEventListener('click', function (e) {
-                const within = e.target.closest('#notifContainer');
-                if (!within && notifDropdown && !notifDropdown.classList.contains('hidden')) {
-                    notifDropdown.classList.add('hidden');
                 }
             });
         </script>

@@ -894,15 +894,19 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             });
             if (canVibrate) Vibration.vibrate(duration: 150);
           }
-          
-          await Future.delayed(const Duration(milliseconds: 2500));
+
+          // FIX: unlock immediately so the next scan (even a different SKU) isn't
+          // blocked while we show the brief result status. Previously _locked
+          // stayed true through a 2500ms delay, causing a noticeable camera lag
+          // on the second scan.
+          _locked = false;
+          await Future.delayed(const Duration(milliseconds: 1200));
           if (mounted) {
             setState(() {
               _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
               _statusType = StatusType.idle;
             });
           }
-          _locked = false;
         },
       ),
     );
@@ -1502,6 +1506,7 @@ class _SortingNotificationsSheet extends StatelessWidget {
                           : 'طلب #${_text(notification, 'order_id')}';
                       final sku = _text(notification, 'sku');
                       final createdBy = _text(notification, 'created_by_name');
+                      final customerName = _text(notification, 'customer_name');
                       return Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
@@ -1550,6 +1555,7 @@ class _SortingNotificationsSheet extends StatelessWidget {
                                     runSpacing: 4,
                                     children: [
                                       if (sku.isNotEmpty) _MetaChip(label: 'SKU: $sku'),
+                                      if (customerName.isNotEmpty) _MetaChip(label: 'العميل: $customerName'),
                                       if (createdBy.isNotEmpty) _MetaChip(label: createdBy),
                                       _MetaChip(label: _text(notification, 'created_at')),
                                     ],

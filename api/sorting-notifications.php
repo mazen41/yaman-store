@@ -29,11 +29,13 @@ try {
                sn.created_at,
                co.order_number,
                oi.shein_sku AS sku,
-               u.full_name AS created_by_name
+               u.full_name AS created_by_name,
+               c.name AS customer_name
         FROM sorting_notifications sn
         LEFT JOIN customer_orders co ON co.id = sn.order_id
         LEFT JOIN order_items oi ON oi.id = sn.item_id
         LEFT JOIN users u ON u.id = sn.created_by
+        LEFT JOIN customers c ON c.id = co.customer_id
         WHERE sn.id > ?
         ORDER BY sn.id ASC
         LIMIT {$limit}
@@ -51,6 +53,7 @@ try {
             'order_number' => (string)($row['order_number'] ?? ''),
             'sku' => (string)($row['sku'] ?? ''),
             'created_by_name' => (string)($row['created_by_name'] ?? ''),
+            'customer_name' => (string)($row['customer_name'] ?? ''),
         ];
     }, $stmt->fetchAll(PDO::FETCH_ASSOC));
 

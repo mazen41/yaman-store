@@ -117,68 +117,94 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
         try {
             $db->beginTransaction();
 
-            // --- 1. Calculate New Totals ---
-            $subtotal_amount    = 0;
-            $new_total_quantity = 0;
-            foreach ($posted_items as $item) {
-                $subtotal_amount    += floatval($item['total']);
-                $new_total_quantity += intval($item['quantity'] ?? 0);
-            }
+            // --- Detect if financial values should be preserved (no manual override, no shipping/discount changes) ---
+            $preserve_financial_values = !$manual_override &&
+                                         abs(floatval($order['shipping_cost']) - $shipping_cost) <= 0.001 &&
+                                         abs(floatval($order['additional_discount']) - $additional_discount) <= 0.001;
 
-            $damaged_total = 0;
-            foreach ($posted_damaged_items as $damaged) {
-                $damaged_total += floatval($damaged['price']);
-            }
-
-            $net_value_for_discount = max(0, $subtotal_amount - $damaged_total);
-
-            // --- Discount Calculation ---
-            $calculated_discount              = 0;
-            $final_automatic_discount_amount  = 0;
-            $discount_percentage_for_calculation = floatval($order['automatic_discount_percentage']);
-            $coupon_details = [];
-
-            if (!empty($order['coupon_id']) && !empty($order['coupon_discount_type'])) {
-                $coupon_details = [
-                    'type'       => $order['coupon_discount_type'],
-                    'value'      => floatval($order['coupon_discount_value']),
-                    'max_amount' => floatval($order['coupon_max_discount_amount']),
-                    'code'       => $order['coupon_code'],
-                ];
-                $discount_percentage_for_calculation = 0;
-            }
-
-            if ($coupon_details) {
-                if ($coupon_details['type'] === 'percentage') {
-                    $calculated_discount = $net_value_for_discount * ($coupon_details['value'] / 100);
-                    if ($coupon_details['max_amount'] > 0 && $calculated_discount > $coupon_details['max_amount']) {
-                        $calculated_discount = $coupon_details['max_amount'];
-                    }
-                } elseif ($coupon_details['type'] === 'fixed') {
-                    $calculated_discount = min($coupon_details['value'], $net_value_for_discount);
+            // --- 1. Calculate New Totals (or preserve original values) ---
+            if ($preserve_financial_values) {
+                // Preserve original financial values from database
+                $subtotal_amount = floatval($order['subtotal_amount']);
+                $calculated_discount = floatval($order['automatic_discount_amount'] ?? 0) + floatval($order['discount_amount'] ?? 0);
+                $final_automatic_discount_amount = floatval($order['automatic_discount_amount'] ?? 0);
+                $total_amount = floatval($order['total_amount']);
+                $final_amount = floatval($order['final_amount']);
+                $discount_percentage_for_calculation = floatval($order['automatic_discount_percentage']);
+                $new_total_quantity = 0;
+                foreach ($posted_items as $item) {
+                    $new_total_quantity += intval($item['quantity'] ?? 0);
                 }
-                $final_automatic_discount_amount = 0;
-            } elseif ($discount_percentage_for_calculation > 0) {
-                $calculated_discount             = $net_value_for_discount * ($discount_percentage_for_calculation / 100);
-                $final_automatic_discount_amount = $calculated_discount;
-            }
-
-            // --- Final totals (with optional manual override) ---
-            if ($manual_override) {
-                $subtotal_amount     = $manual_subtotal > 0 ? $manual_subtotal : $subtotal_amount;
-                $calculated_discount = $manual_primary_discount;
-                $total_amount        = $manual_total_after_discount > 0
-                    ? $manual_total_after_discount
-                    : max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
-                $final_amount        = $manual_final_total > 0
-                    ? $manual_final_total
-                    : max(0, $total_amount + $shipping_cost);
+                $damaged_total = 0;
+                foreach ($posted_damaged_items as $damaged) {
+                    $damaged_total += floatval($damaged['price']);
+                }
+                $net_value_for_discount = max(0, $subtotal_amount - $damaged_total);
+                $total_discount_for_journal = $calculated_discount + $additional_discount;
             } else {
-                $total_amount = max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
-                $final_amount = $total_amount + $shipping_cost;
-            }
+                // Normal recalculation when manual override or financial changes
+                $subtotal_amount    = 0;
+                $new_total_quantity = 0;
+                foreach ($posted_items as $item) {
+                    $subtotal_amount    += floatval($item['total']);
+                    $new_total_quantity += intval($item['quantity'] ?? 0);
+                }
 
-            $total_discount_for_journal = $calculated_discount + $additional_discount;
+                $damaged_total = 0;
+                foreach ($posted_damaged_items as $damaged) {
+                    $damaged_total += floatval($damaged['price']);
+                }
+
+                $net_value_for_discount = max(0, $subtotal_amount - $damaged_total);
+
+                // --- Discount Calculation ---
+                $calculated_discount              = 0;
+                $final_automatic_discount_amount  = 0;
+                $discount_percentage_for_calculation = floatval($order['automatic_discount_percentage']);
+                $coupon_details = [];
+
+                if (!empty($order['coupon_id']) && !empty($order['coupon_discount_type'])) {
+                    $coupon_details = [
+                        'type'       => $order['coupon_discount_type'],
+                        'value'      => floatval($order['coupon_discount_value']),
+                        'max_amount' => floatval($order['coupon_max_discount_amount']),
+                        'code'       => $order['coupon_code'],
+                    ];
+                    $discount_percentage_for_calculation = 0;
+                }
+
+                if ($coupon_details) {
+                    if ($coupon_details['type'] === 'percentage') {
+                        $calculated_discount = $net_value_for_discount * ($coupon_details['value'] / 100);
+                        if ($coupon_details['max_amount'] > 0 && $calculated_discount > $coupon_details['max_amount']) {
+                            $calculated_discount = $coupon_details['max_amount'];
+                        }
+                    } elseif ($coupon_details['type'] === 'fixed') {
+                        $calculated_discount = min($coupon_details['value'], $net_value_for_discount);
+                    }
+                    $final_automatic_discount_amount = 0;
+                } elseif ($discount_percentage_for_calculation > 0) {
+                    $calculated_discount             = $net_value_for_discount * ($discount_percentage_for_calculation / 100);
+                    $final_automatic_discount_amount = $calculated_discount;
+                }
+
+                // --- Final totals (with optional manual override) ---
+                if ($manual_override) {
+                    $subtotal_amount     = $manual_subtotal > 0 ? $manual_subtotal : $subtotal_amount;
+                    $calculated_discount = $manual_primary_discount;
+                    $total_amount        = $manual_total_after_discount > 0
+                        ? $manual_total_after_discount
+                        : max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
+                    $final_amount        = $manual_final_total > 0
+                        ? $manual_final_total
+                        : max(0, $total_amount + $shipping_cost);
+                } else {
+                    $total_amount = max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
+                    $final_amount = $total_amount + $shipping_cost;
+                }
+
+                $total_discount_for_journal = $calculated_discount + $additional_discount;
+            }
 
             // --- 2. Update Main Order ---
             $update_stmt = $db->prepare("
@@ -207,20 +233,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
             ]);
 
             // --- 3. Sync Invoice ---
-            $invoice_base_amount  = $total_amount;
-            $invoice_tax_amount   = $invoice_base_amount * 0.15;
-            $invoice_total_amount = $invoice_base_amount + $invoice_tax_amount;
-            $db->prepare("UPDATE customer_invoices SET amount = ?, tax_amount = ?, total_amount = ?, updated_at = NOW() WHERE order_id = ?")
-               ->execute([$invoice_base_amount, $invoice_tax_amount, $invoice_total_amount, $order_id]);
+            if (!$preserve_financial_values) {
+                $invoice_base_amount  = $total_amount;
+                $invoice_tax_amount   = $invoice_base_amount * 0.15;
+                $invoice_total_amount = $invoice_base_amount + $invoice_tax_amount;
+                $db->prepare("UPDATE customer_invoices SET amount = ?, tax_amount = ?, total_amount = ?, updated_at = NOW() WHERE order_id = ?")
+                   ->execute([$invoice_base_amount, $invoice_tax_amount, $invoice_total_amount, $order_id]);
+            }
 
             // --- 4. Update Order Items ---
             $db->prepare("DELETE FROM order_items WHERE order_id = ?")->execute([$order_id]);
-            $item_stmt = $db->prepare("INSERT INTO order_items (order_id, product_name, quantity, unit_price, total_price, notes, product_link, product_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $item_stmt = $db->prepare("INSERT INTO order_items (order_id, product_name, quantity, unit_price, total_price, notes, product_link, product_status, shein_sku) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             foreach ($posted_items as $item) {
                 $qty        = intval($item['quantity']);
                 $total_price = floatval($item['total']);
                 $unit_price  = ($qty > 0) ? ($total_price / $qty) : 0;
-                $item_stmt->execute([$order_id, $item['name'], $qty, $unit_price, $total_price, $item['notes'] ?? '', $item['link'] ?? '', 'available']);
+                $sku_value   = trim($item['sku'] ?? '') !== '' ? trim($item['sku']) : null;
+                $item_status = trim($item['status'] ?? 'available');
+                if (empty($item_status)) {
+                    $item_status = 'available';
+                }
+                $item_notes  = $item['notes'] ?? ($item['notes_hidden'] ?? '');
+                $item_link   = $item['link'] ?? ($item['link_hidden'] ?? '');
+                $item_stmt->execute([$order_id, $item['name'], $qty, $unit_price, $total_price, $item_notes, $item_link, $item_status, $sku_value]);
             }
 
             // --- 5. Update Damaged Items ---
@@ -264,27 +299,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
             }
 
             // --- 8. Accounting (delete & recreate) ---
-            try {
-                delete_journal_entry_by_source($db, 'orders', $order_id);
-                $ar_account_id       = get_accounting_setting($db, 'default_accounts_receivable_id');
-                $sales_account_id    = get_accounting_setting($db, 'default_sales_revenue_id');
-                $shipping_account_id = get_accounting_setting($db, 'default_shipping_revenue_id');
-                $discount_account_id = get_accounting_setting($db, 'default_sales_discount_id');
-                $description         = "تعديل إيراد الطلب رقم " . $order['order_number'];
-                $entry_items = [
-                    ['account_id' => $ar_account_id,       'type' => 'debit',  'amount' => $final_amount],
-                    ['account_id' => $discount_account_id, 'type' => 'debit',  'amount' => $total_discount_for_journal],
-                    ['account_id' => $sales_account_id,    'type' => 'credit', 'amount' => $subtotal_amount],
-                    ['account_id' => $shipping_account_id, 'type' => 'credit', 'amount' => $shipping_cost],
-                ];
-                create_journal_entry($db, date('Y-m-d'), $description, $entry_items, 'orders', $order_id, $_SESSION['user_id']);
-            } catch (Exception $acc_e) {
-                error_log("Accounting update failed for Order ID $order_id: " . $acc_e->getMessage());
+            if (!$preserve_financial_values) {
+                try {
+                    delete_journal_entry_by_source($db, 'orders', $order_id);
+                    $ar_account_id       = get_accounting_setting($db, 'default_accounts_receivable_id');
+                    $sales_account_id    = get_accounting_setting($db, 'default_sales_revenue_id');
+                    $shipping_account_id = get_accounting_setting($db, 'default_shipping_revenue_id');
+                    $discount_account_id = get_accounting_setting($db, 'default_sales_discount_id');
+                    $description         = "تعديل إيراد الطلب رقم " . $order['order_number'];
+                    $entry_items = [
+                        ['account_id' => $ar_account_id,       'type' => 'debit',  'amount' => $final_amount],
+                        ['account_id' => $discount_account_id, 'type' => 'debit',  'amount' => $total_discount_for_journal],
+                        ['account_id' => $sales_account_id,    'type' => 'credit', 'amount' => $subtotal_amount],
+                        ['account_id' => $shipping_account_id, 'type' => 'credit', 'amount' => $shipping_cost],
+                    ];
+                    create_journal_entry($db, date('Y-m-d'), $description, $entry_items, 'orders', $order_id, $_SESSION['user_id']);
+                } catch (Exception $acc_e) {
+                    error_log("Accounting update failed for Order ID $order_id: " . $acc_e->getMessage());
+                }
             }
 
             // --- 9. Change Logging ---
-            $item_log_notes  = [];
-            $other_log_notes = [];
+            $change_descriptions = [];
+            $old_final_amount = floatval($order['final_amount'] ?? 0);
 
             // Build maps for comparison
             $original_items_map = array_column($original_items, null, 'id');
@@ -299,7 +336,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
             // Detect deleted items
             foreach ($original_items_map as $orig_id => $orig_item) {
                 if (!isset($posted_items_map[$orig_id])) {
-                    $item_log_notes[] = "🗑️ حُذف المنتج: [{$orig_item['product_name']}]";
+                    $change_descriptions[] = "تم حذف المنتج \"{$orig_item['product_name']}\".";
                 }
             }
 
@@ -311,22 +348,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
                 $item_total = floatval($item['total'] ?? 0);
 
                 if ($item_id === 0) {
-                    $item_log_notes[] = "➕ أُضيف منتج جديد: [{$item_name}] الكمية: {$item_qty} | الإجمالي: " . number_format($item_total, 2) . " ريال";
+                    $change_descriptions[] = "تم إضافة منتج جديد \"{$item_name}\" (الكمية: {$item_qty}، الإجمالي: " . number_format($item_total, 2) . " ريال).";
                 } elseif (isset($original_items_map[$item_id])) {
                     $orig = $original_items_map[$item_id];
                     $changes = [];
-                    if ($orig['product_name'] !== $item_name) {
-                        $changes[] = "الاسم: [{$orig['product_name']}] → [{$item_name}]";
-                    }
                     if (intval($orig['quantity']) !== $item_qty) {
-                        $changes[] = "الكمية: {$orig['quantity']} → {$item_qty}";
+                        $changes[] = "تم تغيير كمية المنتج \"{$item_name}\" من {$orig['quantity']} إلى {$item_qty}.";
                     }
                     if (abs(floatval($orig['total_price']) - $item_total) > 0.001) {
-                        $changes[] = "الإجمالي: " . number_format(floatval($orig['total_price']), 2) . " → " . number_format($item_total, 2) . " ريال";
+                        $changes[] = "تم تغيير إجمالي المنتج \"{$item_name}\" من " . number_format(floatval($orig['total_price']), 2) . " ريال إلى " . number_format($item_total, 2) . " ريال.";
                     }
-                    if (!empty($changes)) {
-                        $item_log_notes[] = "✏️ تعديل [{$item_name}]: " . implode(' | ', $changes);
+                    if ($orig['product_name'] !== $item_name) {
+                        $changes[] = "تم تغيير اسم المنتج من \"{$orig['product_name']}\" إلى \"{$item_name}\".";
                     }
+                    $change_descriptions = array_merge($change_descriptions, $changes);
                 }
             }
 
@@ -340,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
                     if (intval($d['id'] ?? 0) === $orig_id) { $found = true; break; }
                 }
                 if (!$found) {
-                    $item_log_notes[] = "🗑️ حُذف التالف: [{$orig_d['product_name']}]";
+                    $change_descriptions[] = "تم إزالة تسجيل المنتج {$reason_labels[$orig_d['reason']]} \"{$orig_d['product_name']}\".";
                 }
             }
             foreach ($posted_damaged_items as $d) {
@@ -349,65 +384,50 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
                 $d_price = floatval($d['price'] ?? 0);
                 $d_reason = $reason_labels[$d['reason'] ?? 'damaged'] ?? $d['reason'];
                 if ($d_id === 0) {
-                    $item_log_notes[] = "➕ أُضيف تالف: [{$d_name}] السبب: {$d_reason} | القيمة: " . number_format($d_price, 2) . " ريال";
+                    $change_descriptions[] = "تم تسجيل منتج {$d_reason} \"{$d_name}\" (القيمة: " . number_format($d_price, 2) . " ريال).";
                 } elseif (isset($original_damaged_map[$d_id])) {
                     $orig_d  = $original_damaged_map[$d_id];
-                    $changes = [];
-                    if ($orig_d['product_name'] !== $d_name) $changes[] = "الاسم: [{$orig_d['product_name']}] → [{$d_name}]";
-                    if (abs(floatval($orig_d['price']) - $d_price) > 0.001) $changes[] = "القيمة: " . number_format(floatval($orig_d['price']), 2) . " → " . number_format($d_price, 2) . " ريال";
-                    if ($orig_d['reason'] !== ($d['reason'] ?? '')) $changes[] = "السبب: {$reason_labels[$orig_d['reason']]} → {$d_reason}";
-                    if (!empty($changes)) {
-                        $item_log_notes[] = "✏️ تعديل تالف [{$d_name}]: " . implode(' | ', $changes);
+                    if (abs(floatval($orig_d['price']) - $d_price) > 0.001) {
+                        $change_descriptions[] = "تم تحديث قيمة المنتج {$d_reason} \"{$d_name}\" من " . number_format(floatval($orig_d['price']), 2) . " ريال إلى " . number_format($d_price, 2) . " ريال.";
                     }
                 }
             }
 
             // Financial / admin changes
             if (abs(floatval($order['shipping_cost']) - $shipping_cost) > 0.001) {
-                $other_log_notes[] = "🚚 الشحن: " . number_format(floatval($order['shipping_cost']), 2) . " → " . number_format($shipping_cost, 2) . " ريال";
+                $change_descriptions[] = "تم تغيير تكلفة الشحن من " . number_format(floatval($order['shipping_cost']), 2) . " ريال إلى " . number_format($shipping_cost, 2) . " ريال.";
             }
             if (abs(floatval($order['additional_discount']) - $additional_discount) > 0.001) {
-                $other_log_notes[] = "💰 الخصم الإضافي: " . number_format(floatval($order['additional_discount']), 2) . " → " . number_format($additional_discount, 2) . " ريال";
+                $change_descriptions[] = "تم تغيير الخصم الإضافي من " . number_format(floatval($order['additional_discount']), 2) . " ريال إلى " . number_format($additional_discount, 2) . " ريال.";
             }
             if ($order['status'] !== $order_status) {
                 $old_status_label = $status_translations[$order['status']] ?? $order['status'];
                 $new_status_label = $status_translations[$order_status] ?? $order_status;
-                $other_log_notes[] = "🔄 الحالة: [{$old_status_label}] → [{$new_status_label}]";
+                $change_descriptions[] = "تم تغيير حالة الطلب من \"{$old_status_label}\" إلى \"{$new_status_label}\".";
             }
-            if (($order['order_link'] ?? '') !== $order_link) {
-                $other_log_notes[] = "🔗 رابط الطلب تم تحديثه";
-            }
-            if (($order['additional_link'] ?? '') !== $additional_link) {
-                $other_log_notes[] = "🔗 الرابط الإضافي تم تحديثه";
+            if (($order['order_link'] ?? '') !== $order_link || ($order['additional_link'] ?? '') !== $additional_link) {
+                $change_descriptions[] = "تم تحديث روابط الطلب.";
             }
             if (($order['notes'] ?? '') !== $notes) {
-                $other_log_notes[] = "📝 الملاحظات تم تحديثها";
+                $change_descriptions[] = "تم تحديث ملاحظات الطلب.";
             }
 
-            // Financial summary (always appended)
-            $financial_summary = "\n--- الملخص المالي ---\n"
-                . "المجموع الفرعي: " . number_format($subtotal_amount, 2) . " ريال\n"
-                . "خصم التوالف: " . number_format($damaged_total, 2) . " ريال\n"
-                . "الخصم الأساسي: " . number_format($calculated_discount, 2) . " ريال\n"
-                . "الخصم الإضافي: " . number_format($additional_discount, 2) . " ريال\n"
-                . "الإجمالي بعد الخصم: " . number_format($total_amount, 2) . " ريال\n"
-                . "الشحن: " . number_format($shipping_cost, 2) . " ريال\n"
-                . "الإجمالي النهائي: " . number_format($final_amount, 2) . " ريال";
-
-            // Build and insert log
-            $all_log_parts = [];
-            if (!empty($item_log_notes)) {
-                $all_log_parts[] = "--- تغييرات المنتجات ---\n" . implode("\n", $item_log_notes);
+            // Build natural Arabic log
+            if (!empty($change_descriptions)) {
+                $log_notes = "تم إجراء التعديلات التالية:\n\n";
+                foreach ($change_descriptions as $description) {
+                    $log_notes .= "• {$description}\n";
+                }
+                // Only show financial summary if it changed or if not preserving values
+                if ($preserve_financial_values) {
+                    $log_notes .= "\nملاحظة: تم الاحتفاظ بالملخص المالي الأصلي (الإجمالي: " . number_format($final_amount, 2) . " ريال).";
+                } else {
+                    $log_notes .= "\nالإجمالي السابق: " . number_format($old_final_amount, 2) . " ريال.\n";
+                    $log_notes .= "الإجمالي الجديد: " . number_format($final_amount, 2) . " ريال.";
+                }
+            } else {
+                $log_notes = "تم حفظ الطلب بدون تغييرات ملحوظة.\n\nالإجمالي: " . number_format($final_amount, 2) . " ريال.";
             }
-            if (!empty($other_log_notes)) {
-                $all_log_parts[] = "--- تغييرات أخرى ---\n" . implode("\n", $other_log_notes);
-            }
-            if (empty($all_log_parts)) {
-                $all_log_parts[] = "تم حفظ الطلب بدون تغييرات ملحوظة.";
-            }
-            $all_log_parts[] = $financial_summary;
-
-            $log_notes = implode("\n\n", $all_log_parts);
 
             $log_stmt = $db->prepare("
                 INSERT INTO order_status_history (order_id, status, notes, created_by, created_at)
@@ -506,11 +526,11 @@ include '../../includes/header.php';
                                 <span id="items-count-badge" class="text-xs font-normal bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full"></span>
                             </h3>
                             <div class="flex items-center gap-2">
-                                <i id="order-items-chevron" class="fas fa-chevron-down text-gray-400" style="transition:transform .2s;"></i>
+                <i id="order-items-chevron" class="fas fa-chevron-down text-gray-400" style="transition:transform .2s; transform:rotate(180deg);"></i>
                                 <button type="button" class="btn btn-primary text-sm" onclick="event.stopPropagation(); addItem()">+ إضافة منتج</button>
                             </div>
                         </div>
-                        <div id="order-items-body" class="hidden">
+                        <div id="order-items-body">
                         <div class="p-4 overflow-x-auto">
                             <table class="w-full min-w-[600px]">
                                 <thead class="border-b bg-gray-50">
@@ -518,6 +538,7 @@ include '../../includes/header.php';
                                         <th class="py-2 text-right px-2">المنتج</th>
                                         <th class="p-2 w-24 text-center">الكمية</th>
                                         <th class="p-2 w-32 text-center">الإجمالي</th>
+                                        <th class="p-2 w-36 text-center">SKU</th>
                                         <th class="w-16 text-center">حذف</th>
                                     </tr>
                                 </thead>
@@ -526,13 +547,19 @@ include '../../includes/header.php';
                                     <tr class="item-row border-b last:border-0">
                                         <td class="p-2">
                                             <input type="hidden" name="items[<?php echo $index; ?>][id]" value="<?php echo $item['id']; ?>">
+                                            <input type="hidden" name="items[<?php echo $index; ?>][status]" value="<?php echo htmlspecialchars($item['product_status'] ?? 'available'); ?>">
+                                            <input type="hidden" name="items[<?php echo $index; ?>][notes_hidden]" value="<?php echo htmlspecialchars($item['notes'] ?? ''); ?>">
+                                            <input type="hidden" name="items[<?php echo $index; ?>][link_hidden]" value="<?php echo htmlspecialchars($item['product_link'] ?? ''); ?>">
                                             <input type="text" name="items[<?php echo $index; ?>][name]" value="<?php echo htmlspecialchars($item['product_name'] ?? ''); ?>" class="form-input text-sm" placeholder="اسم المنتج" required>
                                         </td>
                                         <td class="p-2">
                                             <input type="number" name="items[<?php echo $index; ?>][quantity]" value="<?php echo $item['quantity'] ?? 1; ?>" min="1" class="form-input text-center item-quantity text-sm">
                                         </td>
                                         <td class="p-2">
-                                            <input type="number" name="items[<?php echo $index; ?>][total]" value="<?php echo number_format($item['total_price'] ?? 0, 2, '.', ''); ?>" step="0.01" class="form-input text-center dir-ltr item-total text-sm">
+                                            <input type="number" name="items[<?php echo $index; ?>][total]" value="<?php echo number_format(floatval($item['total_price'] ?? 0), 2, '.', ''); ?>" step="0.01" class="form-input text-center dir-ltr item-total text-sm">
+                                        </td>
+                                        <td class="p-2">
+                                            <input type="text" name="items[<?php echo $index; ?>][sku]" value="<?php echo htmlspecialchars($item['shein_sku'] ?? ''); ?>" class="form-input text-sm dir-ltr" placeholder="SKU" autocomplete="off" spellcheck="false">
                                         </td>
                                         <td class="p-2 text-center">
                                             <button type="button" class="btn-delete-row" onclick="removeItem(this)" title="حذف">&#10005;</button>
@@ -611,10 +638,10 @@ include '../../includes/header.php';
                                 </button>
                             </div>
                             <input type="hidden" name="manual_override"              id="manual_override_flag"             value="0">
-                            <input type="hidden" name="manual_subtotal"              id="manual_subtotal_hidden"            value="0">
-                            <input type="hidden" name="manual_primary_discount"      id="manual_primary_discount_hidden"    value="0">
-                            <input type="hidden" name="manual_total_after_discount"  id="manual_total_after_discount_hidden" value="0">
-                            <input type="hidden" name="manual_final_total"           id="manual_final_total_hidden"         value="0">
+                            <input type="hidden" name="manual_subtotal"              id="manual_subtotal_hidden"            value="<?php echo number_format($val_subtotal, 2, '.', ''); ?>">
+                            <input type="hidden" name="manual_primary_discount"      id="manual_primary_discount_hidden"    value="<?php echo number_format($val_primary_discount, 2, '.', ''); ?>">
+                            <input type="hidden" name="manual_total_after_discount"  id="manual_total_after_discount_hidden" value="<?php echo number_format($val_total_after_discount, 2, '.', ''); ?>">
+                            <input type="hidden" name="manual_final_total"           id="manual_final_total_hidden"         value="<?php echo number_format($val_final, 2, '.', ''); ?>">
                             <div class="p-5 space-y-1">
 
                                 <div class="money-input-group">
@@ -800,6 +827,8 @@ function toggleManualOverride() {
             totalAfterDiscount: document.getElementById('total_after_discount').value,
             finalTotal:         document.getElementById('final_total_display').value
         };
+        // Sync hidden fields with current displayed values when activating manual override
+        syncHiddenManualFields();
         summaryFields.forEach(f => {
             f.removeAttribute('readonly');
             f.classList.remove('bg-gray-50', 'bg-red-50', 'bg-amber-50');
@@ -851,10 +880,17 @@ function syncHiddenManualFields() {
 
 document.addEventListener('DOMContentLoaded', () => {
     updateItemsBadge();
-    document.getElementById('items-container').addEventListener('input',         () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('items-container').addEventListener('input', (e) => { if (!manualOverrideActive && (e.target.classList.contains('item-total') || e.target.classList.contains('item-quantity'))) updateAllTotals(); });
     document.getElementById('modification-table-body').addEventListener('input', () => { if (!manualOverrideActive) updateAllTotals(); });
     document.getElementById('shipping_cost_input').addEventListener('input',     () => { if (!manualOverrideActive) updateAllTotals(); });
     document.getElementById('additional_discount_input').addEventListener('input',() => { if (!manualOverrideActive) updateAllTotals(); });
+
+        // FIX: Sync hidden manual fields on form submit so values are never zero
+        document.getElementById('editOrderForm').addEventListener('submit', function() {
+            if (manualOverrideActive) {
+                syncHiddenManualFields();
+            }
+        });
 });
 
 function updateAllTotals() {
@@ -912,6 +948,7 @@ function addItem() {
         </td>
         <td class="p-2"><input type="number" name="items[${itemIndex}][quantity]" value="1" min="1" class="form-input text-center item-quantity text-sm"></td>
         <td class="p-2"><input type="number" name="items[${itemIndex}][total]" value="0.00" step="0.01" class="form-input text-center dir-ltr item-total text-sm"></td>
+        <td class="p-2"><input type="text" name="items[${itemIndex}][sku]" class="form-input text-sm dir-ltr" placeholder="SKU" autocomplete="off" spellcheck="false"></td>
         <td class="p-2 text-center"><button type="button" class="btn-delete-row" onclick="removeItem(this)" title="حذف">&#10005;</button></td>
     `;
     container.appendChild(newRow);
@@ -923,7 +960,8 @@ function addItem() {
 function removeItem(button) {
     if (document.querySelectorAll('.item-row').length > 1) {
         button.closest('.item-row').remove();
-        updateAllTotals();
+        // Don't update financial totals when deleting items - preserve original values
+        // updateAllTotals();
         updateItemsBadge();
     } else {
         alert('يجب أن يحتوي الطلب على منتج واحد على الأقل.');

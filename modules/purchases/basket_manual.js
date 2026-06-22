@@ -19,17 +19,26 @@ document.addEventListener('DOMContentLoaded', function () {
     console.log('✅ DOM Content Loaded');
 
     // --- CLEAR DEFAULT VALUES: make all numeric inputs start empty ---
-    const inputsToClear = [
-        'sarInput', 'subtotalInput', 'shippingCost', 'shippingCostSar',
-        'taxRate', 'manualDiscountInput', 'points_discount', 'club_discount',
-        'totalProductsInput', 'grandTotalDisplay',
-        'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay',
-        'clubDiscountCurrencyDisplay', 'finalPriceOverrideSar', 'final_price_override'
-    ];
-    inputsToClear.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
+    // Skip this logic on edit page. We detect edit mode from the form's
+    // data-mode attribute (set by the PHP page) rather than the URL query
+    // string, because URL rewriting / clean URLs / cached JS could make a
+    // window.location.search check unreliable and wipe real saved values.
+    const basketFormEl = document.getElementById('basketForm');
+    const isEditPage = basketFormEl && basketFormEl.dataset.mode === 'edit';
+
+    if (!isEditPage) {
+        const inputsToClear = [
+            'sarInput', 'subtotalInput', 'shippingCost', 'shippingCostSar',
+            'taxRate', 'manualDiscountInput', 'points_discount', 'club_discount',
+            'totalProductsInput', 'grandTotalDisplay',
+            'manualDiscountCurrencyDisplay', 'pointsDiscountCurrencyDisplay',
+            'clubDiscountCurrencyDisplay', 'finalPriceOverrideSar', 'final_price_override'
+        ];
+        inputsToClear.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+    }
 
     // --- FINANCIAL CALCULATION SETUP ---
     const financialInputs = [

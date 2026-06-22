@@ -516,23 +516,35 @@ include '../../includes/header.php';
 
                     <div class="total-row">
                         <span><i class="fas fa-money-bill-wave"></i> المجموع قبل الخصم</span>
-                        <span><?php echo number_format($basket['subtotal_amount'] ?? 0); ?> ر.ي</span>
+                        <span>
+                            <div><?php echo number_format($basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0, 2); ?> YER</div>
+                            <small><?php echo number_format($basket['sar_amount'] ?? 0, 2); ?> SAR</small>
+                        </span>
                     </div>
 
                     <!-- EDITED: Corrected discount labels to match database columns -->
                     <div class="total-row">
                         <span><i class="fas fa-tag"></i> خصم يدوي</span>
-                        <span><?php echo number_format($basket['discount_amount'] ?? 0); ?> ر.ي</span>
+                        <span>
+                            <div><?php echo number_format($basket['manual_discount_yer'] ?? $basket['discount_amount'] ?? 0, 2); ?> YER</div>
+                            <small><?php echo number_format($basket['discount_amount'] ?? 0, 2); ?> SAR</small>
+                        </span>
                     </div>
 
                     <div class="total-row">
                         <span><i class="fas fa-star"></i> خصم نقاط</span>
-                        <span><?php echo number_format($basket['points_discount'] ?? 0); ?> ر.ي</span>
+                        <span>
+                            <div><?php echo number_format($basket['points_discount_yer'] ?? $basket['points_discount'] ?? 0, 2); ?> YER</div>
+                            <small><?php echo number_format($basket['points_discount'] ?? 0, 2); ?> SAR</small>
+                        </span>
                     </div>
 
                     <div class="total-row">
                         <span><i class="fas fa-users"></i> خصم نادي</span>
-                        <span><?php echo number_format($basket['club_discount'] ?? 0); ?> ر.ي</span>
+                        <span>
+                            <div><?php echo number_format($basket['club_discount_yer'] ?? $basket['club_discount'] ?? 0, 2); ?> YER</div>
+                            <small><?php echo number_format($basket['club_discount'] ?? 0, 2); ?> SAR</small>
+                        </span>
                     </div>
 
                     <?php if (!empty($basket['coupon_code'])): ?>
@@ -544,30 +556,42 @@ include '../../includes/header.php';
 
                     <div class="total-row">
                         <span><i class="fas fa-tags"></i> إجمالي الخصومات</span>
-                        <span><?php
-                        // This calculation is correct as it sums all three discount columns
-                        $total_discounts = ($basket['discount_amount'] ?? 0) + ($basket['points_discount'] ?? 0) + ($basket['club_discount'] ?? 0);
-                        echo number_format($total_discounts);
-                        ?> ر.ي</span>
+                        <span>
+                            <div><?php 
+                            $total_discounts_yer = ($basket['manual_discount_yer'] ?? $basket['discount_amount'] ?? 0) + ($basket['points_discount_yer'] ?? $basket['points_discount'] ?? 0) + ($basket['club_discount_yer'] ?? $basket['club_discount'] ?? 0);
+                            echo number_format($total_discounts_yer, 2); ?> YER</div>
+                            <small><?php 
+                            $total_discounts = ($basket['discount_amount'] ?? 0) + ($basket['points_discount'] ?? 0) + ($basket['club_discount'] ?? 0);
+                            echo number_format($total_discounts, 2); ?> SAR</small>
+                        </span>
                     </div>
 
                     <?php if (isset($basket['shipping_cost']) && $basket['shipping_cost'] > 0): ?>
                         <div class="total-row">
                             <span><i class="fas fa-shipping-fast"></i> تكلفة الشحن</span>
-                            <span><?php echo number_format($basket['shipping_cost']); ?> ر.ي</span>
+                            <span>
+                                <div><?php echo number_format($basket['shipping_cost_yer'] ?? $basket['shipping_cost'] ?? 0, 2); ?> YER</div>
+                                <small><?php echo number_format(($basket['shipping_cost_yer'] ?? $basket['shipping_cost'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140), 2); ?> SAR</small>
+                            </span>
                         </div>
                     <?php endif; ?>
 
                     <?php if (isset($basket['tax_amount']) && $basket['tax_amount'] > 0): ?>
                         <div class="total-row">
                             <span><i class="fas fa-percent"></i> الضريبة (<?php echo $basket['tax_rate'] ?? 0; ?>%)</span>
-                            <span><?php echo number_format($basket['tax_amount']); ?> ر.ي</span>
+                            <span>
+                                <div><?php echo number_format($basket['tax_amount_yer'] ?? $basket['tax_amount'] ?? 0, 2); ?> YER</div>
+                                <small><?php echo number_format($basket['tax_amount'] ?? 0, 2); ?> SAR</small>
+                            </span>
                         </div>
                     <?php endif; ?>
 
                     <div class="total-row">
                         <span><i class="fas fa-check-circle"></i> الصافي النهائي</span>
-                        <span class="grand-total"><?php echo number_format($basket['final_amount'] ?? 0); ?> ر.ي</span>
+                        <span class="grand-total">
+                            <div><?php echo number_format($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0, 2); ?> YER</div>
+                            <small><?php echo number_format(($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140), 2); ?> SAR</small>
+                        </span>
                     </div>
                 </div>
             </div>

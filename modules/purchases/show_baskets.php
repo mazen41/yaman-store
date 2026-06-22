@@ -65,6 +65,7 @@ try {
         pb.id, pb.basket_name, pb.basket_code, pb.created_at, pb.total_items,
         pb.account_number,
         pb.subtotal_amount, pb.discount_amount, pb.final_amount, pb.status,
+        pb.sar_amount, pb.yer_exchange_rate, pb.subtotal_amount_yer, pb.grand_total_yer,
         pbs.status_name_ar,
         pb.payment_source_type, pb.payment_source_id, pb.purchase_group_id, pg.group_name,
         u.username AS created_by_name, ba.bank_name, ba.account_number AS source_account_number,
@@ -550,8 +551,8 @@ include '../../includes/header.php';
                         <th>رقم الحساب</th>
                         <th>رقم التتبع</th>
                         <th>عدد المنتجات</th>
-                        <th>السعر قبل الخصم</th>
-                        <th>السعر بعد الخصم</th>
+                        <th>السعر قبل الخصم<br><small>(YER / SAR)</small></th>
+                        <th>السعر النهائي<br><small>(YER / SAR)</small></th>
                         <th>مصدر الدفع</th>
                         <th>الحالة</th>
                         <th>المجموعة</th>
@@ -562,12 +563,16 @@ include '../../includes/header.php';
                 </thead>
                 <tbody>
                     <?php
-                    $total_subtotal = 0;
-                    $total_final_amount = 0;
+                    $total_subtotal_yer = 0;
+                    $total_subtotal_sar = 0;
+                    $total_final_yer = 0;
+                    $total_final_sar = 0;
 
                     foreach ($baskets as $index => $basket) :
-                        $total_subtotal += $basket['subtotal_amount'] ?? 0;
-                        $total_final_amount += $basket['final_amount'] ?? 0;
+                        $total_subtotal_yer += $basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0;
+                        $total_subtotal_sar += $basket['sar_amount'] ?? 0;
+                        $total_final_yer += $basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0;
+                        $total_final_sar += ($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140);
                     ?>
                         <tr id="basket-row-<?php echo $basket['id']; ?>">
                             <td><?php echo $index + 1; ?></td>
@@ -584,8 +589,14 @@ include '../../includes/header.php';
                                 <?php else : ?><span>-</span><?php endif; ?>
                             </td>
                             <td><span><?php echo intval($basket['total_items']); ?> منتج</span></td>
-                            <td><strong><?php echo number_format($basket['subtotal_amount'] ?? 0); ?> ر.ي</strong></td>
-                            <td><strong><?php echo number_format($basket['final_amount'] ?? 0); ?> ر.ي</strong></td>
+                            <td>
+                                <div><strong><?php echo number_format($basket['subtotal_amount_yer'] ?? $basket['subtotal_amount'] ?? 0, 2); ?> YER</strong></div>
+                                <small><?php echo number_format($basket['sar_amount'] ?? 0, 2); ?> SAR</small>
+                            </td>
+                            <td>
+                                <div><strong><?php echo number_format($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0, 2); ?> YER</strong></div>
+                                <small><?php echo number_format(($basket['grand_total_yer'] ?? $basket['final_amount'] ?? 0) / ($basket['yer_exchange_rate'] ?? 140), 2); ?> SAR</small>
+                            </td>
                             <td>
                                 <?php
                                 $payment_type = $basket['payment_source_type'] ?? '';
@@ -629,9 +640,15 @@ include '../../includes/header.php';
                 <tfoot>
                     <tr style="background-color: #f8f9fa; font-weight: bold; border-top: 2px solid #dee2e6;">
                         <td colspan="6" style="text-align: center; font-size: 16px;">الإجمالي</td>
-                        <td style="font-size: 16px;"><strong><?php echo number_format($total_subtotal); ?> ر.ي</strong></td>
-                        <td style="font-size: 16px;"><strong><?php echo number_format($total_final_amount); ?> ر.ي</strong></td>
-                        <td colspan="6"></td> 
+                        <td style="font-size: 16px;">
+                            <div><strong><?php echo number_format($total_subtotal_yer, 2); ?> YER</strong></div>
+                            <small><?php echo number_format($total_subtotal_sar, 2); ?> SAR</small>
+                        </td>
+                        <td style="font-size: 16px;">
+                            <div><strong><?php echo number_format($total_final_yer, 2); ?> YER</strong></div>
+                            <small><?php echo number_format($total_final_sar, 2); ?> SAR</small>
+                        </td>
+                        <td colspan="6"></td>
                     </tr>
                 </tfoot>
             </table>
