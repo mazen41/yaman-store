@@ -790,16 +790,16 @@ function captureFrameBlob(video) {
 function extractSkuFromText(text) {
   var clean  = String(text || '').replace(/[\s\r\n]+/g, '').toUpperCase();
   var spaced = String(text || '').replace(/[\r\n]+/g, ' ').replace(/  +/g, ' ').toUpperCase();
-  var m = clean.match(/S[KA][A-Z0-9_\-]{6,20}/);
+  var m = clean.match(/S[KA][A-Z0-9_\-]{3,20}/);
   if (m) return m[0];
-  m = spaced.replace(/ /g,'').match(/S[KA][A-Z0-9_\-]{6,20}/);
+  m = spaced.replace(/ /g,'').match(/S[KA][A-Z0-9_\-]{3,20}/);
   if (m) return m[0];
   var fixed = clean
     .replace(/^5K/, 'SK').replace(/SKK/, 'SK').replace(/5K(?=[A-Z0-9])/, 'SK').replace(/^5A/, 'SA').replace(/SAA/, 'SA').replace(/5A(?=[A-Z0-9])/, 'SA')
     .replace(/[Il|](?=[0-9])/g, '1')
     .replace(/O(?=[0-9])/g,     '0')
     .replace(/(?<=[0-9])O/g,    '0');
-  m = fixed.match(/S[KA][A-Z0-9_\-]{6,20}/);
+  m = fixed.match(/S[KA][A-Z0-9_\-]{3,20}/);
   if (m) return m[0];
   return null;
 }

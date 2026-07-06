@@ -54,7 +54,7 @@ try {
              WHERE co.purchase_group_id = pg.id AND co.status NOT IN ('cancelled', 'refunded')
             ) as total_sales,
             -- Calculate Total Costs (Purchases) for the group
-            (SELECT SUM(COALESCE(pb.final_amount, 0))
+            (SELECT SUM(COALESCE(pb.grand_total_yer, pb.final_amount, 0))
              FROM purchase_baskets pb
              WHERE pb.purchase_group_id = pg.id
             ) as total_purchases_cost

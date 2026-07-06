@@ -32,7 +32,7 @@ if (!$approval_id) {
 
 // --- Fetch Approval Details ---
 $app_stmt = $db->prepare("
-    SELECT oa.*, c.name as customer_name_from_customer_table, c.customer_code, c.mobile_number as customer_mobile_number, c.whatsapp_number as customer_whatsapp_number, ct.name as customer_type_name_from_db
+    SELECT oa.*, c.name as customer_name_from_customer_table, c.customer_code, c.mobile_number as customer_mobile_number, c.whatsapp_number as customer_whatsapp_number, ct.name as customer_type_name_from_db, c.customer_type_id as customer_type_id_for_discount
     FROM order_approvals oa
     LEFT JOIN customers c ON oa.customer_id = c.id
     LEFT JOIN customer_types ct ON c.customer_type_id = ct.id
@@ -65,6 +65,7 @@ $approval_images = $images_stmt->fetchAll(PDO::FETCH_ASSOC);
 // --- Data Prep ---
 $customer_currency = $approval['currency'] ?? 'USD';
 $customer_type_name = $approval['customer_type_name_from_db'] ?? 'عام';
+$customer_type_id_for_discount = $approval['customer_type_id_for_discount'] ?? null;
 $customer_name = $approval['customer_name_from_customer_table'] ?? $approval['customer_name'];
 $customer_code = $approval['customer_code'] ?? 'N/A';
 $payment_proof_path = $approval['payment_proof_path'] ?? ''; 
@@ -297,9 +298,9 @@ include '../../includes/header.php';
                              <div><label>تاريخ التسليم المتوقع</label><input type="date" name="expected_delivery_date" value="<?php echo htmlspecialchars($approval['expected_delivery_date']); ?>" class="modern-input"></div>
                             <div><label>الشحن</label><input type="number" name="shipping_cost" id="shipping_cost_admin" value="<?php echo $approval['shipping_cost']; ?>" class="modern-input" oninput="updateTotals()"></div>
                             <div class="grid grid-cols-2 gap-3">
-                                <div><label>خصم (%)</label>
+                                <div><label>خصم تلقائي (%)</label>
                                 <input type="number" name="automatic_discount_percentage" id="automatic_discount_percentage" value="<?php echo $approval['automatic_discount_percentage']; ?>" class="modern-input non-editable-field" readonly></div>
-                                <div><label>خصم (مبلغ)</label>
+                                <div><label>خصم تلقائي (مبلغ)</label>
                                 <input type="number" name="automatic_discount_amount" id="automatic_discount_amount" value="<?php echo $approval['automatic_discount_amount']; ?>" class="modern-input non-editable-field" readonly></div>
                             </div>
                             <div><label>كود الكوبون</label>
@@ -514,15 +515,31 @@ include '../../includes/header.php';
         updateTotals();
     }
     
-    function updateTotals() {
+    const customerTypeIdForDiscount = <?php echo json_encode($customer_type_id_for_discount); ?>;
+
+    async function updateTotals() {
         let subtotal = Array.from(document.querySelectorAll('.item-total-input')).reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
         const shippingCost = parseFloat(document.getElementById('shipping_cost_admin').value) || 0;
         const paidAmount = parseFloat(document.getElementById('paid_amount_admin').value) || 0;
-        
-        // Recalculate automatic discount amount from the approved subtotal.
         const couponDiscountAmt = parseFloat(document.getElementById('coupon_discount_amount').value) || 0;
-        const autoDiscountPercent = parseFloat(document.getElementById('automatic_discount_percentage').value) || 0;
-        const autoDiscountAmt = subtotal * (autoDiscountPercent / 100);
+
+        // Re-fetch automatic discount based on customer type + current subtotal (same logic as create_order.php)
+        let autoDiscountPercent = 0;
+        let autoDiscountAmt = 0;
+        if (customerTypeIdForDiscount && subtotal > 0) {
+            try {
+                const response = await fetch(`get_customer_discount.php?customer_type_id=${customerTypeIdForDiscount}&amount=${subtotal}`);
+                const data = await response.json();
+                if (data.success && data.discount_percentage > 0) {
+                    autoDiscountPercent = data.discount_percentage;
+                    autoDiscountAmt = subtotal * (autoDiscountPercent / 100);
+                }
+            } catch (e) {
+                console.error('Error fetching customer discount:', e);
+            }
+        }
+
+        document.getElementById('automatic_discount_percentage').value = autoDiscountPercent.toFixed(2);
         document.getElementById('automatic_discount_amount').value = autoDiscountAmt.toFixed(2);
 
         let totalDiscount = autoDiscountAmt + couponDiscountAmt;
@@ -532,7 +549,7 @@ include '../../includes/header.php';
         document.getElementById('subtotalDisplay').textContent = subtotal.toFixed(2);
         document.getElementById('totalDiscountDisplay').textContent = totalDiscount.toFixed(2);
         document.getElementById('shippingDisplay').textContent = shippingCost.toFixed(2);
-        document.getElementById('paidAmountDisplay').textContent = paidAmount.toFixed(2); // Display the paid amount
+        document.getElementById('paidAmountDisplay').textContent = paidAmount.toFixed(2);
         document.getElementById('finalTotalDisplay').textContent = finalAmountAfterPaid.toFixed(2);
     }
 

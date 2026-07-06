@@ -48,7 +48,7 @@ $payload = json_encode([
 
                 'type' => 'text',
 
-                'text' => 'Look at this product label. Find the SKU code which starts with "sk" or "SK" followed by numbers (example: sk2410290496477028). Reply with ONLY the SKU code, nothing else. If you cannot find it, reply with: NONE'
+                'text' => 'Look at this product label. Find the SKU code which starts with "SK" or "SA" followed by numbers (examples: sk2410290496477028, SA12345, SA000987). Reply with ONLY the SKU code, nothing else. If you cannot find it, reply with: NONE'
 
             ]
 
@@ -102,7 +102,10 @@ $raw  = trim($data['choices'][0]['message']['content'] ?? '');
 
 $sku = null;
 
-if (preg_match('/sk[a-z0-9_\-]{6,25}/i', $raw, $m)) {
+// FIX: was 'sk' only — excluded every SA-prefixed SKU entirely.
+// Now matches SK or SA, with the same 3-25 char floor used by
+// ocr_service.py and the Flutter app so all three layers agree.
+if (preg_match('/s[ka][a-z0-9_\-]{3,25}/i', $raw, $m)) {
 
     $sku = strtoupper($m[0]);
 

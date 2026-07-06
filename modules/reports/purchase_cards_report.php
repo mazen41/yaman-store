@@ -33,7 +33,7 @@ $query = "
         pc.initial_balance as total_added,
         pc.created_at,
         COUNT(DISTINCT pb.id) as transactions_count,
-        COALESCE(SUM(pb.final_amount), 0) as total_used,
+        COALESCE(SUM(COALESCE(pb.grand_total_yer, pb.final_amount)), 0) as total_used,
         (COALESCE(pc.card_purchase_amount,0) - COALESCE(pc.initial_balance,0)) as profit_amount,
         CASE
             WHEN COALESCE(pc.card_purchase_amount,0) > 0

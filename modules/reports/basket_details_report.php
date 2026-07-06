@@ -318,13 +318,13 @@ include '../../includes/header.php';
                     <tfoot style="background: #f3f4f6; font-weight: bold;">
                         <tr>
                             <td colspan="6">الإجماليات</td>
-                            <td><?php echo number_format($total_subtotal, 2); ?> ر.ي</td>
+                            <td><?php echo number_format($total_subtotal_yer, 2); ?> ر.ي</td>
                             <td class="discount-value"><?php echo number_format($total_manual_discount, 2); ?> ر.ي</td>
                             <td class="discount-value"><?php echo number_format($total_coupon_discount, 2); ?> ر.ي</td>
                             <td class="discount-value"><?php echo number_format($total_club_discount, 2); ?> ر.ي</td>
                             <td class="discount-value"><?php echo number_format($total_points_discount, 2); ?> ر.ي</td>
                             <td><?php echo number_format($total_overall_discount, 2); ?> ر.ي</td>
-                            <td style="color:#10b981;"><?php echo number_format($total_final_amount, 2); ?> ر.ي</td>
+                            <td style="color:#10b981;"><?php echo number_format($total_final_yer, 2); ?> ر.ي</td>
                             <td></td>
                         </tr>
                     </tfoot>

@@ -376,8 +376,8 @@ include '../../includes/header.php';
                         <tr style="background: #f3f4f6; font-weight: bold; border-top: 2px solid #ddd;">
                             <td colspan="5">الإجمالي</td>
                             <td><?php echo number_format($total_items); ?></td>
-                            <td><?php echo number_format($total_subtotal); ?> ر.ي</td>
-                            <td><strong><?php echo number_format($total_final_amount); ?> ر.ي</strong></td>
+                            <td><?php echo number_format($total_subtotal_yer, 2); ?> ر.ي</td>
+                            <td><strong><?php echo number_format($total_final_yer, 2); ?> ر.ي</strong></td>
                             <td colspan="5"></td>
                         </tr>
                     </tfoot>

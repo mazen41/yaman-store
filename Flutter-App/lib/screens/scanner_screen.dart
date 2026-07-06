@@ -299,8 +299,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   // Stability buffer
   final List<String> _skuHistory = [];
   static const int _stabilityFrames = 3;
-  // FIX: expanded from S[KA] to S[A-Z] to match SK, SA, SI, SE and all other S? formats
-  static const _skuPattern = r'S[A-Z]-?\d{6,}';
+  // FIX: expanded from S[KA] to S[A-Z] to match SK, SA, SI, SE and all other S? formats.
+  // FIX 2: lowered digit floor from 6 to 3 — short SA-format SKUs (e.g. SA-001,
+  // SA12345) have fewer digits than SK-format ones and were being silently
+  // rejected by the old {6,} minimum.
+  static const _skuPattern = r'S[A-Z]-?\d{3,}';
 
   // Dedup within cooldown
   String _lastProcessedSku = '';

@@ -209,7 +209,7 @@ try {
     $stats = [
         'total_baskets'                  => count($baskets),
         'total_baskets_amount'           => array_sum(array_map(function($b) {
-            return floatval($b['final_amount'] ?? 0);
+            return floatval($b['grand_total_yer'] ?? $b['final_amount'] ?? 0);
         }, $baskets)),
         'total_customer_orders'          => count($customer_orders),
         'total_customer_orders_amount'   => array_sum(array_column($customer_orders, 'final_amount')),

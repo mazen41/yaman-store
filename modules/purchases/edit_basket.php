@@ -330,9 +330,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         }
         $attachment_path_json = !empty($attachment_paths) ? json_encode($attachment_paths) : null;
 
+        // ===================================================================
+        // GET ORIGINAL BASKET STATE BEFORE UPDATE (for payment adjustment)
+        // ===================================================================
+        $original_basket_stmt = $db->prepare("SELECT * FROM purchase_baskets WHERE id = ?");
+        $original_basket_stmt->execute([$basket_id]);
+        $original_basket = $original_basket_stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$original_basket) {
+            throw new Exception("Basket not found or has been deleted.");
+        }
+        // ===================================================================
+        // END: GET ORIGINAL BASKET STATE
+        // ===================================================================
 
         // --- Server-side financial calculation ---
-        $base_for_tax = $subtotal_amount - $total_discount_for_calculation; // Use the calculated total discount
+        // Calculate using YER fields (source of truth uses grand_total_yer)
+        $base_for_tax_yer = $subtotal_amount_yer - $total_discount_yer;
+        $tax_amount_yer = 0;
+        $calculated_grand_total_yer = 0;
+
+        if ($tax_included) {
+            $tax_amount_yer = ($tax_rate > 0) ? ($base_for_tax_yer * $tax_rate) / (100 + $tax_rate) : 0;
+            $calculated_grand_total_yer = $base_for_tax_yer + $shipping_cost_yer;
+        } else {
+            $tax_amount_yer = $base_for_tax_yer * ($tax_rate / 100);
+            $calculated_grand_total_yer = $base_for_tax_yer + $tax_amount_yer + $shipping_cost_yer;
+        }
+
+        // Ensure grand_total_yer uses the calculated value (source of truth)
+        if ($grand_total_yer <= 0 || $grand_total_yer === null) {
+            $grand_total_yer = $calculated_grand_total_yer;
+        }
+
+        // Calculate legacy fields for backward compatibility
+        $base_for_tax = $subtotal_amount - $total_discount_for_calculation;
         $tax_amount = 0;
         $final_total = 0;
 
@@ -343,6 +374,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             $tax_amount = $base_for_tax * ($tax_rate / 100);
             $final_total = $base_for_tax + $tax_amount + $shipping_cost;
         }
+
+        // Ensure final_amount matches grand_total_yer (source of truth)
+        $final_total = $grand_total_yer;
 
         // Ensure YER editable columns exist (backward compatible safe extension)
         $yerColumnsToEnsure = [
@@ -454,24 +488,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         // ===================================================================
         // PAYMENT ADJUSTMENT LOGIC
         // ===================================================================
-        
-        // Get original basket state for payment adjustment
-        $stmt = $db->prepare("SELECT * FROM purchase_baskets WHERE id = ? FOR UPDATE");
-        $stmt->execute([$basket_id]);
-        $original_basket = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$original_basket) {
-            throw new Exception("Basket not found or has been deleted.");
-        }
 
         // Determine the amount that was originally deducted
+        // Use grand_total_yer as source of truth, with fallback to final_amount
         $original_amount_deducted = (float)($original_basket['final_price_override'] !== null && $original_basket['final_price_override'] > 0
             ? $original_basket['final_price_override']
-            : $original_basket['final_amount']);
+            : ($original_basket['grand_total_yer'] ?? $original_basket['final_amount'] ?? 0));
 
         // Determine the new amount to be deducted
+        // Use grand_total_yer as source of truth, with fallback to final_price_override or final_total
         $new_amount_to_deduct = (float)($final_price_override !== null && $final_price_override >= 0
             ? $final_price_override
-            : $final_total);
+            : $grand_total_yer);
 
         // Get new payment source
         $new_payment_type = $payment_source_type;
@@ -502,7 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             if ($original_payment_type && $original_payment_id && $original_amount_deducted > 0) {
                 refundToSource($db, $original_payment_type, $original_payment_id, $original_amount_deducted, $basket_id, $_SESSION['user_id']);
             }
-            
+
             // b. Deduct the full new amount from the new source if one is selected and a positive amount is due
             if ($new_payment_type && $new_payment_id && $new_amount_to_deduct > 0) {
                 deductFromSource($db, $new_payment_type, $new_payment_id, $new_amount_to_deduct, $basket_id, $_SESSION['user_id'], $basket_name);
@@ -1309,6 +1337,6 @@ include '../../includes/header.php';
     </div>
 </div>
 
-<script src="basket_manual.js?v=4.8"></script>
+<script src="basket_manual.js?v=4.9"></script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -117,45 +117,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
         try {
             $db->beginTransaction();
 
-            // --- Detect if financial values should be preserved (no manual override, no shipping/discount changes) ---
+            // --- Detect if financial values should be preserved (no manual override, no shipping/discount changes, no damaged items changes) ---
+            // Compare by total sum — catches add, delete, AND price edits reliably
+            $original_damaged_total_check = 0;
+            foreach ($original_damaged_items as $d) { $original_damaged_total_check += floatval($d['price']); }
+            $posted_damaged_total_check = 0;
+            foreach ($posted_damaged_items as $d) { $posted_damaged_total_check += floatval($d['price'] ?? 0); }
+
+            $damaged_items_changed = (
+                count($original_damaged_items) !== count($posted_damaged_items) ||
+                abs($original_damaged_total_check - $posted_damaged_total_check) > 0.001
+            );
+
             $preserve_financial_values = !$manual_override &&
                                          abs(floatval($order['shipping_cost']) - $shipping_cost) <= 0.001 &&
-                                         abs(floatval($order['additional_discount']) - $additional_discount) <= 0.001;
+                                         abs(floatval($order['additional_discount']) - $additional_discount) <= 0.001 &&
+                                         !$damaged_items_changed;
 
             // --- 1. Calculate New Totals (or preserve original values) ---
+            // Always preserve subtotal from DB - items are never used for calculations
+            $subtotal_amount = floatval($order['subtotal_amount']);
+            $new_total_quantity = 0;
+            foreach ($posted_items as $item) {
+                $new_total_quantity += intval($item['quantity'] ?? 0);
+            }
+
+            // Calculate damaged total from posted damaged items
+            $damaged_total = 0;
+            foreach ($posted_damaged_items as $damaged) {
+                $damaged_total += floatval($damaged['price'] ?? 0);
+            }
+
             if ($preserve_financial_values) {
-                // Preserve original financial values from database
-                $subtotal_amount = floatval($order['subtotal_amount']);
-                $calculated_discount = floatval($order['automatic_discount_amount'] ?? 0) + floatval($order['discount_amount'] ?? 0);
+                // No financial change — preserve DB values entirely
+                $calculated_discount = floatval($order['discount_amount'] ?? 0);
                 $final_automatic_discount_amount = floatval($order['automatic_discount_amount'] ?? 0);
+                $discount_percentage_for_calculation = floatval($order['automatic_discount_percentage']);
+                // Preserve original totals exactly from DB — do NOT recalculate
                 $total_amount = floatval($order['total_amount']);
                 $final_amount = floatval($order['final_amount']);
-                $discount_percentage_for_calculation = floatval($order['automatic_discount_percentage']);
-                $new_total_quantity = 0;
-                foreach ($posted_items as $item) {
-                    $new_total_quantity += intval($item['quantity'] ?? 0);
-                }
-                $damaged_total = 0;
-                foreach ($posted_damaged_items as $damaged) {
-                    $damaged_total += floatval($damaged['price']);
-                }
-                $net_value_for_discount = max(0, $subtotal_amount - $damaged_total);
                 $total_discount_for_journal = $calculated_discount + $additional_discount;
             } else {
-                // Normal recalculation when manual override or financial changes
-                $subtotal_amount    = 0;
-                $new_total_quantity = 0;
-                foreach ($posted_items as $item) {
-                    $subtotal_amount    += floatval($item['total']);
-                    $new_total_quantity += intval($item['quantity'] ?? 0);
-                }
-
-                $damaged_total = 0;
-                foreach ($posted_damaged_items as $damaged) {
-                    $damaged_total += floatval($damaged['price']);
-                }
-
-                $net_value_for_discount = max(0, $subtotal_amount - $damaged_total);
+                // Recalculate discount and final totals when manual override or financial changes (shipping, additional discount, damaged items)
+                $net_value_for_discount = $subtotal_amount - $damaged_total;
 
                 // --- Discount Calculation ---
                 $calculated_discount              = 0;
@@ -194,12 +198,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
                     $calculated_discount = $manual_primary_discount;
                     $total_amount        = $manual_total_after_discount > 0
                         ? $manual_total_after_discount
-                        : max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
+                        : $subtotal_amount - $damaged_total - $calculated_discount - $additional_discount;
                     $final_amount        = $manual_final_total > 0
                         ? $manual_final_total
-                        : max(0, $total_amount + $shipping_cost);
+                        : $total_amount + $shipping_cost;
                 } else {
-                    $total_amount = max(0, $subtotal_amount - $calculated_discount - $damaged_total - $additional_discount);
+                    $total_amount = $subtotal_amount - $damaged_total - $calculated_discount - $additional_discount;
                     $final_amount = $total_amount + $shipping_cost;
                 }
 
@@ -323,46 +327,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
             $change_descriptions = [];
             $old_final_amount = floatval($order['final_amount'] ?? 0);
 
-            // Build maps for comparison
-            $original_items_map = array_column($original_items, null, 'id');
-            $posted_items_map   = [];
+            // Calculate total quantity before and after
+            $original_total_quantity = 0;
+            foreach ($original_items as $item) {
+                $original_total_quantity += intval($item['quantity'] ?? 0);
+            }
+            $new_total_quantity = 0;
             foreach ($posted_items as $item) {
-                $item_id = intval($item['id'] ?? 0);
-                if ($item_id > 0) {
-                    $posted_items_map[$item_id] = $item;
-                }
+                $new_total_quantity += intval($item['quantity'] ?? 0);
             }
 
-            // Detect deleted items
-            foreach ($original_items_map as $orig_id => $orig_item) {
-                if (!isset($posted_items_map[$orig_id])) {
-                    $change_descriptions[] = "تم حذف المنتج \"{$orig_item['product_name']}\".";
-                }
-            }
-
-            // Detect added / modified items
-            foreach ($posted_items as $item) {
-                $item_id   = intval($item['id'] ?? 0);
-                $item_name = trim($item['name'] ?? '');
-                $item_qty  = intval($item['quantity'] ?? 0);
-                $item_total = floatval($item['total'] ?? 0);
-
-                if ($item_id === 0) {
-                    $change_descriptions[] = "تم إضافة منتج جديد \"{$item_name}\" (الكمية: {$item_qty}، الإجمالي: " . number_format($item_total, 2) . " ريال).";
-                } elseif (isset($original_items_map[$item_id])) {
-                    $orig = $original_items_map[$item_id];
-                    $changes = [];
-                    if (intval($orig['quantity']) !== $item_qty) {
-                        $changes[] = "تم تغيير كمية المنتج \"{$item_name}\" من {$orig['quantity']} إلى {$item_qty}.";
-                    }
-                    if (abs(floatval($orig['total_price']) - $item_total) > 0.001) {
-                        $changes[] = "تم تغيير إجمالي المنتج \"{$item_name}\" من " . number_format(floatval($orig['total_price']), 2) . " ريال إلى " . number_format($item_total, 2) . " ريال.";
-                    }
-                    if ($orig['product_name'] !== $item_name) {
-                        $changes[] = "تم تغيير اسم المنتج من \"{$orig['product_name']}\" إلى \"{$item_name}\".";
-                    }
-                    $change_descriptions = array_merge($change_descriptions, $changes);
-                }
+            // Log quantity change if different
+            if ($original_total_quantity !== $new_total_quantity) {
+                $change_descriptions[] = "تم تعديل القطع من {$original_total_quantity} إلى {$new_total_quantity}.";
             }
 
             // Damaged items log
@@ -418,15 +395,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && !empty($order)) {
                 foreach ($change_descriptions as $description) {
                     $log_notes .= "• {$description}\n";
                 }
-                // Only show financial summary if it changed or if not preserving values
-                if ($preserve_financial_values) {
-                    $log_notes .= "\nملاحظة: تم الاحتفاظ بالملخص المالي الأصلي (الإجمالي: " . number_format($final_amount, 2) . " ريال).";
-                } else {
-                    $log_notes .= "\nالإجمالي السابق: " . number_format($old_final_amount, 2) . " ريال.\n";
-                    $log_notes .= "الإجمالي الجديد: " . number_format($final_amount, 2) . " ريال.";
-                }
+                // Always log الإجمالي السابق و الإجمالي الجديد
+                $log_notes .= "\nالإجمالي السابق: " . number_format($old_final_amount, 2) . " ريال.\n";
+                $log_notes .= "الإجمالي الجديد: " . number_format($final_amount, 2) . " ريال.";
             } else {
-                $log_notes = "تم حفظ الطلب بدون تغييرات ملحوظة.\n\nالإجمالي: " . number_format($final_amount, 2) . " ريال.";
+                $log_notes = "تم حفظ الطلب بدون تغييرات ملحوظة.\n\nالإجمالي السابق: " . number_format($old_final_amount, 2) . " ريال.\nالإجمالي الجديد: " . number_format($final_amount, 2) . " ريال.";
             }
 
             $log_stmt = $db->prepare("
@@ -530,7 +503,7 @@ include '../../includes/header.php';
                                 <button type="button" class="btn btn-primary text-sm" onclick="event.stopPropagation(); addItem()">+ إضافة منتج</button>
                             </div>
                         </div>
-                        <div id="order-items-body">
+                        <div id="order-items-body" style="display:block;">
                         <div class="p-4 overflow-x-auto">
                             <table class="w-full min-w-[600px]">
                                 <thead class="border-b bg-gray-50">
@@ -694,7 +667,7 @@ include '../../includes/header.php';
                                     <label><span>الإجمالي بعد الخصم:</span></label>
                                     <div class="input-wrapper">
                                         <span class="currency">ريال</span>
-                                        <input type="number" id="total_after_discount" readonly class="form-input bg-gray-50 summary-field" value="<?php echo number_format(max(0, $val_total_after_discount), 2, '.', ''); ?>">
+                                        <input type="number" id="total_after_discount" readonly class="form-input bg-gray-50 summary-field" value="<?php echo number_format($val_total_after_discount, 2, '.', ''); ?>">
                                     </div>
                                 </div>
 
@@ -711,7 +684,7 @@ include '../../includes/header.php';
                                         <span class="text-xl font-bold text-indigo-700">الإجمالي النهائي:</span>
                                     </div>
                                     <div class="input-wrapper">
-                                        <input type="number" id="final_total_display" readonly class="form-input bg-white text-2xl text-indigo-700 border-indigo-200 text-center font-black summary-field" value="<?php echo number_format(max(0, $val_final), 2, '.', ''); ?>">
+                                        <input type="number" id="final_total_display" readonly class="form-input bg-white text-2xl text-indigo-700 border-indigo-200 text-center font-black summary-field" value="<?php echo number_format($val_final, 2, '.', ''); ?>">
                                     </div>
                                     <div class="text-center text-gray-400 text-xs mt-1">ريال يمني</div>
                                 </div>
@@ -792,9 +765,16 @@ function toggleOrderItems(e) {
     if (e && e.target && e.target.closest('button')) return;
     const body    = document.getElementById('order-items-body');
     const chevron = document.getElementById('order-items-chevron');
-    const isHidden = body.classList.contains('hidden');
-    body.classList.toggle('hidden', !isHidden);
-    chevron.style.transform = isHidden ? 'rotate(180deg)' : '';
+    const isVisible = body.style.maxHeight !== '0px';
+    if (isVisible) {
+        body.style.maxHeight = '0px';
+        body.style.overflow  = 'hidden';
+        chevron.style.transform = '';
+    } else {
+        body.style.maxHeight = '9999px';
+        body.style.overflow  = 'visible';
+        chevron.style.transform = 'rotate(180deg)';
+    }
 }
 
 function updateItemsBadge() {
@@ -866,6 +846,7 @@ function toggleManualOverride() {
             document.getElementById('final_total_display').value        = savedSummaryValues.finalTotal;
             savedSummaryValues = null;
         } else {
+            // Re-run totals based on DB values (no product calculation)
             updateAllTotals();
         }
     }
@@ -880,60 +861,77 @@ function syncHiddenManualFields() {
 
 document.addEventListener('DOMContentLoaded', () => {
     updateItemsBadge();
-    document.getElementById('items-container').addEventListener('input', (e) => { if (!manualOverrideActive && (e.target.classList.contains('item-total') || e.target.classList.contains('item-quantity'))) updateAllTotals(); });
-    document.getElementById('modification-table-body').addEventListener('input', () => { if (!manualOverrideActive) updateAllTotals(); });
-    document.getElementById('shipping_cost_input').addEventListener('input',     () => { if (!manualOverrideActive) updateAllTotals(); });
-    document.getElementById('additional_discount_input').addEventListener('input',() => { if (!manualOverrideActive) updateAllTotals(); });
 
-        // FIX: Sync hidden manual fields on form submit so values are never zero
-        document.getElementById('editOrderForm').addEventListener('submit', function() {
-            if (manualOverrideActive) {
-                syncHiddenManualFields();
-            }
-        });
+    // No listeners on items — products never affect calculations
+
+    // Delegated listener for ALL damaged price changes (existing + dynamically added)
+    document.getElementById('modification-table-body').addEventListener('input', (e) => {
+        if (!manualOverrideActive && e.target.classList.contains('damaged-price')) {
+            updateAllTotals();
+        }
+    });
+    document.getElementById('modification-table-body').addEventListener('change', (e) => {
+        if (!manualOverrideActive && e.target.classList.contains('damaged-price')) {
+            updateAllTotals();
+        }
+    });
+
+    document.getElementById('shipping_cost_input').addEventListener('input',      () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('shipping_cost_input').addEventListener('change',     () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('additional_discount_input').addEventListener('input', () => { if (!manualOverrideActive) updateAllTotals(); });
+    document.getElementById('additional_discount_input').addEventListener('change',() => { if (!manualOverrideActive) updateAllTotals(); });
+
+    // Sync hidden manual fields on submit so values are never zero
+    document.getElementById('editOrderForm').addEventListener('submit', function() {
+        if (manualOverrideActive) syncHiddenManualFields();
+    });
 });
 
+// DB values loaded from PHP — never recalculate from products
+const DB_SUBTOTAL           = <?php echo number_format($val_subtotal, 2, '.', ''); ?>;
+const DB_PRIMARY_DISCOUNT   = <?php echo number_format($val_primary_discount, 2, '.', ''); ?>;
+const DISCOUNT_IS_COUPON    = <?php echo $is_coupon_discount ? 'true' : 'false'; ?>;
+const DISCOUNT_TYPE         = '<?php echo htmlspecialchars($order['coupon_discount_type'] ?? 'automatic'); ?>';
+const DISCOUNT_VALUE        = <?php echo floatval($is_coupon_discount ? $order['coupon_discount_value'] : $order['automatic_discount_percentage']); ?>;
+const DISCOUNT_MAX          = <?php echo floatval($order['coupon_max_discount_amount'] ?? 0); ?>;
+
 function updateAllTotals() {
-    let subtotal = 0;
-    document.querySelectorAll('#items-container .item-row').forEach(row => {
-        const val = parseFloat(row.querySelector('.item-total').value);
-        subtotal += isNaN(val) ? 0 : val;
-    });
+    // subtotal is always the DB value — products are never used in any calculation
+    const subtotal = DB_SUBTOTAL;
     document.getElementById('subtotal_input').value = subtotal.toFixed(2);
 
+    // Damaged total = sum of damaged inputs
     let damagedTotal = 0;
-    document.querySelectorAll('#modification-table-body .modification-row').forEach(row => {
-        const val = parseFloat(row.querySelector('.damaged-price').value);
+    document.querySelectorAll('.modification-row .damaged-price').forEach(input => {
+        const val = parseFloat(input.value);
         damagedTotal += isNaN(val) ? 0 : val;
     });
     document.getElementById('damaged_total_input').value = damagedTotal.toFixed(2);
 
-    const discountInput   = document.getElementById('primary_discount_input');
-    const dataset         = discountInput.dataset;
-    let netValueForDiscount = Math.max(0, subtotal - damagedTotal);
-    let calculatedDiscount  = 0;
+    // Net base for discount = subtotal - damaged (allow negative)
+    const netBase = subtotal - damagedTotal;
 
-    if (dataset.isCoupon === 'true') {
-        const discountValue = parseFloat(dataset.discountValue) || 0;
-        if (dataset.discountType === 'percentage') {
-            calculatedDiscount = netValueForDiscount * (discountValue / 100);
-            const maxDiscount  = parseFloat(dataset.maxDiscount) || 0;
-            if (maxDiscount > 0 && calculatedDiscount > maxDiscount) calculatedDiscount = maxDiscount;
-        } else if (dataset.discountType === 'fixed') {
-            calculatedDiscount = Math.min(discountValue, netValueForDiscount);
+    // Primary discount calculated on netBase
+    let calculatedDiscount = 0;
+    if (DISCOUNT_IS_COUPON) {
+        if (DISCOUNT_TYPE === 'percentage') {
+            calculatedDiscount = netBase * (DISCOUNT_VALUE / 100);
+            if (DISCOUNT_MAX > 0 && calculatedDiscount > DISCOUNT_MAX) calculatedDiscount = DISCOUNT_MAX;
+        } else if (DISCOUNT_TYPE === 'fixed') {
+            calculatedDiscount = Math.min(DISCOUNT_VALUE, netBase);
         }
     } else {
-        const discountPercentage = parseFloat(dataset.discountValue) || 0;
-        if (discountPercentage > 0) calculatedDiscount = netValueForDiscount * (discountPercentage / 100);
+        if (DISCOUNT_VALUE > 0) calculatedDiscount = netBase * (DISCOUNT_VALUE / 100);
     }
-    discountInput.value = calculatedDiscount.toFixed(2);
+    document.getElementById('primary_discount_input').value = calculatedDiscount.toFixed(2);
 
-    const additionalDiscount  = parseFloat(document.getElementById('additional_discount_input').value) || 0;
-    const shippingCost        = parseFloat(document.getElementById('shipping_cost_input').value)       || 0;
-    const totalAfterDeductions = subtotal - calculatedDiscount - damagedTotal - additionalDiscount;
-    const finalTotal           = (totalAfterDeductions > 0 ? totalAfterDeductions : 0) + shippingCost;
+    // total_after_discount = netBase - primaryDiscount - additionalDiscount
+    const additionalDiscount = parseFloat(document.getElementById('additional_discount_input').value) || 0;
+    const shippingCost       = parseFloat(document.getElementById('shipping_cost_input').value) || 0;
+    const totalAfterDeductions = netBase - calculatedDiscount - additionalDiscount;
+    const finalTotal           = totalAfterDeductions + shippingCost;
 
-    document.getElementById('total_after_discount').value = (totalAfterDeductions > 0 ? totalAfterDeductions : 0).toFixed(2);
+    document.getElementById('total_after_discount').value = totalAfterDeductions.toFixed(2);
     document.getElementById('final_total_display').value  = finalTotal.toFixed(2);
 }
 
@@ -953,15 +951,14 @@ function addItem() {
     `;
     container.appendChild(newRow);
     itemIndex++;
-    updateAllTotals();
+    // No recalculation — products don't affect totals
     updateItemsBadge();
 }
 
 function removeItem(button) {
     if (document.querySelectorAll('.item-row').length > 1) {
         button.closest('.item-row').remove();
-        // Don't update financial totals when deleting items - preserve original values
-        // updateAllTotals();
+        // No recalculation — products don't affect totals
         updateItemsBadge();
     } else {
         alert('يجب أن يحتوي الطلب على منتج واحد على الأقل.');
@@ -976,7 +973,7 @@ function addModificationRow() {
     newRow.innerHTML = `
         <td class="p-2">
             <input type="hidden" name="damaged_items[${modificationIndex}][id]" value="0">
-            <input type="text" name="damaged_items[${modificationIndex}][name]" class="form-input text-sm" required>
+            <input type="text" name="damaged_items[${modificationIndex}][name]" class="form-input text-sm" placeholder="اسم المنتج" required>
         </td>
         <td class="p-2">
             <select name="damaged_items[${modificationIndex}][reason]" class="form-input text-sm" required>
@@ -990,7 +987,8 @@ function addModificationRow() {
     `;
     tbody.appendChild(newRow);
     modificationIndex++;
-    updateAllTotals();
+    // Recalculate totals after adding a new row (price=0, so damagedTotal stays same — no zeros bug)
+    if (!manualOverrideActive) updateAllTotals();
 }
 
 function removeModificationRow(button) {
@@ -999,7 +997,7 @@ function removeModificationRow(button) {
         document.getElementById('modification-table-body').innerHTML =
             `<tr id="no-damaged-row"><td colspan="4" class="py-8 text-center text-gray-500 text-sm">لا توجد منتجات تالفة مضافة.</td></tr>`;
     }
-    updateAllTotals();
+    if (!manualOverrideActive) updateAllTotals();
 }
 
 function previewNewImages(input) {

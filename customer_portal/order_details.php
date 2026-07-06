@@ -442,6 +442,14 @@ $remaining_amount = $final_amount - $paid_amount;
                                             $notes = $log['notes'] ?? '-';
                                             // This regex finds numbers with comma separators ending in .00 and removes the .00
                                             $cleaned_notes = preg_replace('/(\d{1,3}(?:,\d{3})*)\.00\b/', '$1', $notes);
+                                            
+                                            // Replace quoted product placeholder text with sequential position numbers
+                                            $product_counter = 0;
+                                            $cleaned_notes = preg_replace_callback('/[\'\x{2018}\x{2019}\x{201C}\x{201D}]([^\'\x{2018}\x{2019}\x{201C}\x{201D}]+)[\'\x{2018}\x{2019}\x{201C}\x{201D}]/u', function($matches) use (&$product_counter) {
+                                                $product_counter++;
+                                                return "'" . $product_counter . "'";
+                                            }, $cleaned_notes);
+                                            
                                             echo htmlspecialchars($cleaned_notes); 
                                         ?>
                                    

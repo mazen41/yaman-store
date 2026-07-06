@@ -126,7 +126,7 @@ if (attachmentInput && previewContainer) {
         }
     });
 }
-    function handlePaymentTypeChange() {
+    function handlePaymentTypeChange(isInitialLoad = false) {
         const selectedType = paymentTypeSelect.value;
 
         // Reset all related fields and hide containers
@@ -135,8 +135,12 @@ if (attachmentInput && previewContainer) {
         cardSelectorContainer.style.display = 'none';
         balanceDisplayContainer.style.display = 'none';
         balanceDisplay.textContent = '';
-        bankSelect.value = '';
-        cardSelect.value = '';
+
+        // Only reset values if NOT initial load (to preserve PHP pre-selected values on edit page)
+        if (!isInitialLoad) {
+            bankSelect.value = '';
+            cardSelect.value = '';
+        }
 
         // Disable the non-relevant select to prevent accidental submission
         bankSelect.disabled = true;
@@ -146,10 +150,12 @@ if (attachmentInput && previewContainer) {
             paymentDetailsContainer.style.display = 'block';
             bankSelectorContainer.style.display = 'block';
             bankSelect.disabled = false;
+            if (isInitialLoad && bankSelect.value) updateSourceBalance(bankSelect);
         } else if (selectedType === 'purchase_card') {
             paymentDetailsContainer.style.display = 'block';
             cardSelectorContainer.style.display = 'block';
             cardSelect.disabled = false;
+            if (isInitialLoad && cardSelect.value) updateSourceBalance(cardSelect);
         }
     }
 
@@ -167,7 +173,7 @@ if (attachmentInput && previewContainer) {
     }
 
     if (paymentTypeSelect) {
-        paymentTypeSelect.addEventListener('change', handlePaymentTypeChange);
+        paymentTypeSelect.addEventListener('change', () => handlePaymentTypeChange(false));
     }
     if (bankSelect) {
         bankSelect.addEventListener('change', () => updateSourceBalance(bankSelect));
@@ -176,7 +182,7 @@ if (attachmentInput && previewContainer) {
         cardSelect.addEventListener('change', () => updateSourceBalance(cardSelect));
     }
 
-    handlePaymentTypeChange(); // Run on page load
+    handlePaymentTypeChange(true); // Run on page load with isInitialLoad=true to preserve pre-selected values
 
     // --- DROPDOWN SEARCH/FILTER LOGIC ---
     function setupSearchableDropdown(searchInputId, selectElementId) {

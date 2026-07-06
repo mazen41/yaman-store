@@ -29,8 +29,18 @@ $sort_by = $_GET['sort_by'] ?? 'created_at'; // Default sort by created_at
 $sort_order = $_GET['sort'] ?? 'desc'; // Default sort by date descending
 
 // Base query
-// Ensure card_purchase_amount exists in your database table for profit calculation
-$sql = "SELECT id, card_number, card_name, initial_balance, purchase_amount, balance, card_purchase_amount, created_at FROM purchase_cards";
+// Calculate purchase_amount dynamically from baskets using grand_total_yer as source of truth
+$sql = "SELECT
+    pc.id,
+    pc.card_number,
+    pc.card_name,
+    pc.initial_balance,
+    COALESCE(SUM(COALESCE(pb.grand_total_yer, pb.final_amount)), 0) as purchase_amount,
+    pc.balance,
+    pc.card_purchase_amount,
+    pc.created_at
+FROM purchase_cards pc
+LEFT JOIN purchase_baskets pb ON pc.id = pb.payment_source_id AND pb.payment_source_type = 'purchase_card'";
 $params = [];
 
 // Add search filter
@@ -38,6 +48,9 @@ if (!empty($filter_search)) {
     $sql .= " WHERE card_number LIKE :search OR card_name LIKE :search";
     $params[':search'] = '%' . $filter_search . '%';
 }
+
+// Add GROUP BY since we're using aggregate function
+$sql .= " GROUP BY pc.id, pc.card_number, pc.card_name, pc.initial_balance, pc.balance, pc.card_purchase_amount, pc.created_at";
 
 // Add sorting
 $sort_direction = ($sort_order === 'asc') ? 'ASC' : 'DESC';
