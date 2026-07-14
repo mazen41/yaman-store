@@ -313,7 +313,7 @@ class ApiService {
 
   Future<Map<String, dynamic>> syncOfflineScans(List<Map<String, dynamic>> scansList) async {
     if (scansList.isEmpty) {
-      return {'message' => 'No scans to sync', 'results' => []};
+      return {'message': 'No scans to sync', 'results': []};
     }
     
     final headers = await _jsonHeaders();
