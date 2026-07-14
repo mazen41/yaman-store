@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
         bool syncOk = false;
         try {
           final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
-          final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime);
+          final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: _selectedPurchaseGroupId);
           if (syncResp.success) {
             await DatabaseHelper.instance.replaceOrdersCache(syncResp.orders, syncResp.items);
             final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
@@ -295,6 +295,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   // Periodic timer for connectivity monitoring & background sync
   Timer? _connectivityTimer;
+  DateTime? _lastSyncTime;
+  static const Duration _syncCooldown = Duration(minutes: 2); // Prevent excessive sync calls
 
   // Stability buffer
   final List<String> _skuHistory = [];
@@ -314,7 +316,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   // Frame throttle — only process one frame per interval to reduce CPU/heat
   DateTime _lastFrameProcessed = DateTime.fromMillisecondsSinceEpoch(0);
-  static const _frameThrottleInterval = Duration(milliseconds: 400);
+  static const _frameThrottleInterval = Duration(milliseconds: 500); // Increased from 400ms to 500ms for better performance
 
   String _normalizeSku(String? value) {
     if (value == null) return '';
@@ -325,11 +327,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _initCamera();
-    _refreshBadge();
-    _loadSyncMetadata();
-    _loadPurchaseGroups();
-    _loadSortingNotifications();
     
     // Register auto-logout on session expiration
     ApiService.instance.onSessionExpired = () {
@@ -338,11 +335,22 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
     };
 
-    // Auto sync on start
-    _autoSyncOrders();
+    // Initialize non-blocking operations first
+    _initCamera();
+    _refreshBadge();
+    _loadSyncMetadata();
+    
+    // Delay API calls to avoid blocking startup
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _loadPurchaseGroups();
+        _loadSortingNotifications();
+        _autoSyncOrders();
+      }
+    });
 
-    // Start background network connectivity polling & auto synchronization
-    _connectivityTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    // Start background network connectivity polling & auto synchronization (reduced frequency)
+    _connectivityTimer = Timer.periodic(const Duration(seconds: 60), (timer) {
       _checkConnectivityAndAutoSync();
     });
   }
@@ -350,7 +358,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   Future<void> _loadPurchaseGroups() async {
     try {
       final groups = await ApiService.instance.fetchPurchaseGroups();
-      if (mounted) setState(() => _purchaseGroups = groups);
+      if (mounted && _purchaseGroups != groups) { // Only update if data changed
+        setState(() => _purchaseGroups = groups);
+      }
     } catch (_) {}
   }
 
@@ -461,10 +471,19 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (inputImage == null) return;
 
       final recognized = await _textRecognizer.processImage(inputImage);
+      
+      // Early exit if no text detected to save CPU cycles
+      if (recognized.blocks.isEmpty) {
+        _skuHistory.clear();
+        return;
+      }
+      
       final regex = RegExp(_skuPattern, caseSensitive: false);
 
       String? found;
-      for (final block in recognized.blocks) {
+      // Limit processing to first 10 blocks to reduce CPU usage
+      final blocksToProcess = recognized.blocks.take(10);
+      for (final block in blocksToProcess) {
         final cleaned = block.text.replaceAll(RegExp(r'[\s\-—\u2014]'), '');
         final match = regex.firstMatch(cleaned);
         if (match != null) {
@@ -526,7 +545,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     try {
       final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
-      final resp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime);
+      final resp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: _selectedPurchaseGroupId);
       
       if (resp.success) {
         await DatabaseHelper.instance.syncOrdersIncremental(resp.orders, resp.items);
@@ -536,16 +555,26 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
         
         _loadSyncMetadata();
+        _lastSyncTime = DateTime.now(); // Update last sync time
+        debugPrint('[AutoSync] success: orders=${resp.orders.length}, items=${resp.items.length}');
       }
     } on UnauthorizedException {
       await ApiService.instance.forceSessionExpiration();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[AutoSync] failed: $e');
       // Fallback: load metadata from sqlite cache
       _loadSyncMetadata();
     }
   }
 
   Future<void> _checkConnectivityAndAutoSync() async {
+    // Check if we're within cooldown period to prevent excessive sync calls
+    if (_lastSyncTime != null && 
+        DateTime.now().difference(_lastSyncTime!) < _syncCooldown) {
+      debugPrint('[Sync] Skipping - within cooldown period');
+      return;
+    }
+
     final online = await ApiService.instance.ping();
     if (online) {
       final unsynced = await DatabaseHelper.instance.countUnsynced();
@@ -554,6 +583,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       } else {
         await _autoSyncOrders();
       }
+      _lastSyncTime = DateTime.now();
     }
   }
 
@@ -581,8 +611,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     try {
       final matches = [
-        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: false),
-        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: true),
+        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: false, purchaseGroupId: _selectedPurchaseGroupId),
+        ...await DatabaseHelper.instance.findOrdersBySku(normalizedSku, sorted: true, purchaseGroupId: _selectedPurchaseGroupId),
       ];
       debugPrint('[Scan] fetched local orders count=${matches.length} for SKU="$normalizedSku"');
 
@@ -953,6 +983,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     // 1. First trigger incremental sync to pull down updates
     await _autoSyncOrders();
+    _lastSyncTime = DateTime.now(); // Update last sync time after manual sync
 
     // 2. Load unsynced records
     List<ScanRecord> unsynced = await DatabaseHelper.instance.getUnsynced();
@@ -967,7 +998,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     for (var i = 0; i < unsynced.length; i++) {
       final scan = unsynced[i];
       if (scan.selectedItemId == 0) {
-        final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(scan.sku);
+        final matches = await DatabaseHelper.instance.findUnsortedOrdersBySku(scan.sku, purchaseGroupId: _selectedPurchaseGroupId);
         if (matches.length == 1) {
           await DatabaseHelper.instance.updateSelectedItemId(scan.id!, matches.first.itemId);
           unsynced[i] = ScanRecord(
@@ -1060,9 +1091,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   Future<void> _loadSortingNotifications({bool showErrors = false}) async {
     if (_loadingSortingNotifications) return;
-    setState(() => _loadingSortingNotifications = true);
+    if (mounted) setState(() => _loadingSortingNotifications = true);
     try {
-      final response = await ApiService.instance.fetchSortingNotifications(afterId: 0, limit: 500);
+      // Reduced limit from 500 to 100 to reduce memory usage and improve performance
+      final response = await ApiService.instance.fetchSortingNotifications(afterId: 0, limit: 100);
       final notifications = (response['notifications'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((n) => n.cast<String, dynamic>())
@@ -1104,23 +1136,49 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
   Future<void> _forceRefreshOrders() async {
+    // Show loading state
+    if (mounted) {
+      setState(() {
+        _statusType = StatusType.loading;
+        _statusMessage = 'جارٍ تحديث الطلبات...';
+      });
+    }
+
     final loggedIn = await ApiService.instance.isLoggedIn();
     if (!loggedIn) {
       _showSnack('انتهت الجلسة. يرجى تسجيل الدخول.');
       widget.onLoggedOut?.call();
+      if (mounted) {
+        setState(() {
+          _statusType = StatusType.idle;
+          _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+        });
+      }
       return;
     }
 
     final online = await ApiService.instance.ping();
     if (!online) {
       _showSnack('تعذر الاتصال بالخادم. يرجى التحقق من اتصالك بالشبكة.');
+      if (mounted) {
+        setState(() {
+          _statusType = StatusType.idle;
+          _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+        });
+      }
       return;
     }
 
     try {
-      final resp = await ApiService.instance.syncOrders(updatedAfter: null);
+      final resp = await ApiService.instance.syncOrders(updatedAfter: null, purchaseGroupId: _selectedPurchaseGroupId);
       if (!resp.success) {
         _showSnack('فشل تحديث الطلبات من الخادم');
+        if (mounted) {
+          setState(() {
+            _statusType = StatusType.idle;
+            _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+          });
+        }
         return;
       }
 
@@ -1129,14 +1187,23 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       await DatabaseHelper.instance.setMetadata('lastSyncTime', resp.syncTimestamp.toString());
       await DatabaseHelper.instance.setMetadata('lastSyncTimeHuman', humanTime);
       await _loadSyncMetadata();
+      _lastSyncTime = DateTime.now();
 
       final cached = await DatabaseHelper.instance.countCachedItems();
       _showSnack(cached > 0 ? 'تم تحديث الطلبات ✅ ($cached منتج محلياً)' : 'تم تحديث الطلبات — لا طلبات نشطة حالياً');
     } on UnauthorizedException {
       await ApiService.instance.forceSessionExpiration();
       widget.onLoggedOut?.call();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ForceRefresh] failed: $e');
       _showSnack('تعذر تحديث الطلبات حالياً، حاول مرة أخرى');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _statusType = StatusType.idle;
+          _statusMessage = 'وجّه الكاميرا نحو ملصق SKU';
+        });
+      }
     }
   }
 

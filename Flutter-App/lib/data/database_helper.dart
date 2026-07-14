@@ -220,17 +220,22 @@ class DatabaseHelper {
   }
 
   Future<void> syncOrdersIncremental(List<Map<String, dynamic>> orders, List<Map<String, dynamic>> items) async {
+    if (orders.isEmpty && items.isEmpty) return;
+    
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
+    
+    // Collect order IDs to delete for batch deletion
+    final orderIdsToDelete = <int>[];
+    
     await db.transaction((txn) async {
       for (final order in orders) {
         final orderId = order['order_id'] as int;
         final status = (order['status'] ?? '').toString().toLowerCase();
 
-        // If the order status is inactive, purge it from cache to save space
+        // If the order status is inactive, mark for deletion to save space
         if (['cancelled', 'delivered', 'returned', 'refunded'].contains(status)) {
-          await txn.delete('order_items_cache', where: 'order_id = ?', whereArgs: [orderId]);
-          await txn.delete('orders_cache', where: 'order_id = ?', whereArgs: [orderId]);
+          orderIdsToDelete.add(orderId);
         } else {
           // Otherwise, upsert order
           await txn.insert('orders_cache', {
@@ -248,12 +253,23 @@ class DatabaseHelper {
         }
       }
 
+      // Batch delete inactive orders
+      if (orderIdsToDelete.isNotEmpty) {
+        for (final orderId in orderIdsToDelete) {
+          await txn.delete('order_items_cache', where: 'order_id = ?', whereArgs: [orderId]);
+          await txn.delete('orders_cache', where: 'order_id = ?', whereArgs: [orderId]);
+        }
+      }
+
+      // Get all existing order IDs in a single query for better performance
+      final existingOrders = await txn.query('orders_cache', columns: ['order_id']);
+      final existingOrderIds = existingOrders.map((row) => row['order_id'] as int).toSet();
+
       for (final item in items) {
         final orderId = item['order_id'] as int;
         
         // Only insert item if its parent order exists in cache
-        final orderCheck = await txn.query('orders_cache', where: 'order_id = ?', whereArgs: [orderId]);
-        if (orderCheck.isNotEmpty) {
+        if (existingOrderIds.contains(orderId)) {
           await txn.insert('order_items_cache', {
             'item_id': item['item_id'],
             'order_id': item['order_id'],
@@ -268,9 +284,9 @@ class DatabaseHelper {
     });
   }
 
-  Future<List<LocalOrderMatch>> findOrdersBySku(String sku, {bool sorted = false}) async {
+  Future<List<LocalOrderMatch>> findOrdersBySku(String sku, {bool sorted = false, int? purchaseGroupId}) async {
     final db = await database;
-    final rows = await db.rawQuery('''
+    String query = '''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
              o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
              o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
@@ -279,7 +295,17 @@ class DatabaseHelper {
       WHERE i.sku_normalized = ?
         AND COALESCE(i.is_sorted, 0) = ?
         AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
-    ''', [_normalizeSku(sku), sorted ? 1 : 0]);
+    ''';
+    
+    List<dynamic> args = [_normalizeSku(sku), sorted ? 1 : 0];
+    
+    // Add purchase group filter if specified
+    if (purchaseGroupId != null && purchaseGroupId > 0) {
+      query += ' AND COALESCE(o.purchase_group_id, 0) = ?';
+      args.add(purchaseGroupId);
+    }
+    
+    final rows = await db.rawQuery(query, args);
     
     return rows.map((r) => LocalOrderMatch(
       itemId: r['item_id'] as int, 
@@ -299,9 +325,9 @@ class DatabaseHelper {
     )).toList();
   }
 
-  Future<List<LocalOrderMatch>> findUnsortedOrdersBySku(String sku) async {
+  Future<List<LocalOrderMatch>> findUnsortedOrdersBySku(String sku, {int? purchaseGroupId}) async {
     final db = await database;
-    final rows = await db.rawQuery('''
+    String query = '''
       SELECT i.item_id, i.order_id, i.sku, i.is_sorted, i.product_name, i.product_image,
              o.order_number, o.customer_name, o.customer_mobile, o.status AS order_status,
              o.total_skus, o.purchase_group_id, o.purchase_group_number, o.purchase_group_name
@@ -310,7 +336,17 @@ class DatabaseHelper {
       WHERE i.sku_normalized = ?
         AND COALESCE(i.is_sorted, 0) = 0
         AND LOWER(COALESCE(o.status, '')) NOT IN ('delivered', 'cancelled', 'returned', 'refunded', 'completed')
-    ''', [_normalizeSku(sku)]);
+    ''';
+    
+    List<dynamic> args = [_normalizeSku(sku)];
+    
+    // Add purchase group filter if specified
+    if (purchaseGroupId != null && purchaseGroupId > 0) {
+      query += ' AND COALESCE(o.purchase_group_id, 0) = ?';
+      args.add(purchaseGroupId);
+    }
+    
+    final rows = await db.rawQuery(query, args);
 
     return rows.map((r) => LocalOrderMatch(
       itemId: r['item_id'] as int,

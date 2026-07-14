@@ -22,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $user = authenticateRequest($db);
 
 $updatedAfter = trim($_GET['updated_after'] ?? '');
+$purchaseGroupId = (int)($_GET['purchase_group_id'] ?? 0);
 
 // Shared SELECT fragment used by both full-sync and incremental-sync queries.
 // Resolves purchase group via direct assignment OR via basket membership.
@@ -55,10 +56,29 @@ try {
 
     if (empty($updatedAfter)) {
         // ── Full Sync ────────────────────────────────────────────────────────
-        $countStmt = $db->query("SELECT COUNT(*) FROM customer_orders");
+        $countSql = "SELECT COUNT(*) FROM customer_orders";
+        $orderSql = $orderSelectSql;
+        
+        // Add purchase group filter if specified
+        if ($purchaseGroupId > 0) {
+            $countSql .= " WHERE COALESCE(purchase_group_id, 0) = ?";
+            $orderSql .= " WHERE COALESCE(co.purchase_group_id, pb.purchase_group_id, 0) = ?";
+        }
+        
+        $countStmt = $db->prepare($countSql);
+        if ($purchaseGroupId > 0) {
+            $countStmt->execute([$purchaseGroupId]);
+        } else {
+            $countStmt->execute();
+        }
         $totalOrders = (int)$countStmt->fetchColumn();
 
-        $ordersStmt = $db->query($orderSelectSql . " ORDER BY co.id DESC");
+        $ordersStmt = $db->prepare($orderSql . " ORDER BY co.id DESC");
+        if ($purchaseGroupId > 0) {
+            $ordersStmt->execute([$purchaseGroupId]);
+        } else {
+            $ordersStmt->execute();
+        }
         $orders     = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
         // ── Incremental Sync ─────────────────────────────────────────────────
@@ -68,8 +88,17 @@ try {
             $updatedAfterTime = date('Y-m-d H:i:s', strtotime($updatedAfter));
         }
 
-        $ordersStmt = $db->prepare($orderSelectSql . " WHERE co.updated_at >= ? ORDER BY co.id DESC");
-        $ordersStmt->execute([$updatedAfterTime]);
+        $orderSql = $orderSelectSql . " WHERE co.updated_at >= ?";
+        $params = [$updatedAfterTime];
+        
+        // Add purchase group filter if specified
+        if ($purchaseGroupId > 0) {
+            $orderSql .= " AND COALESCE(co.purchase_group_id, pb.purchase_group_id, 0) = ?";
+            $params[] = $purchaseGroupId;
+        }
+        
+        $ordersStmt = $db->prepare($orderSql . " ORDER BY co.id DESC");
+        $ordersStmt->execute($params);
         $orders      = $ordersStmt->fetchAll(PDO::FETCH_ASSOC);
         $totalOrders = count($orders);
     }

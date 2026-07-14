@@ -254,9 +254,16 @@ class ApiService {
     }
   }
 
-  Future<SyncOrdersResponse> syncOrders({String? updatedAfter}) async {
+  Future<SyncOrdersResponse> syncOrders({String? updatedAfter, int? purchaseGroupId}) async {
     final headers = await _jsonHeaders();
-    final url = Uri.parse(_apiOrders + (updatedAfter != null && updatedAfter.isNotEmpty ? '?updated_after=$updatedAfter' : ''));
+    String queryParams = '';
+    if (updatedAfter != null && updatedAfter.isNotEmpty) {
+      queryParams += '?updated_after=$updatedAfter';
+    }
+    if (purchaseGroupId != null && purchaseGroupId > 0) {
+      queryParams += (queryParams.isEmpty ? '?' : '&') + 'purchase_group_id=$purchaseGroupId';
+    }
+    final url = Uri.parse(_apiOrders + queryParams);
 
     final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 30));
 
@@ -305,12 +312,16 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> syncOfflineScans(List<Map<String, dynamic>> scansList) async {
+    if (scansList.isEmpty) {
+      return {'message' => 'No scans to sync', 'results' => []};
+    }
+    
     final headers = await _jsonHeaders();
     final response = await http.post(
       Uri.parse(_apiSyncActions),
       headers: headers,
       body: jsonEncode({'scans': scansList}),
-    ).timeout(const Duration(seconds: 25));
+    ).timeout(const Duration(seconds: 30)); // Increased timeout for large batches
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -322,7 +333,7 @@ class ApiService {
           Uri.parse(_apiSyncActions),
           headers: retryHeaders,
           body: jsonEncode({'scans': scansList}),
-        ).timeout(const Duration(seconds: 25));
+        ).timeout(const Duration(seconds: 30));
         if (retryResponse.statusCode == 200) {
           return jsonDecode(retryResponse.body) as Map<String, dynamic>;
         }
