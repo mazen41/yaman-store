@@ -8,8 +8,7 @@
  * Authenticated via Authorization: Bearer <token>.
  *
  * purchase_group_id / purchase_group_number resolved via:
- *   1. co.purchase_group_id  (order assigned directly to a group)
- *   2. pb.purchase_group_id  (order's basket belongs to a group — fallback)
+ *   co.purchase_group_id  (order assigned directly to a group)
  * ─────────────────────────────────────────────────────────────────
  */
 
@@ -25,7 +24,7 @@ $updatedAfter = trim($_GET['updated_after'] ?? '');
 $purchaseGroupId = (int)($_GET['purchase_group_id'] ?? 0);
 
 // Shared SELECT fragment used by both full-sync and incremental-sync queries.
-// Resolves purchase group via direct assignment OR via basket membership.
+// Resolves purchase group via direct assignment only (no basket fallback).
 $orderSelectSql = "
     SELECT
         co.id                                                                    AS order_id,
@@ -34,7 +33,7 @@ $orderSelectSql = "
         COALESCE(c.mobile_number, c.phone, '')                                   AS customer_mobile,
         co.status,
         co.sorting_status,
-        COALESCE(co.purchase_group_id, pb.purchase_group_id)                     AS purchase_group_id,
+        co.purchase_group_id                                                     AS purchase_group_id,
         COALESCE(pg.group_number, '')                                             AS purchase_group_number,
         COALESCE(pg.group_name,   '')                                             AS purchase_group_name,
         (SELECT COUNT(*)
@@ -45,8 +44,7 @@ $orderSelectSql = "
         UNIX_TIMESTAMP(co.updated_at)                                            AS updated_at
     FROM   customer_orders co
     LEFT JOIN customers        c   ON c.id  = co.customer_id
-    LEFT JOIN purchase_baskets pb  ON pb.id = co.basket_id
-    LEFT JOIN purchase_groups  pg  ON pg.id = COALESCE(co.purchase_group_id, pb.purchase_group_id)
+    LEFT JOIN purchase_groups  pg  ON pg.id = co.purchase_group_id
 ";
 
 try {
@@ -61,8 +59,8 @@ try {
         
         // Add purchase group filter if specified
         if ($purchaseGroupId > 0) {
-            $countSql .= " WHERE COALESCE(purchase_group_id, 0) = ?";
-            $orderSql .= " WHERE COALESCE(co.purchase_group_id, pb.purchase_group_id, 0) = ?";
+            $countSql .= " WHERE co.purchase_group_id = ?";
+            $orderSql .= " WHERE co.purchase_group_id = ?";
         }
         
         $countStmt = $db->prepare($countSql);
@@ -93,7 +91,7 @@ try {
         
         // Add purchase group filter if specified
         if ($purchaseGroupId > 0) {
-            $orderSql .= " AND COALESCE(co.purchase_group_id, pb.purchase_group_id, 0) = ?";
+            $orderSql .= " AND co.purchase_group_id = ?";
             $params[] = $purchaseGroupId;
         }
         

@@ -66,10 +66,9 @@ try {
                 SELECT oi.id, oi.order_id, oi.status, oi.shein_sku, oi.product_name, co.order_number
                 FROM order_items oi
                 JOIN customer_orders co ON co.id = oi.order_id
-                LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
                 WHERE oi.id = ?
                   AND UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
-                  AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
+                  AND (? <= 0 OR co.purchase_group_id = ?)
                 LIMIT 1
             ");
             $stmt->execute([$selectedItemId, $sku, $purchaseGroupId, $purchaseGroupId]);
@@ -80,9 +79,8 @@ try {
                 SELECT oi.id, oi.order_id, oi.status, oi.shein_sku, oi.product_name, co.order_number
                 FROM order_items oi
                 JOIN customer_orders co ON co.id = oi.order_id
-                LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
                 WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
-                  AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
+                  AND (? <= 0 OR co.purchase_group_id = ?)
                 ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
                 LIMIT 1
             ");

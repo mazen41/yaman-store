@@ -199,7 +199,7 @@ class DatabaseHelper {
           'customer_mobile': order['customer_mobile'],
           'status': order['status'],
           'total_skus': order['total_skus'] ?? 0,
-          'purchase_group_id': order['purchase_group_id'] ?? 0,
+          'purchase_group_id': order['purchase_group_id'] ?? 0, // Direct assignment only
           'purchase_group_number': order['purchase_group_number'] ?? '',
           'purchase_group_name': order['purchase_group_name'] ?? '',
           'updated_at': order['updated_at'] ?? now,
@@ -237,7 +237,7 @@ class DatabaseHelper {
         if (['cancelled', 'delivered', 'returned', 'refunded'].contains(status)) {
           orderIdsToDelete.add(orderId);
         } else {
-          // Otherwise, upsert order
+          // Otherwise, upsert order with direct purchase group assignment only
           await txn.insert('orders_cache', {
             'order_id': order['order_id'],
             'order_number': order['order_number'],
@@ -245,7 +245,7 @@ class DatabaseHelper {
             'customer_mobile': order['customer_mobile'],
             'status': order['status'],
             'total_skus': order['total_skus'] ?? 0,
-            'purchase_group_id': order['purchase_group_id'] ?? 0,
+            'purchase_group_id': order['purchase_group_id'] ?? 0, // Direct assignment only
             'purchase_group_number': order['purchase_group_number'] ?? '',
             'purchase_group_name': order['purchase_group_name'] ?? '',
             'updated_at': order['updated_at'] ?? now,
@@ -299,9 +299,9 @@ class DatabaseHelper {
     
     List<dynamic> args = [_normalizeSku(sku), sorted ? 1 : 0];
     
-    // Add purchase group filter if specified
+    // Add purchase group filter if specified (direct assignment only, no fallback)
     if (purchaseGroupId != null && purchaseGroupId > 0) {
-      query += ' AND COALESCE(o.purchase_group_id, 0) = ?';
+      query += ' AND o.purchase_group_id = ?';
       args.add(purchaseGroupId);
     }
     
@@ -340,9 +340,9 @@ class DatabaseHelper {
     
     List<dynamic> args = [_normalizeSku(sku)];
     
-    // Add purchase group filter if specified
+    // Add purchase group filter if specified (direct assignment only, no fallback)
     if (purchaseGroupId != null && purchaseGroupId > 0) {
-      query += ' AND COALESCE(o.purchase_group_id, 0) = ?';
+      query += ' AND o.purchase_group_id = ?';
       args.add(purchaseGroupId);
     }
     

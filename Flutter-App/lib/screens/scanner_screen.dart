@@ -95,7 +95,8 @@ class _LoginScreenState extends State<LoginScreen> {
         bool syncOk = false;
         try {
           final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
-          final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: _selectedPurchaseGroupId);
+          // Sync all orders without purchase group filter to ensure correct group assignments
+          final syncResp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: 0);
           if (syncResp.success) {
             await DatabaseHelper.instance.replaceOrdersCache(syncResp.orders, syncResp.items);
             final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
@@ -545,7 +546,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     try {
       final lastSyncTime = await DatabaseHelper.instance.getMetadata('lastSyncTime');
-      final resp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: _selectedPurchaseGroupId);
+      // Always sync all orders without purchase group filter to ensure correct group assignments
+      // Frontend filtering will handle display based on selected group
+      final resp = await ApiService.instance.syncOrders(updatedAfter: lastSyncTime, purchaseGroupId: 0);
       
       if (resp.success) {
         await DatabaseHelper.instance.syncOrdersIncremental(resp.orders, resp.items);
@@ -1170,7 +1173,8 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     }
 
     try {
-      final resp = await ApiService.instance.syncOrders(updatedAfter: null, purchaseGroupId: _selectedPurchaseGroupId);
+      // Force full refresh without purchase group filter to get all correct data
+      final resp = await ApiService.instance.syncOrders(updatedAfter: null, purchaseGroupId: 0);
       if (!resp.success) {
         _showSnack('فشل تحديث الطلبات من الخادم');
         if (mounted) {
@@ -1182,6 +1186,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         return;
       }
 
+      // Replace entire cache to ensure correct purchase group assignments
       await DatabaseHelper.instance.replaceOrdersCache(resp.orders, resp.items);
       final humanTime = DateTime.now().toLocal().toString().substring(0, 16);
       await DatabaseHelper.instance.setMetadata('lastSyncTime', resp.syncTimestamp.toString());
@@ -1191,6 +1196,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
       final cached = await DatabaseHelper.instance.countCachedItems();
       _showSnack(cached > 0 ? 'تم تحديث الطلبات ✅ ($cached منتج محلياً)' : 'تم تحديث الطلبات — لا طلبات نشطة حالياً');
+      debugPrint('[ForceRefresh] Cache cleared and repopulated with correct purchase group data');
     } on UnauthorizedException {
       await ApiService.instance.forceSessionExpiration();
       widget.onLoggedOut?.call();

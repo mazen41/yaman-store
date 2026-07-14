@@ -15,9 +15,8 @@ try {
         SELECT oi.id, oi.order_id, oi.shein_sku, oi.product_name, co.order_number
         FROM order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
-        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         WHERE oi.status != 'scanned'
-          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+          AND co.purchase_group_id = ?
         ORDER BY oi.order_id ASC, oi.id ASC
     ");
     $pendingStmt->execute([$purchaseGroupId]);
@@ -27,10 +26,9 @@ try {
     $updateStmt = $db->prepare("
         UPDATE order_items oi
         JOIN customer_orders co ON co.id = oi.order_id
-        LEFT JOIN purchase_baskets pb ON pb.id = co.basket_id
         SET oi.status = 'scanned', oi.sorted_by = ?, oi.sorted_at = NOW(), oi.updated_at = NOW()
         WHERE oi.status != 'scanned'
-          AND COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?
+          AND co.purchase_group_id = ?
     ");
     $updateStmt->execute([$userId, $purchaseGroupId]);
 

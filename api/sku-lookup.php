@@ -64,9 +64,7 @@ try {
     }
 
     // ── Find matching order items ─────────────────────────────────────────
-    // Resolves purchase group via:
-    //   1. co.purchase_group_id  (order assigned directly to a group)
-    //   2. pb.purchase_group_id  (order's basket belongs to a group — fallback)
+    // Resolves purchase group via direct assignment only (no basket fallback).
     $stmt = $db->prepare("
         SELECT
             oi.id                                                                     AS item_id,
@@ -77,16 +75,15 @@ try {
             c.name                                                                    AS customer_name,
             COALESCE(c.mobile_number, c.phone, '')                                    AS customer_mobile,
             (SELECT COUNT(*) FROM order_items oi2 WHERE oi2.order_id = co.id)         AS total_skus,
-            COALESCE(co.purchase_group_id, pb.purchase_group_id)                      AS purchase_group_id,
+            co.purchase_group_id                                                     AS purchase_group_id,
             COALESCE(pg.group_number, '')                                              AS purchase_group_number,
             COALESCE(pg.group_name,   '')                                              AS purchase_group_name
         FROM order_items oi
         JOIN  customer_orders   co  ON co.id          = oi.order_id
-        LEFT JOIN purchase_baskets  pb  ON pb.id          = co.basket_id
-        LEFT JOIN purchase_groups   pg  ON pg.id          = COALESCE(co.purchase_group_id, pb.purchase_group_id)
+        LEFT JOIN purchase_groups   pg  ON pg.id          = co.purchase_group_id
         LEFT JOIN customers         c   ON c.id           = co.customer_id
         WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(oi.shein_sku), '-', ''), ' ', ''), CHAR(9), '')) = ?
-          AND (? <= 0 OR COALESCE(co.purchase_group_id, pb.purchase_group_id) = ?)
+          AND (? <= 0 OR co.purchase_group_id = ?)
         ORDER BY CASE WHEN oi.status = 'pending' THEN 0 ELSE 1 END, oi.id ASC
     ");
     $stmt->execute([$sku, $purchaseGroupId, $purchaseGroupId]);
