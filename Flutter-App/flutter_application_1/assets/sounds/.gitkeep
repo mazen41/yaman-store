@@ -1,0 +1,10 @@
+# Audio Assets for Scanner Feedback
+
+This directory contains audio files for scanner feedback:
+
+- success.mp3 - Success sound (short beep/chime)
+- error.mp3 - Error sound (low buzz)
+- warning.mp3 - Warning sound (double beep)
+
+Note: These files should be short (under 1 second) for optimal performance.
+If audio files are not available, the app will fall back to vibration feedback.

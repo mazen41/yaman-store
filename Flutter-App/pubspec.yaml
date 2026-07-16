@@ -20,6 +20,8 @@ dependencies:
   path: ^1.9.0
   # Vibration
   vibration: ^3.1.8
+  # Audio feedback
+  audioplayers: ^6.0.0
   # Shared prefs
   shared_preferences: ^2.2.3
 

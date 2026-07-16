@@ -25,14 +25,18 @@ if ($rawSku === '') {
     fail('الرجاء إرسال رمز SKU للبحث عنه.', 400);
 }
 
-// Normalize SKU
+// Normalize SKU - must match Flutter's _normalizeSku exactly
 function localNormalizeSku(string $sku): string
 {
     $sku = strtoupper(trim($sku));
-    return preg_replace('/[\s\-\x{00A0}\x{200B}\x{200C}\x{200D}]+/u', '', $sku) ?? '';
+    $normalized = preg_replace('/[\s\-\x{00A0}\x{200B}\x{200C}\x{200D}]+/u', '', $sku);
+    return $normalized === null ? '' : $normalized;
 }
 
 $sku = localNormalizeSku($rawSku);
+
+// Debug logging to compare raw vs normalized SKU
+error_log("[SKU-LOOKUP] Raw SKU: '$rawSku' -> Normalized: '$sku'");
 
 if (empty($sku)) {
     fail('رمز SKU غير صالح.', 400);

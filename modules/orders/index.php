@@ -510,19 +510,19 @@ include '../../includes/header.php';
 </style>
 
 <div dir="rtl">
-    <?php if ($success_message): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i> <?php echo $success_message; ?></div><?php endif; ?>
-    <?php if ($error_message): ?><div class="alert alert-danger"><i class="fas fa-exclamation-circle"></i> <?php echo $error_message; ?></div><?php endif; ?>
+    <?php if ($success_message): ?><div class="alert alert-success">✔ <?php echo $success_message; ?></div><?php endif; ?>
+    <?php if ($error_message): ?><div class="alert alert-danger">✖ <?php echo $error_message; ?></div><?php endif; ?>
 
     <div class="table-wrapper">
         <!-- Header -->
         <div class="table-page-header">
-            <h2 class="table-page-title"><i class="fas fa-shopping-cart"></i> <?php echo $page_title; ?> (<?php echo $total_records; ?>)</h2>
+            <h2 class="table-page-title">🛒 <?php echo $page_title; ?> (<?php echo $total_records; ?>)</h2>
             <div style="display: flex; gap: 10px;">
                 <!-- Filter Toggle Button -->
                 <button id="toggleFiltersBtn" class="btn btn-secondary">
-                    <i class="fas fa-filter"></i> <span><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
+                    🔍 <span><?php echo $advanced_filters_active ? 'إخفاء الفلاتر المتقدمة' : 'إظهار الفلاتر المتقدمة'; ?></span>
                 </button>
-                <?php if ($can_add_orders): ?><a href="create.php" class="btn btn-success"><i class="fas fa-plus"></i> طلب جديد</a><?php endif; ?>
+                <?php if ($can_add_orders): ?><a href="create.php" class="btn btn-success">➕ طلب جديد</a><?php endif; ?>
             </div>
         </div>
 
@@ -533,8 +533,8 @@ include '../../includes/header.php';
                 <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: flex-end;">
                     <div class="filter-group" style="flex-grow: 1;"><label>البحث (رقم طلب، اسم، هاتف)</label><input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="رقم طلب، اسم، هاتف..." class="form-control"></div>
                     <div style="display: flex; gap: 10px; margin-bottom: 5px;">
-                        <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> بحث</button>
-                        <a href="index.php" class="btn btn-secondary"><i class="fas fa-redo"></i> إلغاء</a>
+                        <button type="submit" class="btn btn-primary">🔍 بحث</button>
+                        <a href="index.php" class="btn btn-secondary">🔄 إلغاء</a>
                     </div>
                 </div>
             </div>
@@ -641,9 +641,9 @@ include '../../includes/header.php';
                                 <td>
                                     <strong><?php echo htmlspecialchars(formatOrderNumber($order['order_number'])); ?></strong>
                                     <?php if (!$is_manual_order): // If NOT manual, it's from portal ?>
-                                        <i class="fas fa-globe" style="color: #3b82f6; margin-right: 5px; font-size: 13px;" title="تم إنشاؤه من بوابة العملاء (رقم الموافقة: <?php echo $order['source_approval_id']; ?>)"></i>
+                                        <span style="color: #3b82f6; margin-right: 5px; font-size: 13px;" title="تم إنشاؤه من بوابة العملاء (رقم الموافقة: <?php echo $order['source_approval_id']; ?>)">🌐</span>
                                     <?php else: // If manual ?>
-                                        <i class="fas fa-keyboard" style="color: #6c757d; margin-right: 5px; font-size: 13px;" title="طلب يدوي"></i>
+                                        <span style="color: #6c757d; margin-right: 5px; font-size: 13px;" title="طلب يدوي">⌨️</span>
                                     <?php endif; ?>
                                 </td>
                                 <td><?php echo htmlspecialchars($order['order_date']); ?></td>
@@ -656,10 +656,10 @@ include '../../includes/header.php';
                                 <td><strong><?php echo $order['total_quantity']; ?></strong></td>
                                 <td>
                                     <?php $display_order_link = $order['order_link'] ?: $order['first_product_link']; ?>
-                                    <?php if (!empty($display_order_link)): ?><a href="<?php echo htmlspecialchars($display_order_link); ?>" target="_blank" class="action-icon" style="background: #dbeafe; color: #1e40af;" title="فتح رابط الطلب"><i class="fas fa-external-link-alt"></i></a><?php else: ?>-<?php endif; ?>
+                                    <?php if (!empty($display_order_link)): ?><a href="<?php echo htmlspecialchars($display_order_link); ?>" target="_blank" class="action-icon" style="background: #dbeafe; color: #1e40af;" title="فتح رابط الطلب">🔗</a><?php else: ?>-<?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if (!empty($order['additional_link'])): ?><a href="<?php echo htmlspecialchars($order['additional_link']); ?>" target="_blank" class="action-icon" style="background: #fef3c7; color: #92400e;" title="فتح الرابط الإضافي"><i class="fas fa-link"></i></a><?php else: ?>-<?php endif; ?>
+                                    <?php if (!empty($order['additional_link'])): ?><a href="<?php echo htmlspecialchars($order['additional_link']); ?>" target="_blank" class="action-icon" style="background: #fef3c7; color: #92400e;" title="فتح الرابط الإضافي">🔗</a><?php else: ?>-<?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($can_edit_orders): ?>
@@ -696,7 +696,7 @@ include '../../includes/header.php';
                                     if ($discount_percentage > 0.01) {
                                         echo number_format($discount_percentage, 0) . '%';
                                         if (!empty($order['coupon_id'])) {
-                                            echo ' <i class="fas fa-ticket-alt" title="خصم كوبون" style="color: #16a34a;"></i>';
+                                            echo ' 🎫';
                                         }
                                     } else {
                                         echo '-';
@@ -727,19 +727,19 @@ include '../../includes/header.php';
                                     <div style="display: flex; gap: 5px; justify-content: center;">
                                         <!-- **NEW: Added button linking to the source approval record** -->
                                         <?php if (!$is_manual_order): // Only show approval link if it's NOT a manual order ?>
-                                            <a href="view_approval.php?id=<?php echo $order['source_approval_id']; ?>" class="action-icon" style="background: #ecfdf5; color: #059669;" title="عرض طلب الموافقة الأصلي للعميل"><i class="fas fa-file-signature"></i></a>
+                                            <a href="view_approval.php?id=<?php echo $order['source_approval_id']; ?>" class="action-icon" style="background: #ecfdf5; color: #059669;" title="عرض طلب الموافقة الأصلي للعميل">📝</a>
                                         <?php endif; ?>
-                                        <a href="view.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background: #dbeafe; color: #1e40af;" title="عرض"><i class="fas fa-eye"></i></a>
+                                        <a href="view.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background: #dbeafe; color: #1e40af;" title="عرض">👁️</a>
                                         <?php if ($can_add_orders): ?>
-                                            <button onclick="openManagerNotesModal(<?php echo $order['id']; ?>)" class="action-icon" style="background: #e0e7ff; color: #4338ca; border: none;" title="ملاحظات المدير"><i class="fas fa-user-shield"></i></button>
+                                            <button onclick="openManagerNotesModal(<?php echo $order['id']; ?>)" class="action-icon" style="background: #e0e7ff; color: #4338ca; border: none;" title="ملاحظات المدير">🛡️</button>
                                         <?php endif; ?>
-                                        <?php if ($can_add_order_skus): ?><a href="skus.php?order_id=<?php echo (int)$order['id']; ?>" class="action-icon" style="background: #dcfce7; color: #166534;" title="تعبئة SKU"><i class="fas fa-barcode"></i></a><?php endif; ?>
-                                        <?php if ($can_edit_orders): ?><a href="edit.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background: #fef3c7; color: #92400e;" title="تعديل"><i class="fas fa-edit"></i></a><?php endif; ?>
-                                        <a href="print.php?id=<?php echo $order['id']; ?>" target="_blank" class="action-icon" style="background: #f3f4f6; color: #374151;" title="طباعة"><i class="fas fa-print"></i></a>
-                                        <?php if ($can_edit_orders): ?><button onclick="deleteOrder(<?php echo $order['id']; ?>, '<?php echo htmlspecialchars($order['order_number']); ?>')" class="action-icon" style="background: #fee2e2; color: #b91c1c; border: none;" title="حذف"><i class="fas fa-trash-alt"></i></button><?php endif; ?>
+                                        <?php if ($can_add_order_skus): ?><a href="skus.php?order_id=<?php echo (int)$order['id']; ?>" class="action-icon" style="background: #dcfce7; color: #166534;" title="تعبئة SKU">📊</a><?php endif; ?>
+                                        <?php if ($can_edit_orders): ?><a href="edit.php?id=<?php echo $order['id']; ?>" class="action-icon" style="background: #fef3c7; color: #92400e;" title="تعديل">✏️</a><?php endif; ?>
+                                        <a href="print.php?id=<?php echo $order['id']; ?>" target="_blank" class="action-icon" style="background: #f3f4f6; color: #374151;" title="طباعة">🖨️</a>
+                                        <?php if ($can_edit_orders): ?><button onclick="deleteOrder(<?php echo $order['id']; ?>, '<?php echo htmlspecialchars($order['order_number']); ?>')" class="action-icon" style="background: #fee2e2; color: #b91c1c; border: none;" title="حذف">🗑️</button><?php endif; ?>
                                         <?php $phone_number = !empty($order['whatsapp_number']) ? $order['whatsapp_number'] : $order['mobile_number'];
                                         if (!empty($phone_number) && canView($user_id, 'whatsapp')): $whatsapp_url = '/modules/whatsapp/send.php?' . http_build_query(['customer_id' => $order['customer_id'], 'phone' => $phone_number, 'order_id' => $order['id']]); ?>
-                                            <a href="<?php echo htmlspecialchars($whatsapp_url); ?>" class="action-icon" style="background: #25D366; color: white;" title="إرسال واتساب"><i class="fab fa-whatsapp"></i></a>
+                                            <a href="<?php echo htmlspecialchars($whatsapp_url); ?>" class="action-icon" style="background: #25D366; color: white;" title="إرسال واتساب">💬</a>
                                         <?php endif; ?>
                                     </div>
                                 </td>

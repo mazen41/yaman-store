@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:vibration/vibration.dart';
+import 'package:audioplayers/audioplayers.dart';
 import '../data/database_helper.dart';
 import '../network/api_service.dart';
 
@@ -273,6 +274,7 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserver {
   CameraController? _cameraController;
   final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _isProcessing = false;
   bool _locked = false;
@@ -313,6 +315,15 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   DateTime _lastProcessedAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const _dedupCooldown = Duration(seconds: 2);
 
+  // Recent scans cache for performance
+  final Map<String, List<OrderMatch>> _recentScansCache = {};
+  static const _cacheMaxAge = Duration(minutes: 5);
+  DateTime _cacheLastCleared = DateTime.now();
+
+  // Recent scans history for user reference
+  final List<String> _recentScansHistory = [];
+  static const _maxHistorySize = 10;
+
   int _scanRequestSeq = 0;
 
   // Frame throttle — only process one frame per interval to reduce CPU/heat
@@ -322,6 +333,68 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   String _normalizeSku(String? value) {
     if (value == null) return '';
     return value.trim().toUpperCase().replaceAll(RegExp(r'[-\s\u00A0\u200B\u200C\u200D]'), '');
+  }
+
+  // Audio feedback methods
+  Future<void> _playSuccessSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/success.mp3'));
+    } catch (_) {
+      // Fallback to vibration if audio fails
+      final canVibrate = await Vibration.hasVibrator() ?? false;
+      if (canVibrate) Vibration.vibrate(duration: 200);
+    }
+  }
+
+  Future<void> _playErrorSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/error.mp3'));
+    } catch (_) {
+      final canVibrate = await Vibration.hasVibrator() ?? false;
+      if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+    }
+  }
+
+  Future<void> _playWarningSound() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/warning.mp3'));
+    } catch (_) {
+      final canVibrate = await Vibration.hasVibrator() ?? false;
+      if (canVibrate) Vibration.vibrate(pattern: [0, 200, 100, 200]);
+    }
+  }
+
+  // Cache management
+  void _clearOldCache() {
+    if (DateTime.now().difference(_cacheLastCleared) > _cacheMaxAge) {
+      _recentScansCache.clear();
+      _cacheLastCleared = DateTime.now();
+      debugPrint('[Cache] Cleared old scan cache');
+    }
+  }
+
+  List<OrderMatch>? _getFromCache(String sku) {
+    _clearOldCache();
+    return _recentScansCache[sku];
+  }
+
+  void _addToCache(String sku, List<OrderMatch> matches) {
+    _recentScansCache[sku] = matches;
+  }
+
+  // Recent scans history management
+  void _addToHistory(String sku) {
+    if (_recentScansHistory.contains(sku)) {
+      _recentScansHistory.remove(sku); // Move to top
+    }
+    _recentScansHistory.insert(0, sku);
+    if (_recentScansHistory.length > _maxHistorySize) {
+      _recentScansHistory.removeLast();
+    }
+  }
+
+  List<String> getRecentScans() {
+    return List.unmodifiable(_recentScansHistory);
   }
 
   @override
@@ -371,6 +444,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     _connectivityTimer?.cancel();
     _cameraController?.dispose();
     _textRecognizer.close();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -594,8 +668,21 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   Future<void> _onStableSku(String sku) async {
     final normalizedSku = _normalizeSku(sku);
+    
+    // Debug logging to compare raw vs normalized SKU
+    debugPrint('[Scan] Raw SKU: "$sku" -> Normalized: "$normalizedSku"');
+    
     if (normalizedSku.isEmpty) {
       debugPrint('[Scan] ignored empty/invalid SKU. raw="$sku"');
+      return;
+    }
+
+    // Check cache first for performance
+    final cachedMatches = _getFromCache(normalizedSku);
+    if (cachedMatches != null) {
+      debugPrint('[Scan] Cache hit for SKU="$normalizedSku", count=${cachedMatches.length}');
+      _locked = false;
+      await _showOrderPicker(normalizedSku, cachedMatches);
       return;
     }
 
@@ -626,6 +713,23 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
       if (matches.isNotEmpty) {
         debugPrint('[Scan] matched orders count=${matches.length} for SKU="$normalizedSku"');
+        // Add to cache and history for future scans
+        _addToCache(normalizedSku, matches
+              .map<OrderMatch>((m) => OrderMatch(
+                    itemId: m.itemId,
+                    orderId: m.orderId,
+                    orderNumber: m.orderNumber,
+                    customerName: m.customerName,
+                    customerMobile: m.customerMobile,
+                    status: m.status,
+                    isSorted: m.isSorted,
+                    totalSkus: m.totalSkus,
+                    purchaseGroupId: m.purchaseGroupId,
+                    purchaseGroupNumber: m.purchaseGroupNumber,
+                    purchaseGroupName: m.purchaseGroupName,
+                  ))
+              .toList());
+        _addToHistory(normalizedSku);
         _locked = false;
         await _showOrderPicker(
           normalizedSku,
@@ -650,30 +754,55 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         return;
       }
 
-      final onlineResponse = await ApiService.instance.onlineSkuLookup(
-        normalizedSku,
-        purchaseGroupId: _selectedPurchaseGroupId,
-      );
+      // Retry logic for online lookup with exponential backoff
+      int retryCount = 0;
+      const maxRetries = 2;
+      ScanResponse? onlineResponse;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          onlineResponse = await ApiService.instance.onlineSkuLookup(
+            normalizedSku,
+            purchaseGroupId: _selectedPurchaseGroupId,
+          );
+          break; // Success, exit retry loop
+        } catch (e) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            debugPrint('[Scan] Retry $retryCount for SKU="$normalizedSku" after error: $e');
+            await Future.delayed(Duration(milliseconds: 500 * retryCount));
+          } else {
+            rethrow; // Max retries reached, throw error
+          }
+        }
+      }
 
       if (!mounted || requestId != _scanRequestSeq) {
         debugPrint('[Scan] stale online result discarded (requestId=$requestId, active=$_scanRequestSeq)');
         return;
       }
 
+      if (onlineResponse == null) {
+        throw Exception('Online lookup failed after retries');
+      }
+
       debugPrint('[Scan] fetched online orders count=${onlineResponse.matches.length} for SKU="$normalizedSku"');
 
       if (onlineResponse.success && onlineResponse.matches.isNotEmpty) {
         debugPrint('[Scan] matched orders count=${onlineResponse.matches.length} for SKU="$normalizedSku"');
+        // Add to cache and history
+        _addToCache(normalizedSku, onlineResponse.matches);
+        _addToHistory(normalizedSku);
         _locked = false;
         await _showOrderPicker(normalizedSku, onlineResponse.matches);
         return;
       }
 
       setState(() {
-        _statusMessage = 'هذا الـ SKU غير موجود في أي طلب';
+        _statusMessage = '❌ SKU غير موجود';
         _statusType = StatusType.error;
       });
-      if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+      await _playErrorSound();
     } on UnauthorizedException {
       await ApiService.instance.forceSessionExpiration();
     } catch (e) {
@@ -682,10 +811,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       if (online) {
         if (!mounted || requestId != _scanRequestSeq) return;
         setState(() {
-          _statusMessage = 'تعذر جلب بيانات الطلب من الخادم: $e';
+          _statusMessage = '❌ خطأ في الاتصال';
           _statusType = StatusType.error;
         });
-        if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+        await _playErrorSound();
       } else {
         await _handleOfflineCacheMiss(normalizedSku, canVibrate);
       }
@@ -853,25 +982,25 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
     if (!response.success) {
       setState(() {
-        _statusMessage = response.message;
+        _statusMessage = '❌ ${response.message}';
         _statusType = StatusType.error;
       });
-      if (canVibrate) Vibration.vibrate(pattern: [0, 100, 100, 100]);
+      await _playErrorSound();
     } else if (response.alreadyScanned) {
       setState(() {
-        _statusMessage = 'تنبيه: هذا المنتج مفروز مسبقاً';
+        _statusMessage = '⚠️ مفروز مسبقاً';
         _statusType = StatusType.warning;
       });
-      if (canVibrate) Vibration.vibrate(pattern: [0, 200, 100, 200]);
+      await _playWarningSound();
     } else {
       if (sortedItemId != null && sortedItemId > 0) {
         await DatabaseHelper.instance.markItemSorted(sortedItemId);
       }
       setState(() {
-        _statusMessage = response.allDone ? '🎉 تم فرز الطلب بالكامل!' : 'تم الفرز بنجاح ✅';
+        _statusMessage = response.allDone ? '🎉 تم فرز الطلب بالكامل!' : '✅ تم الفرز بنجاح';
         _statusType = StatusType.success;
       });
-      if (canVibrate) Vibration.vibrate(duration: 200);
+      await _playSuccessSound();
     }
   }
 
@@ -966,6 +1095,88 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     if (entered != null && entered.isNotEmpty && !_locked) {
       await _onStableSku(entered);
     }
+  }
+
+  // ── Recent Scans History ─────────────────────────────────────────────────────
+
+  Future<void> _showRecentScans() async {
+    final recent = getRecentScans();
+    if (recent.isEmpty) {
+      _showSnack('لا توجد عمليات مسح حديثة');
+      return;
+    }
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1F2937),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.4,
+        minChildSize: 0.3,
+        maxChildSize: 0.7,
+        expand: false,
+        builder: (context, scrollController) {
+          return Column(
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    const Icon(Icons.history_rounded, color: Colors.white70),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'عمليات المسح الحديثة',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                      textDirection: TextDirection.rtl,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  itemCount: recent.length,
+                  itemBuilder: (context, index) {
+                    final sku = recent[index];
+                    return ListTile(
+                      title: Text(
+                        sku,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textDirection: TextDirection.ltr,
+                      ),
+                      trailing: const Icon(Icons.arrow_back, color: Colors.white38),
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        if (!_locked) {
+                          _onStableSku(sku);
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   // ── Sync Actions Trigger ──────────────────────────────────────────────────
@@ -1365,6 +1576,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             icon: const Icon(Icons.keyboard_alt_outlined, color: Colors.white70),
             tooltip: 'إدخال SKU يدوياً',
             onPressed: _showManualEntry,
+          ),
+          IconButton(
+            icon: const Icon(Icons.history_rounded, color: Colors.white70),
+            tooltip: 'عمليات المسح الحديثة',
+            onPressed: _showRecentScans,
           ),
           Stack(
             alignment: Alignment.center,
@@ -1983,7 +2199,9 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
   }
 
   void _submit(String val) {
-    final v = val.trim().toUpperCase();
+    // Use the same normalization as scanner for consistency
+    final parentState = context.findAncestorStateOfType<_ScannerScreenState>();
+    final v = parentState?._normalizeSku(val) ?? val.trim().toUpperCase();
     if (v.isNotEmpty) Navigator.of(context).pop(v);
   }
 
