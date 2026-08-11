@@ -2264,6 +2264,7 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
                     final sku = item['sku'] ?? '';
                     final orderNumber = item['order_number'] ?? '';
                     final customerName = item['customer_name'] ?? '';
+                    final isSorted = item['is_sorted'] == true;
                     return InkWell(
                       onTap: () => _submit(sku),
                       child: Padding(
@@ -2275,9 +2276,29 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text(
-                                    sku,
-                                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1, fontWeight: FontWeight.bold),
+                                  Row(
+                                    children: [
+                                      if (isSorted)
+                                        Container(
+                                          margin: const EdgeInsets.only(left: 8),
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.green.withOpacity(0.5)),
+                                          ),
+                                          child: const Text(
+                                            'تم الفرز',
+                                            style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      Expanded(
+                                        child: Text(
+                                          sku,
+                                          style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   if (orderNumber.isNotEmpty || customerName.isNotEmpty)
                                     Text(

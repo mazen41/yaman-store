@@ -478,10 +478,10 @@ class DatabaseHelper {
     return result.first['c'] as int; 
   }
 
-  Future<List<Map<String, String>>> searchSkusByPrefix(String prefix) async {
+  Future<List<Map<String, dynamic>>> searchSkusByPrefix(String prefix) async {
     final db = await database;
     final rows = await db.rawQuery('''
-      SELECT DISTINCT i.sku, o.order_number, o.customer_name
+      SELECT DISTINCT i.sku, o.order_number, o.customer_name, i.is_sorted
       FROM order_items_cache i
       JOIN orders_cache o ON o.order_id = i.order_id
       WHERE i.sku LIKE ?
@@ -492,6 +492,7 @@ class DatabaseHelper {
       'sku': (r['sku'] ?? '').toString(),
       'order_number': (r['order_number'] ?? '').toString(),
       'customer_name': (r['customer_name'] ?? '').toString(),
+      'is_sorted': (r['is_sorted'] as int? ?? 0) == 1,
     }).where((m) => m['sku']!.isNotEmpty).toList();
   }
 }
