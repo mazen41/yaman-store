@@ -2168,7 +2168,7 @@ class _ManualSkuDialog extends StatefulWidget {
 
 class _ManualSkuDialogState extends State<_ManualSkuDialog> {
   final _ctrl = TextEditingController();
-  List<Map<String, String>> _suggestions = [];
+  List<Map<String, dynamic>> _suggestions = [];
   bool _loading = false;
   Timer? _debounce;
 
@@ -2261,9 +2261,9 @@ class _ManualSkuDialogState extends State<_ManualSkuDialog> {
                   separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
                   itemBuilder: (_, i) {
                     final item = _suggestions[i];
-                    final sku = item['sku'] ?? '';
-                    final orderNumber = item['order_number'] ?? '';
-                    final customerName = item['customer_name'] ?? '';
+                    final sku = (item['sku'] ?? '').toString();
+                    final orderNumber = (item['order_number'] ?? '').toString();
+                    final customerName = (item['customer_name'] ?? '').toString();
                     final isSorted = item['is_sorted'] == true;
                     return InkWell(
                       onTap: () => _submit(sku),

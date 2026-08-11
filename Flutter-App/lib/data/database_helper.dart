@@ -493,6 +493,6 @@ class DatabaseHelper {
       'order_number': (r['order_number'] ?? '').toString(),
       'customer_name': (r['customer_name'] ?? '').toString(),
       'is_sorted': (r['is_sorted'] as int? ?? 0) == 1,
-    }).where((m) => m['sku']!.isNotEmpty).toList();
+    }).where((m) => m['sku'] != null && m['sku']!.toString().isNotEmpty).toList();
   }
 }
