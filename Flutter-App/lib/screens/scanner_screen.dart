@@ -283,6 +283,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   String _detectedSku = '';
   StatusType _statusType = StatusType.idle;
 
+  // View mode: true = camera, false = search
+  bool _isCameraMode = false;
+
   // Tracks pending count so badge refreshes properly
   int _pendingCount = 0;
   int _selectedPurchaseGroupId = 0;
@@ -1532,6 +1535,21 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         ),
         actions: [
           IconButton(
+            icon: Icon(_isCameraMode ? Icons.search : Icons.camera_alt, color: Colors.white70),
+            tooltip: _isCameraMode ? 'التبديل للبحث' : 'التبديل للكاميرا',
+            onPressed: () {
+              setState(() {
+                _isCameraMode = !_isCameraMode;
+                if (_isCameraMode) {
+                  _initCamera();
+                } else {
+                  _cameraController?.dispose();
+                  _cameraController = null;
+                }
+              });
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.layers_outlined, color: Colors.white70),
             tooltip: 'اختيار مجموعة الشراء',
             onPressed: _selectPurchaseGroup,
@@ -1573,11 +1591,6 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             },
           ),
           IconButton(
-            icon: const Icon(Icons.keyboard_alt_outlined, color: Colors.white70),
-            tooltip: 'إدخال SKU يدوياً',
-            onPressed: _showManualEntry,
-          ),
-          IconButton(
             icon: const Icon(Icons.history_rounded, color: Colors.white70),
             tooltip: 'عمليات المسح الحديثة',
             onPressed: _showRecentScans,
@@ -1607,97 +1620,106 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
           ),
         ],
       ),
-      body: _cameraController == null || !_cameraController!.value.isInitialized
-          ? const Center(child: CircularProgressIndicator(color: Colors.white))
-          : Column(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      CameraPreview(_cameraController!),
-                      CustomPaint(painter: _FocusOverlayPainter()),
-                      Positioned(
-                        top: 16,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.74),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: const Text(
-                              'ضع ملصق SKU داخل الإطار المخصص للفرز',
-                              style: TextStyle(color: Colors.white70, fontSize: 12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF111827),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_detectedSku.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'SKU: $_detectedSku',
-                            style: const TextStyle(
-                              color: Colors.blueAccent,
-                              fontSize: 14,
-                              letterSpacing: 1.4,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'monospace',
-                            ),
-                          ),
-                        ),
-                      _StatusBadge(message: _statusMessage, type: _statusType),
-                      const SizedBox(height: 8),
-                      Text(
-                        'مجموعة الشراء: $_selectedPurchaseGroupLabel',
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+      body: _isCameraMode
+          ? (_cameraController == null || !_cameraController!.value.isInitialized
+              ? const Center(child: CircularProgressIndicator(color: Colors.white))
+              : Column(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Stack(
+                        fit: StackFit.expand,
                         children: [
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('تحديث الطلبات'),
-                            onPressed: _forceRefreshOrders,
+                          CameraPreview(_cameraController!),
+                          CustomPaint(painter: _FocusOverlayPainter()),
+                          Positioned(
+                            top: 16,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.74),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'ضع ملصق SKU داخل الإطار المخصص للفرز',
+                                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                    ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF111827),
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.info_outline_rounded, size: 14, color: Colors.white38),
-                          const SizedBox(width: 4),
+                          if (_detectedSku.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'SKU: $_detectedSku',
+                                style: const TextStyle(
+                                  color: Colors.blueAccent,
+                                  fontSize: 14,
+                                  letterSpacing: 1.4,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                          _StatusBadge(message: _statusMessage, type: _statusType),
+                          const SizedBox(height: 8),
                           Text(
-                            _syncInfo,
-                            style: const TextStyle(color: Colors.white38, fontSize: 11),
+                            'مجموعة الشراء: $_selectedPurchaseGroupLabel',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
                             textAlign: TextAlign.center,
                           ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: const Text('تحديث الطلبات'),
+                                onPressed: _forceRefreshOrders,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.info_outline_rounded, size: 14, color: Colors.white38),
+                              const SizedBox(width: 4),
+                              Text(
+                                _syncInfo,
+                                style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
+                    ),
+                  ],
+                ))
+          : _SearchScreen(
+              selectedPurchaseGroupId: _selectedPurchaseGroupId,
+              selectedPurchaseGroupLabel: _selectedPurchaseGroupLabel,
+              onSkuSelected: (sku) async {
+                final normalizedSku = _normalizeSku(sku);
+                await _onStableSku(normalizedSku);
+              },
             ),
     );
   }
@@ -2153,6 +2175,218 @@ class _OrderPickerViewItem {
     required this.match,
     required this.itemIndexInOrder,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Search Screen with tabs for sorted/unsorted items
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SearchScreen extends StatefulWidget {
+  final int selectedPurchaseGroupId;
+  final String selectedPurchaseGroupLabel;
+  final VoidCallback onSkuSelected;
+
+  const _SearchScreen({
+    required this.selectedPurchaseGroupId,
+    required this.selectedPurchaseGroupLabel,
+    required this.onSkuSelected,
+  });
+
+  @override
+  State<_SearchScreen> createState() => _SearchScreenState();
+}
+
+class _SearchScreenState extends State<_SearchScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _sortedResults = [];
+  List<Map<String, dynamic>> _unsortedResults = [];
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _searchSkus(String query) async {
+    if (query.length < 2) {
+      setState(() {
+        _sortedResults = [];
+        _unsortedResults = [];
+      });
+      return;
+    }
+
+    setState(() => _loading = true);
+    try {
+      final allResults = await DatabaseHelper.instance.searchSkusByPrefix(query);
+      setState(() {
+        _sortedResults = allResults.where((item) => item['is_sorted'] == true).toList();
+        _unsortedResults = allResults.where((item) => item['is_sorted'] != true).toList();
+      });
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Search input
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: const Color(0xFF111827),
+          child: TextField(
+            controller: _searchController,
+            textDirection: TextDirection.ltr,
+            textCapitalization: TextCapitalization.characters,
+            style: const TextStyle(color: Colors.white, letterSpacing: 1.2),
+            decoration: InputDecoration(
+              hintText: 'ابحث عن SKU...',
+              hintStyle: const TextStyle(color: Colors.white38),
+              filled: true,
+              fillColor: const Color(0xFF374151),
+              suffixIcon: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white38)),
+                    )
+                  : const Icon(Icons.search, color: Colors.white38),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 1.5),
+              ),
+            ),
+            onChanged: (value) => _searchSkus(value.trim().toUpperCase()),
+          ),
+        ),
+        // Tabs
+        Container(
+          color: const Color(0xFF111827),
+          child: TabBar(
+            controller: _tabController,
+            indicatorColor: const Color(0xFF3B82F6),
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white54,
+            tabs: const [
+              Tab(text: 'غير مفروز'),
+              Tab(text: 'مفروز'),
+            ],
+          ),
+        ),
+        // Tab content
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildResultsList(_unsortedResults, false),
+              _buildResultsList(_sortedResults, true),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultsList(List<Map<String, dynamic>> results, bool isSortedTab) {
+    if (_searchController.text.length < 2) {
+      return const Center(
+        child: Text(
+          'أدخل حرفين على الأقل للبحث',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    if (results.isEmpty) {
+      return Center(
+        child: Text(
+          isSortedTab ? 'لا توجد عناصر مفروزة' : 'لا توجد عناصر غير مفروزة',
+          style: const TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: results.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white12),
+      itemBuilder: (_, i) {
+        final item = results[i];
+        final sku = (item['sku'] ?? '').toString();
+        final orderNumber = (item['order_number'] ?? '').toString();
+        final customerName = (item['customer_name'] ?? '').toString();
+        final isSorted = item['is_sorted'] == true;
+
+        return InkWell(
+          onTap: () => widget.onSkuSelected(sku),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              textDirection: TextDirection.rtl,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          if (isSorted)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Colors.green.withOpacity(0.5)),
+                              ),
+                              child: const Text(
+                                'تم الفرز',
+                                style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          Expanded(
+                            child: Text(
+                              sku,
+                              style: const TextStyle(color: Colors.white, fontFamily: 'monospace', letterSpacing: 1.1, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (orderNumber.isNotEmpty || customerName.isNotEmpty)
+                        Text(
+                          [if (orderNumber.isNotEmpty) '#$orderNumber', if (customerName.isNotEmpty) customerName].join(' | '),
+                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          textDirection: TextDirection.rtl,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_left_rounded, color: Colors.white30, size: 18),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
