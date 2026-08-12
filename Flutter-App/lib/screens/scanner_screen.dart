@@ -1716,9 +1716,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
           : _SearchScreen(
               selectedPurchaseGroupId: _selectedPurchaseGroupId,
               selectedPurchaseGroupLabel: _selectedPurchaseGroupLabel,
-              onSkuSelected: (sku) async {
+              onSkuSelected: (sku) {
                 final normalizedSku = _normalizeSku(sku);
-                await _onStableSku(normalizedSku);
+                _onStableSku(normalizedSku);
               },
             ),
     );
@@ -2184,7 +2184,7 @@ class _OrderPickerViewItem {
 class _SearchScreen extends StatefulWidget {
   final int selectedPurchaseGroupId;
   final String selectedPurchaseGroupLabel;
-  final VoidCallback onSkuSelected;
+  final Function(String) onSkuSelected;
 
   const _SearchScreen({
     required this.selectedPurchaseGroupId,
